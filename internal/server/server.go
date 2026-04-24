@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"os"
 	"sync"
 
 	"github.com/bettas/grok-search-go/internal/config"
@@ -51,9 +51,8 @@ func Run(cfg *config.Config) error {
 	tools.RegisterConfig(s, cfg, app.Grok)
 
 	// Serve on stdio
-	fmt.Fprintln(nil) // placeholder — real stdio transport below
 	stdioServer := mcp.NewStdioServer(s)
-	return stdioServer.Listen(context.Background(), nil)
+	return stdioServer.Listen(context.Background(), os.Stdin, os.Stdout)
 }
 
 // CacheSources stores source URLs for a session ID.
