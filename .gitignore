@@ -1,4 +1,5 @@
 # Binaries
+grok-search
 grok-search-go
 *.exe
 *.dll
