@@ -13,14 +13,15 @@ type Config struct {
 	GrokAPIKey string
 	GrokModel  string
 
-	// Tavily (web fetch + map)
+	// Tavily (web extract + map; reserved for web_search fallback)
 	TavilyAPIURL  string
 	TavilyAPIKey  string
 	TavilyEnabled bool
 
-	// Firecrawl (fallback scraper)
-	FirecrawlAPIURL string
-	FirecrawlAPIKey string
+	// Jina Reader (primary web fetch). Free public service; an API key is
+	// optional and only raises rate limits.
+	JinaAPIURL string
+	JinaAPIKey string
 
 	// General
 	Debug    bool
@@ -34,16 +35,17 @@ func Load() (*Config, error) {
 	gudaBase := envOr("GUDA_BASE_URL", "https://code.guda.studio")
 
 	cfg := &Config{
-		GrokAPIURL:      envOrDerived("GROK_API_URL", gudaBase+"/grok/v1", gudaKey),
-		GrokAPIKey:      envOrDerived("GROK_API_KEY", gudaKey, gudaKey),
-		GrokModel:       envOr("GROK_MODEL", "grok-3-mini"),
-		TavilyAPIURL:    envOrDerived("TAVILY_API_URL", gudaBase+"/tavily", gudaKey),
-		TavilyAPIKey:    envOrDerived("TAVILY_API_KEY", gudaKey, gudaKey),
-		TavilyEnabled:   strings.ToLower(envOr("TAVILY_ENABLED", "true")) == "true",
-		FirecrawlAPIURL: envOrDerived("FIRECRAWL_API_URL", gudaBase+"/firecrawl", gudaKey),
-		FirecrawlAPIKey: envOrDerived("FIRECRAWL_API_KEY", gudaKey, gudaKey),
-		Debug:           strings.ToLower(os.Getenv("GROK_DEBUG")) == "true",
-		LogLevel:        envOr("GROK_LOG_LEVEL", "INFO"),
+		GrokAPIURL:    envOrDerived("GROK_API_URL", gudaBase+"/grok/v1", gudaKey),
+		GrokAPIKey:    envOrDerived("GROK_API_KEY", gudaKey, gudaKey),
+		GrokModel:     envOr("GROK_MODEL", "grok-3-mini"),
+		TavilyAPIURL:  envOrDerived("TAVILY_API_URL", gudaBase+"/tavily", gudaKey),
+		TavilyAPIKey:  envOrDerived("TAVILY_API_KEY", gudaKey, gudaKey),
+		TavilyEnabled: strings.ToLower(envOr("TAVILY_ENABLED", "true")) == "true",
+		// Jina Reader works without a key; default to the public endpoint.
+		JinaAPIURL: envOr("JINA_API_URL", "https://r.jina.ai"),
+		JinaAPIKey: os.Getenv("JINA_API_KEY"),
+		Debug:      strings.ToLower(os.Getenv("GROK_DEBUG")) == "true",
+		LogLevel:   envOr("GROK_LOG_LEVEL", "INFO"),
 	}
 
 	if cfg.GrokAPIURL == "" || cfg.GrokAPIKey == "" {

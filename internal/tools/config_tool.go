@@ -8,8 +8,8 @@ import (
 
 	"github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
-	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterConfig registers the get_config_info diagnostic tool.
@@ -27,7 +27,8 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, grok *engine.Gro
 		sb.WriteString(fmt.Sprintf("\nGrok Model: %s", cfg.GrokModel))
 		sb.WriteString(fmt.Sprintf("\nTavily Enabled: %v", cfg.TavilyEnabled))
 		sb.WriteString(fmt.Sprintf("\nTavily API URL: %s", cfg.TavilyAPIURL))
-		sb.WriteString(fmt.Sprintf("\nFirecrawl API URL: %s", cfg.FirecrawlAPIURL))
+		sb.WriteString(fmt.Sprintf("\nJina Reader URL: %s", cfg.JinaAPIURL))
+		sb.WriteString(fmt.Sprintf("\nJina API Key: %s", jinaKeyStatus(cfg.JinaAPIKey)))
 		sb.WriteString(fmt.Sprintf("\nDebug: %v", cfg.Debug))
 
 		// Test Grok connectivity
@@ -52,4 +53,11 @@ func maskKey(key string) string {
 		return "****"
 	}
 	return key[:4] + "..." + key[len(key)-4:]
+}
+
+func jinaKeyStatus(key string) string {
+	if key == "" {
+		return "(not set, using free tier)"
+	}
+	return maskKey(key)
 }

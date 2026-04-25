@@ -13,10 +13,10 @@ import (
 
 // App holds shared state for all MCP tools.
 type App struct {
-	Cfg       *config.Config
-	Grok      *engine.GrokClient
-	Tavily    *engine.TavilyClient
-	Firecrawl *engine.FirecrawlClient
+	Cfg    *config.Config
+	Grok   *engine.GrokClient
+	Tavily *engine.TavilyClient
+	Jina   *engine.JinaClient
 
 	// Source cache: sessionID -> []string (URLs)
 	SourcesMu sync.RWMutex
@@ -34,9 +34,8 @@ func Run(cfg *config.Config) error {
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
 		app.Tavily = engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 	}
-	if cfg.FirecrawlAPIKey != "" {
-		app.Firecrawl = engine.NewFirecrawlClient(cfg.FirecrawlAPIURL, cfg.FirecrawlAPIKey)
-	}
+	// Jina Reader works without a key — always enabled.
+	app.Jina = engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
 
 	s := mcp.NewMCPServer(
 		"grok-search",
@@ -45,7 +44,7 @@ func Run(cfg *config.Config) error {
 
 	// Register tools
 	tools.RegisterSearch(s, app.Grok, app)
-	tools.RegisterFetch(s, app.Tavily, app.Firecrawl)
+	tools.RegisterFetch(s, app.Jina, app.Tavily)
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.Grok)
