@@ -58,10 +58,10 @@ go build -o grok-search . && ./grok-search
 
 ## TODO
 
-- [ ] 安装 Go 运行时
-- [ ] `go mod tidy` 拉取依赖
-- [ ] 修复 server.go 中 stdio transport 的 placeholder
-- [ ] 补充 Grok 响应中 sources 的解析逻辑
+- [x] 安装 Go 运行时
+- [x] `go mod tidy` 拉取依赖
+- [x] 修复 server.go 中 stdio transport 的 placeholder
+- [x] 补充 Grok 响应中 sources 的解析逻辑（citations / search_results / 文本兜底，含单测）
 - [ ] 添加 switch_model 工具
 - [ ] 添加 search_planning 工具
 - [ ] 添加智能重试 (指数退避 + Retry-After)

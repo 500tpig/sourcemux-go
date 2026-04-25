@@ -7,8 +7,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
+
+// urlRegex captures http(s):// URLs in plain text. Conservative stop set so we
+// don't gobble closing brackets, quotes, or whitespace from surrounding prose.
+var urlRegex = regexp.MustCompile(`https?://[^\s)\]<>"']+`)
+
+// urlTrailingPunct is stripped from URLs extracted via regex (sentences often
+// end with these right after the URL).
+const urlTrailingPunct = ".,;:!?"
 
 // GrokClient wraps calls to a Grok-compatible (OpenAI-format) API with web search.
 type GrokClient struct {
@@ -34,6 +44,24 @@ type SearchResult struct {
 	Content      string   `json:"content"`
 	SourceURLs   []string `json:"source_urls"`
 	SourcesCount int      `json:"sources_count"`
+}
+
+// grokRawResponse mirrors the OpenAI-compatible Grok response, including the
+// optional source fields different proxies expose.
+type grokRawResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+
+	// Native Grok format: array of URL strings.
+	Citations []string `json:"citations"`
+
+	// Some Grok proxies expose structured search results instead of citations.
+	SearchResults []struct {
+		URL string `json:"url"`
+	} `json:"search_results"`
 }
 
 // Search sends a query to the Grok chat completions endpoint.
@@ -70,28 +98,77 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		return nil, fmt.Errorf("grok API %d: %s", resp.StatusCode, string(data))
 	}
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var raw grokRawResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
 	content := ""
-	if len(result.Choices) > 0 {
-		content = result.Choices[0].Message.Content
+	if len(raw.Choices) > 0 {
+		content = raw.Choices[0].Message.Content
 	}
 
-	// TODO: parse sources from response (format varies by Grok API provider)
+	urls := extractSourceURLs(&raw, content)
+
 	return &SearchResult{
 		Content:      content,
-		SourceURLs:   nil,
-		SourcesCount: 0,
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
 	}, nil
+}
+
+// extractSourceURLs picks the best available source list from a Grok response.
+//
+// Priority order:
+//  1. Native `citations` array (most Grok-compatible providers).
+//  2. Structured `search_results` objects (some grok2api flavors).
+//  3. http(s) URLs scraped from the answer text (last resort).
+func extractSourceURLs(raw *grokRawResponse, content string) []string {
+	if len(raw.Citations) > 0 {
+		return dedupURLs(raw.Citations)
+	}
+	if len(raw.SearchResults) > 0 {
+		urls := make([]string, 0, len(raw.SearchResults))
+		for _, r := range raw.SearchResults {
+			if r.URL != "" {
+				urls = append(urls, r.URL)
+			}
+		}
+		if len(urls) > 0 {
+			return dedupURLs(urls)
+		}
+	}
+	if content != "" {
+		matches := urlRegex.FindAllString(content, -1)
+		cleaned := make([]string, 0, len(matches))
+		for _, m := range matches {
+			m = strings.TrimRight(m, urlTrailingPunct)
+			if m != "" {
+				cleaned = append(cleaned, m)
+			}
+		}
+		if len(cleaned) > 0 {
+			return dedupURLs(cleaned)
+		}
+	}
+	return nil
+}
+
+// dedupURLs preserves first-seen order while dropping empties and duplicates.
+func dedupURLs(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, u := range in {
+		if u == "" {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+	}
+	return out
 }
 
 // ListModels returns available models from the Grok-compatible endpoint.
