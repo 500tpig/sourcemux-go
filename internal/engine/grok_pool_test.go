@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -19,6 +20,10 @@ func newPoolMock(t *testing.T, status int, body string) *GrokClient {
 	t.Cleanup(srv.Close)
 	c := NewGrokClient(srv.URL, "k", "m")
 	c.SendSearchFlag = false
+	// Default to a single attempt so existing pool fallback tests stay fast
+	// and don't trigger the new in-client retry loop. Tests that specifically
+	// exercise retry should opt in by setting RetryConfig themselves.
+	c.RetryConfig = RetryConfig{MaxAttempts: 1, Jitter: false}
 	return c
 }
 
@@ -107,5 +112,53 @@ func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	}
 	if cs[1].Name != "yyds" || cs[1].SendSearchFlag != true {
 		t.Fatalf("client 1 = %+v", cs[1])
+	}
+}
+
+// TestPool_PerEndpointRetriesBeforeFallback verifies the layered retry policy:
+// when a primary endpoint serves a retryable status (here 503), the per-client
+// retry loop attempts MaxAttempts=3 times against it before the pool moves on
+// to the next endpoint.
+func TestPool_PerEndpointRetriesBeforeFallback(t *testing.T) {
+	var primaryCalls int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&primaryCalls, 1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(primary.Close)
+
+	var secondaryCalls int32
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondaryCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"citations":["https://example.com/x"]}`))
+	}))
+	t.Cleanup(secondary.Close)
+
+	primaryClient := NewGrokClient(primary.URL, "k", "m")
+	primaryClient.Name = "primary"
+	primaryClient.SendSearchFlag = false
+	primaryClient.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	secondaryClient := NewGrokClient(secondary.URL, "k", "m")
+	secondaryClient.Name = "secondary"
+	secondaryClient.SendSearchFlag = false
+	secondaryClient.RetryConfig = RetryConfig{MaxAttempts: 1, Jitter: false}
+
+	pool := &GrokPool{clients: []*GrokClient{primaryClient, secondaryClient}}
+	res, err := pool.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.EndpointName != "secondary" {
+		t.Fatalf("EndpointName = %q, want secondary", res.EndpointName)
+	}
+	if got := atomic.LoadInt32(&primaryCalls); got != 3 {
+		t.Fatalf("expected primary to be retried 3 times, got %d", got)
+	}
+	if got := atomic.LoadInt32(&secondaryCalls); got != 1 {
+		t.Fatalf("expected secondary to be hit once, got %d", got)
 	}
 }

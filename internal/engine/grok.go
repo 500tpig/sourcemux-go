@@ -31,6 +31,10 @@ type GrokClient struct {
 	// proxies auto-search and either ignore or reject it, so it's opt-out.
 	SendSearchFlag bool
 	HTTPClient     *http.Client
+	// RetryConfig governs httpDoWithRetry behaviour for the underlying chat
+	// completions request: 429/5xx + network errors are retried with capped
+	// exponential backoff, honouring any Retry-After header from upstream.
+	RetryConfig RetryConfig
 }
 
 // NewGrokClient creates a Grok client with default 60s timeout and search flag enabled.
@@ -44,6 +48,7 @@ func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 		HTTPClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+		RetryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -103,15 +108,18 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.BaseURL+"/chat/completions", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.BaseURL+"/chat/completions", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
 		return nil, fmt.Errorf("grok request failed: %w", err)
 	}
