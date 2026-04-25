@@ -12,12 +12,12 @@ Go 版 Grok Search MCP Server — Grok AI 搜索 + Jina Reader 抓取（Tavily �
 │   ├── config/config.go             # 环境变量配置
 │   ├── engine/
 │   │   ├── grok.go                  # Grok API client (OpenAI 兼容)
-│   │   ├── tavily.go                # Tavily Extract + Map client (web_fetch 兜底)
+│   │   ├── tavily.go                # Tavily Search + Extract + Map client
 │   │   └── jina.go                  # Jina Reader client (web_fetch 主力)
 │   ├── server/server.go             # MCP server 初始化 + 运行
 │   └── tools/
-│       ├── search.go                # web_search 工具
-│       ├── fetch.go                 # web_fetch 工具 (Jina → Tavily 降级)
+│       ├── search.go                # web_search 工具 (Grok → Tavily Search 降级)
+│       ├── fetch.go                 # web_fetch 工具 (Jina → Tavily Extract 降级)
 │       ├── map.go                   # web_map 工具
 │       ├── sources.go               # get_sources 工具
 │       └── config_tool.go           # get_config_info 诊断工具
@@ -52,7 +52,7 @@ go build -o grok-search . && ./grok-search
 - `GROK_API_URL` + `GROK_API_KEY` — 自定义 Grok 端点
 
 可选:
-- `TAVILY_API_KEY` / `TAVILY_API_URL` — 网页抓取兜底
+- `TAVILY_API_KEY` / `TAVILY_API_URL` — 网页抓取兜底 + web_search 兑底引擎
 - `JINA_API_URL` — 默认 `https://r.jina.ai`
 - `JINA_API_KEY` — 可选，仅用于提升 Jina 速率上限
 - `GROK_MODEL` — 默认模型 (grok-3-mini)
@@ -64,7 +64,7 @@ go build -o grok-search . && ./grok-search
 - [x] 修复 server.go 中 stdio transport 的 placeholder
 - [x] 补充 Grok 响应中 sources 的解析逻辑（citations / search_results / 文本兜底，含单测）
 - [x] 集成 Jina Reader 替代 Firecrawl（web_fetch: Jina → Tavily Extract 兜底）
-- [ ] web_search 接 Tavily Search 兜底
+- [x] web_search 接 Tavily Search 兑底（Grok 失败/空响应时降级）
 - [ ] 添加 switch_model 工具
 - [ ] 添加 search_planning 工具
 - [ ] 添加智能重试 (指数退避 + Retry-After)

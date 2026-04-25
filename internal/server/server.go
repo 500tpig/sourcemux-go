@@ -43,7 +43,7 @@ func Run(cfg *config.Config) error {
 	)
 
 	// Register tools
-	tools.RegisterSearch(s, app.Grok, app)
+	tools.RegisterSearch(s, app.Grok, app.Tavily, app)
 	tools.RegisterFetch(s, app.Jina, app.Tavily)
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
