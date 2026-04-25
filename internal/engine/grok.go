@@ -22,17 +22,25 @@ const urlTrailingPunct = ".,;:!?"
 
 // GrokClient wraps calls to a Grok-compatible (OpenAI-format) API with web search.
 type GrokClient struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
+	Name    string
+	BaseURL string
+	APIKey  string
+	Model   string
+	// SendSearchFlag controls whether the request body includes "search": true.
+	// xAI native Grok requires the flag to enable web search; many grok2api
+	// proxies auto-search and either ignore or reject it, so it's opt-out.
+	SendSearchFlag bool
+	HTTPClient     *http.Client
 }
 
+// NewGrokClient creates a Grok client with default 60s timeout and search flag enabled.
 func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 	return &GrokClient{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   model,
+		Name:           "grok",
+		BaseURL:        baseURL,
+		APIKey:         apiKey,
+		Model:          model,
+		SendSearchFlag: true,
 		HTTPClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -46,19 +54,33 @@ type SearchResult struct {
 	SourcesCount int      `json:"sources_count"`
 }
 
-// grokRawResponse mirrors the OpenAI-compatible Grok response, including the
+// grokRawResponse mirrors the OpenAI-compatible Grok response, including all the
 // optional source fields different proxies expose.
 type grokRawResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content     string `json:"content"`
+			Annotations []struct {
+				Type        string `json:"type"`
+				URLCitation struct {
+					URL   string `json:"url"`
+					Title string `json:"title"`
+				} `json:"url_citation"`
+			} `json:"annotations"`
 		} `json:"message"`
 	} `json:"choices"`
 
-	// Native Grok format: array of URL strings.
+	// Native xAI Grok format: array of URL strings.
 	Citations []string `json:"citations"`
 
-	// Some Grok proxies expose structured search results instead of citations.
+	// grok2api wykon/yyds flavor: top-level structured search sources.
+	SearchSources []struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+		Type  string `json:"type"`
+	} `json:"search_sources"`
+
+	// Older grok2api flavor: top-level results array.
 	SearchResults []struct {
 		URL string `json:"url"`
 	} `json:"search_results"`
@@ -71,7 +93,9 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		"messages": []map[string]string{
 			{"role": "user", "content": query},
 		},
-		"search": true,
+	}
+	if c.SendSearchFlag {
+		body["search"] = true
 	}
 
 	jsonBody, err := json.Marshal(body)
@@ -119,11 +143,38 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 
 // extractSourceURLs picks the best available source list from a Grok response.
 //
-// Priority order:
-//  1. Native `citations` array (most Grok-compatible providers).
-//  2. Structured `search_results` objects (some grok2api flavors).
-//  3. http(s) URLs scraped from the answer text (last resort).
+// Priority order (most-structured first):
+//  1. choices[0].message.annotations[].url_citation.url  (OpenAI tools-spec; many grok2api flavors).
+//  2. top-level search_sources[].url                     (grok2api wykon/yyds flavor).
+//  3. top-level citations[]                              (native xAI Grok).
+//  4. top-level search_results[].url                     (older grok2api flavor).
+//  5. http(s) URLs scraped from the answer text          (last-resort regex).
 func extractSourceURLs(raw *grokRawResponse, content string) []string {
+	if len(raw.Choices) > 0 {
+		anns := raw.Choices[0].Message.Annotations
+		if len(anns) > 0 {
+			urls := make([]string, 0, len(anns))
+			for _, a := range anns {
+				if a.URLCitation.URL != "" {
+					urls = append(urls, a.URLCitation.URL)
+				}
+			}
+			if len(urls) > 0 {
+				return dedupURLs(urls)
+			}
+		}
+	}
+	if len(raw.SearchSources) > 0 {
+		urls := make([]string, 0, len(raw.SearchSources))
+		for _, s := range raw.SearchSources {
+			if s.URL != "" {
+				urls = append(urls, s.URL)
+			}
+		}
+		if len(urls) > 0 {
+			return dedupURLs(urls)
+		}
+	}
 	if len(raw.Citations) > 0 {
 		return dedupURLs(raw.Citations)
 	}

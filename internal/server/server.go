@@ -13,10 +13,10 @@ import (
 
 // App holds shared state for all MCP tools.
 type App struct {
-	Cfg    *config.Config
-	Grok   *engine.GrokClient
-	Tavily *engine.TavilyClient
-	Jina   *engine.JinaClient
+	Cfg      *config.Config
+	GrokPool *engine.GrokPool
+	Tavily   *engine.TavilyClient
+	Jina     *engine.JinaClient
 
 	// Source cache: sessionID -> []string (URLs)
 	SourcesMu sync.RWMutex
@@ -26,9 +26,9 @@ type App struct {
 // Run starts the MCP server on stdio.
 func Run(cfg *config.Config) error {
 	app := &App{
-		Cfg:     cfg,
-		Grok:    engine.NewGrokClient(cfg.GrokAPIURL, cfg.GrokAPIKey, cfg.GrokModel),
-		Sources: make(map[string][]string),
+		Cfg:      cfg,
+		GrokPool: engine.NewGrokPool(cfg.GrokEndpoints),
+		Sources:  make(map[string][]string),
 	}
 
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
@@ -39,15 +39,15 @@ func Run(cfg *config.Config) error {
 
 	s := mcp.NewMCPServer(
 		"grok-search",
-		"0.1.0",
+		"0.2.0",
 	)
 
 	// Register tools
-	tools.RegisterSearch(s, app.Grok, app.Tavily, app)
+	tools.RegisterSearch(s, app.GrokPool, app.Tavily, app)
 	tools.RegisterFetch(s, app.Jina, app.Tavily)
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
-	tools.RegisterConfig(s, cfg, app.Grok)
+	tools.RegisterConfig(s, cfg, app.GrokPool)
 
 	// Serve on stdio
 	stdioServer := mcp.NewStdioServer(s)

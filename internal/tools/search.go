@@ -20,11 +20,12 @@ type SourceCacher interface {
 // RegisterSearch registers the web_search tool.
 //
 // Routing order:
-//  1. Grok            — primary AI web search.
-//  2. Tavily Search   — fallback when Grok errors out (rate limit, auth, 5xx, ...).
-func RegisterSearch(s *mcpserver.MCPServer, grok *engine.GrokClient, tavily *engine.TavilyClient, cache SourceCacher) {
+//  1. Grok pool (each endpoint in priority order) — primary AI web search.
+//  2. Tavily Search                               — fallback when every Grok
+//     endpoint either errors or returns empty content.
+func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engine.TavilyClient, cache SourceCacher) {
 	tool := mcp.NewTool("web_search",
-		mcp.WithDescription("AI-powered web search via Grok with Tavily Search fallback. Returns answer text and a session_id for source retrieval."),
+		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to Tavily Search. Returns answer text, an engine label, and a session_id for source retrieval."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 	)
@@ -42,27 +43,32 @@ func RegisterSearch(s *mcpserver.MCPServer, grok *engine.GrokClient, tavily *eng
 			query = fmt.Sprintf("[Focus: %s] %s", platform, query)
 		}
 
-		// 1) Try Grok first.
-		result, grokErr := grok.Search(ctx, query)
-		if grokErr == nil && result != nil && result.Content != "" {
-			sessionID := uuid.New().String()
-			cache.CacheSources(sessionID, result.SourceURLs)
-			response := fmt.Sprintf(
-				"engine: Grok\nsession_id: %s\nsources_count: %d\n\n%s",
-				sessionID, result.SourcesCount, result.Content,
-			)
-			return mcp.NewToolResultText(response), nil
+		// 1) Try Grok pool.
+		var poolErr error
+		if pool != nil && pool.Len() > 0 {
+			res, err := pool.Search(ctx, query)
+			if err == nil && res != nil && res.Content != "" {
+				sessionID := uuid.New().String()
+				cache.CacheSources(sessionID, res.SourceURLs)
+				response := fmt.Sprintf(
+					"engine: %s (%s)\nsession_id: %s\nsources_count: %d\n\n%s",
+					res.EndpointName, res.EndpointModel,
+					sessionID, res.SourcesCount, res.Content,
+				)
+				return mcp.NewToolResultText(response), nil
+			}
+			poolErr = err
 		}
 
 		// 2) Fallback to Tavily Search.
 		if tavily != nil {
 			if tres, terr := tavily.Search(ctx, query); terr == nil {
-				return mcp.NewToolResultText(formatTavilyResponse(tres, grokErr, cache)), nil
+				return mcp.NewToolResultText(formatTavilyResponse(tres, poolErr, cache)), nil
 			}
 		}
 
-		if grokErr != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", grokErr)), nil
+		if poolErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", poolErr)), nil
 		}
 		return mcp.NewToolResultError("search returned empty result and no fallback configured"), nil
 	})
@@ -83,9 +89,9 @@ func formatTavilyResponse(res *engine.TavilySearchResult, grokErr error, cache S
 
 	var sb strings.Builder
 	if grokErr != nil {
-		fmt.Fprintf(&sb, "engine: Tavily Search (Grok fallback: %v)\n", grokErr)
+		fmt.Fprintf(&sb, "engine: Tavily Search (Grok pool fallback: %v)\n", grokErr)
 	} else {
-		sb.WriteString("engine: Tavily Search (Grok returned empty)\n")
+		sb.WriteString("engine: Tavily Search (no Grok endpoint configured)\n")
 	}
 	fmt.Fprintf(&sb, "session_id: %s\nsources_count: %d\n\n", sessionID, len(urls))
 	if res.Answer != "" {
