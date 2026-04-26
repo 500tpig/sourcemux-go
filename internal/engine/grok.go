@@ -231,17 +231,22 @@ func dedupURLs(in []string) []string {
 }
 
 // ListModels returns available models from the Grok-compatible endpoint.
+// Transient errors (network failures, HTTP 429, 5xx) are retried per
+// c.RetryConfig, mirroring Search.
 func (c *GrokClient) ListModels(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		c.BaseURL+"/models", nil)
-	if err != nil {
-		return nil, err
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			c.BaseURL+"/models", nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
 	}
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("grok list models failed: %w", err)
 	}
 	defer resp.Body.Close()
 

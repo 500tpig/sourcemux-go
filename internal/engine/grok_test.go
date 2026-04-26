@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -233,5 +234,35 @@ func TestExtractSourceURLs_Dedup(t *testing.T) {
 	want := []string{"https://a", "https://b"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("dedupURLs = %v, want %v", got, want)
+	}
+}
+
+func TestListModels_RetriesOn429ThenSucceeds(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"grok-3-mini"},{"id":"grok-4-fast"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "test-key", "grok-3-mini")
+	c.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	models, err := c.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels failed: %v", err)
+	}
+	want := []string{"grok-3-mini", "grok-4-fast"}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("models = %v, want %v", models, want)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("calls = %d, want 2 (initial 429 + retry)", got)
 	}
 }
