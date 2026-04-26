@@ -48,15 +48,18 @@ func (c *TavilyClient) Extract(ctx context.Context, url string) (*ExtractResult,
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.BaseURL+"/extract", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.BaseURL+"/extract", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
 		return nil, fmt.Errorf("tavily extract failed: %w", err)
 	}
@@ -105,15 +108,18 @@ func (c *TavilyClient) Map(ctx context.Context, url string, maxDepth, maxBreadth
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.BaseURL+"/map", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.BaseURL+"/map", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
 		return nil, fmt.Errorf("tavily map failed: %w", err)
 	}

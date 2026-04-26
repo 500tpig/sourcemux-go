@@ -143,3 +143,66 @@ func TestTavilySearch_RetriesOn429ThenSucceeds(t *testing.T) {
 		t.Errorf("calls = %d, want 2 (initial 429 + retry)", got)
 	}
 }
+
+func TestTavilyExtract_RetriesOn429ThenSucceeds(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/extract" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://example.com","raw_content":"after retry"}]}`))
+	}))
+	defer ts.Close()
+
+	c := NewTavilyClient(ts.URL, "tvly-test")
+	c.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	res, err := c.Extract(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+	if res.Content != "after retry" {
+		t.Errorf("Content = %q, want \"after retry\"", res.Content)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (initial 429 + retry)", got)
+	}
+}
+
+func TestTavilyMap_RetriesOn500ThenSucceeds(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/map" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"urls":["https://example.com/a","https://example.com/b"]}`))
+	}))
+	defer ts.Close()
+
+	c := NewTavilyClient(ts.URL, "tvly-test")
+	c.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	res, err := c.Map(context.Background(), "https://example.com", 1, 5, 10)
+	if err != nil {
+		t.Fatalf("Map failed: %v", err)
+	}
+	if len(res.URLs) != 2 {
+		t.Fatalf("len(URLs) = %d, want 2", len(res.URLs))
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (initial 500 + retry)", got)
+	}
+}
