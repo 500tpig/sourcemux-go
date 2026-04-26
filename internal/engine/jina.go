@@ -18,6 +18,10 @@ type JinaClient struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
+	// RetryConfig governs httpDoWithRetry behaviour for Fetch: 429/5xx +
+	// network errors are retried with capped exponential backoff, honouring
+	// any Retry-After header from upstream.
+	RetryConfig RetryConfig
 }
 
 // NewJinaClient builds a Jina Reader client. If baseURL is empty, the public
@@ -32,6 +36,7 @@ func NewJinaClient(baseURL, apiKey string) *JinaClient {
 		HTTPClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+		RetryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -44,16 +49,19 @@ func (c *JinaClient) Fetch(ctx context.Context, target string) (*ExtractResult, 
 	}
 	endpoint := c.BaseURL + "/" + target
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Accept", "text/markdown, text/plain;q=0.9")
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Accept", "text/markdown, text/plain;q=0.9")
+		if c.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		}
+		return req, nil
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
 		return nil, fmt.Errorf("jina fetch failed: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -122,5 +123,34 @@ func TestNewJinaClient_TrimsTrailingSlash(t *testing.T) {
 	c := NewJinaClient("https://r.jina.ai/", "")
 	if c.BaseURL != "https://r.jina.ai" {
 		t.Errorf("BaseURL = %q, want trimmed", c.BaseURL)
+	}
+}
+
+func TestJinaFetch_RetriesOn429ThenSucceeds(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("# Example\n\nHello after retry."))
+	}))
+	defer ts.Close()
+
+	c := NewJinaClient(ts.URL, "")
+	c.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	res, err := c.Fetch(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+	if !strings.Contains(res.Content, "Hello after retry.") {
+		t.Errorf("content missing body: %q", res.Content)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (initial 429 + retry)", got)
 	}
 }
