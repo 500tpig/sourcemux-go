@@ -2,8 +2,10 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/bettas/grok-search-go/internal/engine"
@@ -41,7 +43,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if len(endpoints) == 0 {
-		return nil, fmt.Errorf("no Grok endpoints configured: set GROK_ENDPOINTS_JSON, GROK_ENDPOINTS_FILE, or GROK_API_URL + GROK_API_KEY")
+		return nil, fmt.Errorf("no Grok endpoints configured: set GROK_ENDPOINTS_JSON, GROK_ENDPOINTS_FILE, GROK_API_URL + GROK_API_KEY, or place a JSON config at %s", defaultConfigPath())
 	}
 
 	cfg := &Config{
@@ -80,7 +82,8 @@ func loadGrokEndpoints() ([]engine.GrokEndpoint, error) {
 	url := os.Getenv("GROK_API_URL")
 	key := os.Getenv("GROK_API_KEY")
 	if url == "" || key == "" {
-		return nil, nil
+		// Final fallback: optional default config file at the user's XDG config dir.
+		return loadDefaultConfigFile()
 	}
 	return []engine.GrokEndpoint{ {
 		Name:           envOr("GROK_NAME", "default"),
@@ -89,6 +92,44 @@ func loadGrokEndpoints() ([]engine.GrokEndpoint, error) {
 		Model:          envOr("GROK_MODEL", "grok-3-mini"),
 		SendSearchFlag: strings.ToLower(envOr("GROK_SEND_SEARCH_FLAG", "true")) == "true",
 	} }, nil
+}
+
+// loadDefaultConfigFile attempts to read the default user-level config file at
+// $XDG_CONFIG_HOME/grok-search/endpoints.json (or ~/.config/grok-search/endpoints.json
+// if XDG_CONFIG_HOME is unset). A missing file returns (nil, nil); other errors
+// (permission, malformed JSON, etc.) are surfaced so users notice typos early.
+func loadDefaultConfigFile() ([]engine.GrokEndpoint, error) {
+	path := defaultConfigPath()
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	eps, err := parseEndpoints(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return eps, nil
+}
+
+// defaultConfigPath returns the platform-default location of the optional
+// endpoints config file: $XDG_CONFIG_HOME/grok-search/endpoints.json, falling
+// back to $HOME/.config/grok-search/endpoints.json. Returns "" if no home
+// directory can be resolved.
+func defaultConfigPath() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "grok-search", "endpoints.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "grok-search", "endpoints.json")
 }
 
 func parseEndpoints(data []byte) ([]engine.GrokEndpoint, error) {

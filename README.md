@@ -56,6 +56,29 @@ export GROK_MODEL="grok-4.20-fast"
 export GROK_SEND_SEARCH_FLAG="false"   # grok2api 类代理通常应关掉
 ```
 
+### 默认配置文件（无需 env）
+
+如果上面这些 env 都没设，会自动尝试读 **`~/.config/grok-search/endpoints.json`**（遵循 XDG，可用 `XDG_CONFIG_HOME` 覆盖）。文件格式与 `GROK_ENDPOINTS_JSON` 完全一致：
+
+```bash
+mkdir -p ~/.config/grok-search
+cat > ~/.config/grok-search/endpoints.json <<'JSON'
+[
+  {"name":"wykon","baseURL":"https://grok2api.wykon.homes/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false},
+  {"name":"yyds","baseURL":"https://yyds.215.im/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false}
+]
+JSON
+chmod 600 ~/.config/grok-search/endpoints.json   # 包含 API key，建议收紧权限
+```
+
+优先级：`GROK_ENDPOINTS_JSON` > `GROK_ENDPOINTS_FILE` > `GROK_API_URL` + `GROK_API_KEY` > 默认文件。
+
+这样 Claude Code / Cherry Studio 那边的 MCP 注册就只需要一行 `command`，不用再传 `env`：
+
+```bash
+claude mcp add grok-search /path/to/grok-search
+```
+
 ### 添加到 Claude Code
 
 ```bash
