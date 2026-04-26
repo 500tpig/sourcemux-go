@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -111,5 +112,34 @@ func TestTavilySearch_EmptyQueryIsError(t *testing.T) {
 	_, err := c.Search(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected empty-query error, got nil")
+	}
+}
+
+func TestTavilySearch_RetriesOn429ThenSucceeds(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"answer": "after retry", "results": []}`))
+	}))
+	defer ts.Close()
+
+	c := NewTavilyClient(ts.URL, "tvly-test")
+	c.RetryConfig = RetryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: false}
+
+	res, err := c.Search(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if res.Answer != "after retry" {
+		t.Errorf("Answer = %q, want \"after retry\"", res.Answer)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (initial 429 + retry)", got)
 	}
 }

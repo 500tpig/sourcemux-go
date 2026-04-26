@@ -15,6 +15,10 @@ type TavilyClient struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
+	// RetryConfig governs httpDoWithRetry behaviour for Search/Extract/Map:
+	// 429/5xx + network errors are retried with capped exponential backoff,
+	// honouring any Retry-After header from upstream.
+	RetryConfig RetryConfig
 }
 
 func NewTavilyClient(baseURL, apiKey string) *TavilyClient {
@@ -24,6 +28,7 @@ func NewTavilyClient(baseURL, apiKey string) *TavilyClient {
 		HTTPClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+		RetryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -162,15 +167,18 @@ func (c *TavilyClient) Search(ctx context.Context, query string) (*TavilySearchR
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.BaseURL+"/search", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.BaseURL+"/search", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
 	if err != nil {
 		return nil, fmt.Errorf("tavily search failed: %w", err)
 	}
