@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -130,6 +131,10 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		return nil, fmt.Errorf("grok API %d: %s", resp.StatusCode, string(data))
 	}
 
+	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return decodeEventStreamSearchResult(resp.Body)
+	}
+
 	var raw grokRawResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
@@ -147,6 +152,113 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		SourceURLs:   urls,
 		SourcesCount: len(urls),
 	}, nil
+}
+
+type grokStreamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		Message struct {
+			Content     string `json:"content"`
+			Annotations []struct {
+				Type        string `json:"type"`
+				URLCitation struct {
+					URL   string `json:"url"`
+					Title string `json:"title"`
+				} `json:"url_citation"`
+			} `json:"annotations"`
+		} `json:"message"`
+	} `json:"choices"`
+	Citations     []string `json:"citations"`
+	SearchSources []struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+		Type  string `json:"type"`
+	} `json:"search_sources"`
+	SearchResults []struct {
+		URL string `json:"url"`
+	} `json:"search_results"`
+}
+
+func decodeEventStreamSearchResult(r io.Reader) (*SearchResult, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+
+	var content strings.Builder
+	var raw grokRawResponse
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+
+		var chunk grokStreamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return nil, fmt.Errorf("decode event stream chunk: %w", err)
+		}
+		mergeStreamChunk(&raw, &content, &chunk)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read event stream: %w", err)
+	}
+
+	text := content.String()
+	if text == "" && len(raw.Choices) > 0 {
+		text = raw.Choices[0].Message.Content
+	}
+	urls := extractSourceURLs(&raw, text)
+	return &SearchResult{
+		Content:      text,
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
+	}, nil
+}
+
+func mergeStreamChunk(raw *grokRawResponse, content *strings.Builder, chunk *grokStreamChunk) {
+	if len(chunk.Choices) > 0 {
+		if len(raw.Choices) == 0 {
+			raw.Choices = append(raw.Choices, struct {
+				Message struct {
+					Content     string `json:"content"`
+					Annotations []struct {
+						Type        string `json:"type"`
+						URLCitation struct {
+							URL   string `json:"url"`
+							Title string `json:"title"`
+						} `json:"url_citation"`
+					} `json:"annotations"`
+				} `json:"message"`
+			}{})
+		}
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content != "" {
+				content.WriteString(choice.Delta.Content)
+			}
+			if choice.Message.Content != "" {
+				raw.Choices[0].Message.Content += choice.Message.Content
+			}
+			if len(choice.Message.Annotations) > 0 {
+				raw.Choices[0].Message.Annotations = append(raw.Choices[0].Message.Annotations, choice.Message.Annotations...)
+			}
+		}
+	}
+	if len(chunk.Citations) > 0 {
+		raw.Citations = append(raw.Citations, chunk.Citations...)
+	}
+	if len(chunk.SearchSources) > 0 {
+		raw.SearchSources = append(raw.SearchSources, chunk.SearchSources...)
+	}
+	if len(chunk.SearchResults) > 0 {
+		raw.SearchResults = append(raw.SearchResults, chunk.SearchResults...)
+	}
 }
 
 // extractSourceURLs picks the best available source list from a Grok response.

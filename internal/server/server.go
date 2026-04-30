@@ -30,6 +30,7 @@ func Run(cfg *config.Config) error {
 		GrokPool: engine.NewGrokPool(cfg.GrokEndpoints),
 		Sources:  make(map[string][]string),
 	}
+	app.GrokPool.OverallTimeout = cfg.GrokPoolTimeout
 
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
 		app.Tavily = engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
@@ -48,6 +49,7 @@ func Run(cfg *config.Config) error {
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.GrokPool)
+	tools.RegisterSearchPlanning(s)
 
 	// Serve on stdio
 	stdioServer := mcp.NewStdioServer(s)

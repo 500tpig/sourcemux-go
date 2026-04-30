@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // GrokEndpoint is one entry in a Grok endpoint pool. Matches the JSON shape
@@ -21,6 +22,10 @@ type GrokEndpoint struct {
 // failing over to the next endpoint when one returns an error or empty content.
 type GrokPool struct {
 	clients []*GrokClient
+	// OverallTimeout caps the total wall-clock budget Search will spend across
+	// all endpoints + retries. 0 means no cap; the only deadline is then the
+	// caller's ctx (and each client's per-attempt RetryConfig.MaxDelay).
+	OverallTimeout time.Duration
 }
 
 // NewGrokPool builds a pool from endpoint configs. Endpoints are tried in the
@@ -65,24 +70,47 @@ type PoolSearchResult struct {
 // Search tries endpoints in order, returning the first non-empty success.
 // On full failure it returns an aggregated error listing per-endpoint reasons.
 func (p *GrokPool) Search(ctx context.Context, query string) (*PoolSearchResult, error) {
+	return p.SearchWithModel(ctx, query, "")
+}
+
+// SearchWithModel is like Search, but overrides every endpoint's configured
+// model for this single request when model is non-empty. It does not mutate the
+// pool, so concurrent requests keep using their own configured/default model.
+func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*PoolSearchResult, error) {
 	if p == nil || len(p.clients) == 0 {
 		return nil, errors.New("grok pool is empty: no endpoints configured")
 	}
+	if p.OverallTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.OverallTimeout)
+		defer cancel()
+	}
 	var errs []string
 	for _, c := range p.clients {
-		res, err := c.Search(ctx, query)
+		// Stop early if the overall budget (or caller's ctx) is exhausted.
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, fmt.Sprintf("(deadline reached: %v)", err))
+			break
+		}
+		active := c
+		if model != "" {
+			cloned := *c
+			cloned.Model = model
+			active = &cloned
+		}
+		res, err := active.Search(ctx, query)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", c.Name, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", active.Name, err))
 			continue
 		}
 		if res == nil || res.Content == "" {
-			errs = append(errs, fmt.Sprintf("%s: empty content", c.Name))
+			errs = append(errs, fmt.Sprintf("%s: empty content", active.Name))
 			continue
 		}
 		return &PoolSearchResult{
 			SearchResult:  res,
-			EndpointName:  c.Name,
-			EndpointModel: c.Model,
+			EndpointName:  active.Name,
+			EndpointModel: active.Model,
 		}, nil
 	}
 	return nil, fmt.Errorf("all %d grok endpoints failed: %s",

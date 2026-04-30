@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net/http"
@@ -225,6 +226,34 @@ func TestSearch_SendSearchFlagControl(t *testing.T) {
 	}
 	if !strings.Contains(receivedBody, `"search":true`) {
 		t.Fatalf("search flag should be present; body=%s", receivedBody)
+	}
+}
+
+func TestSearch_EventStreamResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		bw := bufio.NewWriter(w)
+		_, _ = bw.WriteString(": heartbeat stream connected\n\n")
+		_, _ = bw.WriteString(`data: {"choices":[{"delta":{"content":"Hello "}}]}` + "\n\n")
+		_, _ = bw.WriteString(`data: {"choices":[{"delta":{"content":"world."}}]}` + "\n\n")
+		_, _ = bw.WriteString(`data: {"choices":[{"message":{"annotations":[{"type":"url_citation","url_citation":{"url":"https://example.com/source"}}]}}]}` + "\n\n")
+		_, _ = bw.WriteString("data: [DONE]\n\n")
+		_ = bw.Flush()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "k", "m")
+	c.SendSearchFlag = false
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "Hello world." {
+		t.Fatalf("Content = %q, want Hello world.", res.Content)
+	}
+	if !reflect.DeepEqual(res.SourceURLs, []string{"https://example.com/source"}) {
+		t.Fatalf("SourceURLs = %v", res.SourceURLs)
 	}
 }
 

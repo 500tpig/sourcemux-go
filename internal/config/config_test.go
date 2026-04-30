@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // resetConfigEnv clears every env var Load() reads, so each test starts from a
@@ -18,6 +19,7 @@ func resetConfigEnv(t *testing.T) {
 		"TAVILY_API_URL", "TAVILY_API_KEY", "TAVILY_ENABLED",
 		"JINA_API_URL", "JINA_API_KEY",
 		"GROK_DEBUG", "GROK_LOG_LEVEL",
+		"GROK_POOL_TIMEOUT_SEC",
 	} {
 		t.Setenv(k, "")
 	}
@@ -103,6 +105,35 @@ func TestLoad_EndpointsJSONFillsDefaults(t *testing.T) {
 	}
 	if cfg.GrokEndpoints[1].Model != "grok-3-mini" {
 		t.Errorf("default Model = %q, want grok-3-mini", cfg.GrokEndpoints[1].Model)
+	}
+}
+
+func TestLoad_EndpointsJSONNormalizesBaseURL(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("GROK_ENDPOINTS_JSON", `[
+		{"name":"root","baseURL":"https://example.com","apiKey":"k1"},
+		{"name":"slash","baseURL":"https://example.org/","apiKey":"k2"},
+		{"name":"already","baseURL":"https://example.net/v1","apiKey":"k3"}
+	]`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	got := []string{
+		cfg.GrokEndpoints[0].BaseURL,
+		cfg.GrokEndpoints[1].BaseURL,
+		cfg.GrokEndpoints[2].BaseURL,
+	}
+	want := []string{
+		"https://example.com/v1",
+		"https://example.org/v1",
+		"https://example.net/v1",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("BaseURL[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
@@ -254,6 +285,175 @@ func TestLoad_DefaultXDGFile(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultAppConfigFile(t *testing.T) {
+	resetConfigEnv(t)
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "grok-search")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{
+		"grokEndpoints": [
+			{"name":"app","baseURL":"https://app","apiKey":"ka","model":"grok-4.20-fast","sendSearchFlag":false}
+		],
+		"tavily": {
+			"apiURL": "https://tavily.example",
+			"apiKey": "tvly-file",
+			"enabled": false
+		},
+		"jina": {
+			"apiURL": "https://jina.example",
+			"apiKey": "jina-file"
+		},
+		"debug": true,
+		"logLevel": "DEBUG",
+		"grokPoolTimeoutSec": 45
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].Name != "app" {
+		t.Fatalf("loaded endpoints = %+v", cfg.GrokEndpoints)
+	}
+	if cfg.GrokEndpoints[0].BaseURL != "https://app/v1" {
+		t.Errorf("BaseURL = %q, want normalized /v1", cfg.GrokEndpoints[0].BaseURL)
+	}
+	if cfg.TavilyAPIURL != "https://tavily.example" || cfg.TavilyAPIKey != "tvly-file" || cfg.TavilyEnabled {
+		t.Errorf("tavily config = url:%q key:%q enabled:%v", cfg.TavilyAPIURL, cfg.TavilyAPIKey, cfg.TavilyEnabled)
+	}
+	if cfg.JinaAPIURL != "https://jina.example" || cfg.JinaAPIKey != "jina-file" {
+		t.Errorf("jina config = url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)
+	}
+	if !cfg.Debug || cfg.LogLevel != "DEBUG" || cfg.GrokPoolTimeout != 45*time.Second {
+		t.Errorf("general config = debug:%v log:%q timeout:%v", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout)
+	}
+}
+
+func TestLoad_DefaultAppConfigSupportsEndpointsAlias(t *testing.T) {
+	resetConfigEnv(t)
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "grok-search")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"endpoints":[{"name":"alias","baseURL":"https://alias/v1","apiKey":"ka"}]}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].Name != "alias" {
+		t.Errorf("loaded endpoints = %+v", cfg.GrokEndpoints)
+	}
+}
+
+func TestLoad_DefaultAppConfigWithoutEndpointsFallsBackToEndpointsFile(t *testing.T) {
+	resetConfigEnv(t)
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "grok-search")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	appBody := `{"tavily":{"apiKey":"tvly-file","enabled":true}}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(appBody), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	endpointsBody := `[{"name":"legacy","baseURL":"https://legacy/v1","apiKey":"kl"}]`
+	if err := os.WriteFile(filepath.Join(cfgDir, "endpoints.json"), []byte(endpointsBody), 0o644); err != nil {
+		t.Fatalf("write endpoints: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].Name != "legacy" {
+		t.Errorf("loaded endpoints = %+v", cfg.GrokEndpoints)
+	}
+	if cfg.TavilyAPIKey != "tvly-file" {
+		t.Errorf("TavilyAPIKey = %q, want tvly-file", cfg.TavilyAPIKey)
+	}
+}
+
+func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
+	resetConfigEnv(t)
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "grok-search")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{
+		"grokEndpoints": [{"name":"file","baseURL":"https://file/v1","apiKey":"kf"}],
+		"tavily": {"apiURL":"https://file-tavily","apiKey":"tvly-file","enabled":true},
+		"jina": {"apiURL":"https://file-jina","apiKey":"jina-file"},
+		"debug": true,
+		"logLevel": "DEBUG",
+		"grokPoolTimeoutSec": 45
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"env","baseURL":"https://env/v1","apiKey":"ke"}]`)
+	t.Setenv("TAVILY_API_URL", "https://env-tavily")
+	t.Setenv("TAVILY_API_KEY", "tvly-env")
+	t.Setenv("TAVILY_ENABLED", "false")
+	t.Setenv("JINA_API_URL", "https://env-jina")
+	t.Setenv("JINA_API_KEY", "jina-env")
+	t.Setenv("GROK_DEBUG", "false")
+	t.Setenv("GROK_LOG_LEVEL", "WARN")
+	t.Setenv("GROK_POOL_TIMEOUT_SEC", "10")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.GrokEndpoints[0].Name != "env" {
+		t.Errorf("endpoint name = %q, want env", cfg.GrokEndpoints[0].Name)
+	}
+	if cfg.TavilyAPIURL != "https://env-tavily" || cfg.TavilyAPIKey != "tvly-env" || cfg.TavilyEnabled {
+		t.Errorf("tavily env override failed: url:%q key:%q enabled:%v", cfg.TavilyAPIURL, cfg.TavilyAPIKey, cfg.TavilyEnabled)
+	}
+	if cfg.JinaAPIURL != "https://env-jina" || cfg.JinaAPIKey != "jina-env" {
+		t.Errorf("jina env override failed: url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)
+	}
+	if cfg.Debug || cfg.LogLevel != "WARN" || cfg.GrokPoolTimeout != 10*time.Second {
+		t.Errorf("general env override failed: debug:%v log:%q timeout:%v", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout)
+	}
+}
+
+func TestLoad_DefaultAppConfigInvalidJSONErrors(t *testing.T) {
+	resetConfigEnv(t)
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "grok-search")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte("not json"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse ") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestLoad_DefaultHomeFile(t *testing.T) {
 	resetConfigEnv(t)
 	home := t.TempDir()
@@ -321,5 +521,50 @@ func TestLoad_EnvOverridesDefaultFile(t *testing.T) {
 	}
 	if cfg.GrokEndpoints[0].BaseURL != "https://env/v1" {
 		t.Errorf("env should override default file, got BaseURL=%q", cfg.GrokEndpoints[0].BaseURL)
+	}
+}
+
+func TestLoad_PoolTimeout(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("GROK_API_URL", "https://x/v1")
+	t.Setenv("GROK_API_KEY", "k")
+	t.Setenv("GROK_POOL_TIMEOUT_SEC", "45")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.GrokPoolTimeout != 45*time.Second {
+		t.Errorf("GrokPoolTimeout = %v, want 45s", cfg.GrokPoolTimeout)
+	}
+}
+
+func TestLoad_PoolTimeoutInvalidIgnored(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("GROK_API_URL", "https://x/v1")
+	t.Setenv("GROK_API_KEY", "k")
+	t.Setenv("GROK_POOL_TIMEOUT_SEC", "abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.GrokPoolTimeout != 0 {
+		t.Errorf("GrokPoolTimeout = %v, want 0 (invalid input ignored)", cfg.GrokPoolTimeout)
+	}
+}
+
+func TestLoad_PoolTimeoutZeroDisabled(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("GROK_API_URL", "https://x/v1")
+	t.Setenv("GROK_API_KEY", "k")
+	t.Setenv("GROK_POOL_TIMEOUT_SEC", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.GrokPoolTimeout != 0 {
+		t.Errorf("GrokPoolTimeout = %v, want 0", cfg.GrokPoolTimeout)
 	}
 }

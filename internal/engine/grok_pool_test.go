@@ -2,12 +2,14 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func newPoolMock(t *testing.T, status int, body string) *GrokClient {
@@ -115,6 +117,43 @@ func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	}
 }
 
+func TestGrokPool_SearchWithModelOverridesPerRequest(t *testing.T) {
+	var gotModel string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		gotModel = body.Model
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"override ok"}}]}`))
+	}))
+	defer ts.Close()
+
+	pool := NewGrokPool([]GrokEndpoint{{
+		Name:    "primary",
+		BaseURL: ts.URL,
+		APIKey:  "k",
+		Model:   "configured-model",
+	}})
+
+	res, err := pool.SearchWithModel(context.Background(), "q", "override-model")
+	if err != nil {
+		t.Fatalf("SearchWithModel failed: %v", err)
+	}
+	if res.EndpointModel != "override-model" {
+		t.Fatalf("EndpointModel = %q, want override-model", res.EndpointModel)
+	}
+	if gotModel != "override-model" {
+		t.Fatalf("request model = %q, want override-model", gotModel)
+	}
+	if pool.Clients()[0].Model != "configured-model" {
+		t.Fatalf("pool client was mutated: %q", pool.Clients()[0].Model)
+	}
+}
+
 // TestPool_PerEndpointRetriesBeforeFallback verifies the layered retry policy:
 // when a primary endpoint serves a retryable status (here 503), the per-client
 // retry loop attempts MaxAttempts=3 times against it before the pool moves on
@@ -160,5 +199,74 @@ func TestPool_PerEndpointRetriesBeforeFallback(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&secondaryCalls); got != 1 {
 		t.Fatalf("expected secondary to be hit once, got %d", got)
+	}
+}
+
+// TestPool_OverallTimeoutStopsEarly verifies that when the GrokPool's
+// OverallTimeout fires while the primary endpoint is still in flight, the pool
+// surfaces a deadline error and never falls through to the next endpoint.
+func TestPool_OverallTimeoutStopsEarly(t *testing.T) {
+	var primaryHits, secondaryHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&primaryHits, 1)
+		// Keep the endpoint slow enough for the pool deadline to fire, but do
+		// not block forever: httptest.Server.Close waits for active handlers.
+		time.Sleep(200 * time.Millisecond)
+	}))
+	t.Cleanup(primary.Close)
+
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondaryHits, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	t.Cleanup(secondary.Close)
+
+	primaryClient := NewGrokClient(primary.URL, "k", "m")
+	primaryClient.Name = "primary"
+	primaryClient.SendSearchFlag = false
+	primaryClient.RetryConfig = RetryConfig{MaxAttempts: 1, Jitter: false}
+
+	secondaryClient := NewGrokClient(secondary.URL, "k", "m")
+	secondaryClient.Name = "secondary"
+	secondaryClient.SendSearchFlag = false
+	secondaryClient.RetryConfig = RetryConfig{MaxAttempts: 1, Jitter: false}
+
+	pool := &GrokPool{
+		clients:        []*GrokClient{primaryClient, secondaryClient},
+		OverallTimeout: 50 * time.Millisecond,
+	}
+
+	start := time.Now()
+	_, err := pool.Search(context.Background(), "q")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error after deadline, got nil")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("Search took %v, expected to abort well before 500ms", elapsed)
+	}
+	if got := atomic.LoadInt32(&primaryHits); got != 1 {
+		t.Errorf("primary hits = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&secondaryHits); got != 0 {
+		t.Errorf("secondary should not be called after pool deadline, got hits=%d", got)
+	}
+}
+
+// TestPool_OverallTimeoutZeroDisabled verifies that the legacy behavior
+// (no deadline) is preserved when OverallTimeout is left at its zero value.
+func TestPool_OverallTimeoutZeroDisabled(t *testing.T) {
+	good := newPoolMock(t, http.StatusOK, `{"choices":[{"message":{"content":"ok"}}]}`)
+	good.Name = "good"
+	pool := &GrokPool{clients: []*GrokClient{good}} // OverallTimeout: 0
+
+	res, err := pool.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Errorf("Content = %q", res.Content)
 	}
 }

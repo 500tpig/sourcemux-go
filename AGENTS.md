@@ -38,6 +38,34 @@ go mod tidy
 go build -o grok-search . && ./grok-search
 ```
 
+## 运行模式
+
+一个二进制，两种模式：
+
+1. **stdio MCP server**（默认）— `./grok-search`，给 Claude Code / Cherry Studio / Codex 等 MCP 客户端用。
+2. **CLI 模式** — `./grok-search cli <subcommand>`，给脚本、其它 agent、或想直接调一下的人类用。和 MCP 模式共用同一份 engine 代码（`internal/engine/*`），不走 MCP 协议。
+
+CLI 子命令：
+
+| 命令 | 说明 |
+|------|------|
+| `search <query>` | Grok 池搜索（Tavily 兑底）。flags: `--platform`, `--model`, `--timeout`, `--json` |
+| `fetch <url>` | Jina Reader 抓取（Tavily Extract 兑底）。flags: `--timeout`, `--json` |
+| `map <url>` | Tavily Map 站点映射，需要 `TAVILY_API_KEY`。flags: `--max-depth`, `--max-breadth`, `--limit`, `--timeout`, `--json` |
+| `probe` | 列出每个 Grok 端点 + `/models` 探活 + Tavily/Jina 状态。flags: `--list-timeout`, `--preview`, `--json` |
+| `plan <query>` | 离线生成多步搜索计划（不调网络）。flags: `--depth`(quick/standard/deep), `--platform` |
+
+示例：
+
+```bash
+./grok-search cli probe --json
+./grok-search cli search "X 上 grok 4.20 的最新评价" --platform Twitter --json
+./grok-search cli fetch "https://example.com/article" --json
+./grok-search cli plan "调研主题" --depth deep
+```
+
+CLI 用同样的配置链（env > `~/.config/grok-search/config.json` > 旧版 `endpoints.json`），所以 MCP 模式调好了 CLI 也能直接用。flag 支持任意位置（`cli search "q" --platform X` 和 `cli search --platform X "q"` 都行）。
+
 ## 环境变量
 
 ### Grok 端点（三选一，按优先级生效）

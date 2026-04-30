@@ -28,6 +28,7 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engin
 		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to Tavily Search. Returns answer text, an engine label, and a session_id for source retrieval."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
+		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
 	)
 
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -42,11 +43,12 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engin
 		if platform, _ := req.Params.Arguments["platform"].(string); platform != "" {
 			query = fmt.Sprintf("[Focus: %s] %s", platform, query)
 		}
+		model, _ := req.Params.Arguments["model"].(string)
 
 		// 1) Try Grok pool.
 		var poolErr error
 		if pool != nil && pool.Len() > 0 {
-			res, err := pool.Search(ctx, query)
+			res, err := pool.SearchWithModel(ctx, query, model)
 			if err == nil && res != nil && res.Content != "" {
 				sessionID := uuid.New().String()
 				cache.CacheSources(sessionID, res.SourceURLs)
