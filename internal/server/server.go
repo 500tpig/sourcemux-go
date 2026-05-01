@@ -16,6 +16,7 @@ type App struct {
 	Cfg      *config.Config
 	GrokPool *engine.GrokPool
 	Tavily   *engine.TavilyClient
+	Exa      *engine.ExaClient
 	Jina     *engine.JinaClient
 
 	// Source cache: sessionID -> []string (URLs)
@@ -35,6 +36,9 @@ func Run(cfg *config.Config) error {
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
 		app.Tavily = engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 	}
+	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
+		app.Exa = engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
+	}
 	// Jina Reader works without a key — always enabled.
 	app.Jina = engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
 
@@ -44,8 +48,8 @@ func Run(cfg *config.Config) error {
 	)
 
 	// Register tools
-	tools.RegisterSearch(s, app.GrokPool, app.Tavily, app)
-	tools.RegisterFetch(s, app.Jina, app.Tavily)
+	tools.RegisterSearch(s, app.GrokPool, app.Exa, app.Tavily, app)
+	tools.RegisterFetch(s, app.Jina, app.Exa, app.Tavily)
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.GrokPool)

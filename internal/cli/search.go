@@ -75,7 +75,20 @@ func runSearch(args []string) int {
 		out.GrokError = gErr.Error()
 	}
 
-	// Tavily Search fallback.
+	// Exa Search fallback.
+	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
+		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
+		if eres, eerr := e.Search(ctx, query); eerr == nil && eres != nil {
+			out.Engine = "exa"
+			out.Fallback = "exa"
+			out.Content = engine.FormatExaSearchContent(eres)
+			out.SourceURLs = engine.ExaSearchSourceURLs(eres)
+			out.SourcesCount = len(out.SourceURLs)
+			return emitSearch(*jsonOut, out)
+		}
+	}
+
+	// Tavily Search final fallback.
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
 		t := engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 		if tres, terr := t.Search(ctx, query); terr == nil && tres != nil {

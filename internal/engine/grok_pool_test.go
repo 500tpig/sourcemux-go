@@ -91,6 +91,24 @@ func TestPool_EmptyContentTreatedAsFailure(t *testing.T) {
 	}
 }
 
+func TestPool_UnavailableContentTreatedAsFailure(t *testing.T) {
+	overloaded := newPoolMock(t, http.StatusOK, `{
+		"choices":[{"message":{"content":"This model is overloaded right now. Please try again shortly or pick a different model."}}]
+	}`)
+	overloaded.Name = "overloaded"
+	good := newPoolMock(t, http.StatusOK, `{"choices":[{"message":{"content":"hello"}}]}`)
+	good.Name = "good"
+	pool := &GrokPool{clients: []*GrokClient{overloaded, good}}
+
+	res, err := pool.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.EndpointName != "good" {
+		t.Fatalf("EndpointName = %q", res.EndpointName)
+	}
+}
+
 func TestPool_EmptyPool(t *testing.T) {
 	pool := &GrokPool{}
 	_, err := pool.Search(context.Background(), "q")

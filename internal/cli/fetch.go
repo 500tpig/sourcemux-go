@@ -49,7 +49,15 @@ func runFetch(args []string) int {
 		return emitFetch(*jsonOut, fetchOutput{Source: "jina", URL: url, Content: r.Content})
 	}
 
-	// Tavily Extract (fallback).
+	// Exa Contents (fallback).
+	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
+		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
+		if r, err := e.Extract(ctx, url); err == nil && r.Content != "" {
+			return emitFetch(*jsonOut, fetchOutput{Source: "exa", URL: r.URL, Content: r.Content})
+		}
+	}
+
+	// Tavily Extract (final fallback).
 	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
 		t := engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 		if r, err := t.Extract(ctx, url); err == nil && r.Content != "" {
@@ -57,7 +65,7 @@ func runFetch(args []string) int {
 		}
 	}
 
-	return reportFetchErr(*jsonOut, url, "both Jina Reader and Tavily Extract failed or are not configured")
+	return reportFetchErr(*jsonOut, url, "Jina Reader, Exa Contents, and Tavily Extract all failed or are not configured")
 }
 
 func emitFetch(asJSON bool, out fetchOutput) int {

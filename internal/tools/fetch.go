@@ -13,10 +13,11 @@ import (
 //
 // Routing order:
 //  1. Jina Reader  — free, lightweight, handles 90% of pages well.
-//  2. Tavily Extract — fallback for JS-heavy / Jina-blocked pages.
-func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tavily *engine.TavilyClient) {
+//  2. Exa Contents — paid/source-aware fallback when Jina misses.
+//  3. Tavily Extract — final fallback for JS-heavy / Jina-blocked pages.
+func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, exa *engine.ExaClient, tavily *engine.TavilyClient) {
 	tool := mcp.NewTool("web_fetch",
-		mcp.WithDescription("Fetch and extract web page content as Markdown. Uses Jina Reader (primary) with Tavily Extract fallback."),
+		mcp.WithDescription("Fetch and extract web page content as Markdown. Uses Jina Reader (primary), then Exa Contents, then Tavily Extract fallback."),
 		mcp.WithString("url", mcp.Required(), mcp.Description("Target URL to fetch")),
 	)
 
@@ -34,7 +35,15 @@ func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tavily *engi
 			}
 		}
 
-		// Fallback to Tavily Extract.
+		// Fallback to Exa Contents.
+		if exa != nil {
+			result, err := exa.Extract(ctx, url)
+			if err == nil && result.Content != "" {
+				return mcp.NewToolResultText(fmt.Sprintf("Source: Exa Contents\nURL: %s\n\n%s", result.URL, result.Content)), nil
+			}
+		}
+
+		// Final fallback to Tavily Extract.
 		if tavily != nil {
 			result, err := tavily.Extract(ctx, url)
 			if err == nil && result.Content != "" {
@@ -42,6 +51,6 @@ func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tavily *engi
 			}
 		}
 
-		return mcp.NewToolResultError("both Jina Reader and Tavily Extract failed or are not configured"), nil
+		return mcp.NewToolResultError("Jina Reader, Exa Contents, and Tavily Extract all failed or are not configured"), nil
 	})
 }

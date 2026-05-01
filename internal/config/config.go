@@ -28,6 +28,11 @@ type Config struct {
 	TavilyAPIKey  string
 	TavilyEnabled bool
 
+	// Exa — source-first search fallback + web_fetch extraction fallback.
+	ExaAPIURL  string
+	ExaAPIKey  string
+	ExaEnabled bool
+
 	// Jina Reader — primary web fetch (free, no key needed).
 	JinaAPIURL string
 	JinaAPIKey string
@@ -47,6 +52,7 @@ type fileConfig struct {
 	Endpoints     []engine.GrokEndpoint `json:"endpoints"`
 
 	Tavily serviceFileConfig `json:"tavily"`
+	Exa    serviceFileConfig `json:"exa"`
 	Jina   serviceFileConfig `json:"jina"`
 
 	Debug              *bool  `json:"debug"`
@@ -82,6 +88,9 @@ func Load() (*Config, error) {
 		TavilyAPIURL:    envOrFile("TAVILY_API_URL", fileCfg.tavilyAPIURL(), "https://api.tavily.com"),
 		TavilyAPIKey:    envOrFile("TAVILY_API_KEY", fileCfg.tavilyAPIKey(), ""),
 		TavilyEnabled:   boolEnvOrFile("TAVILY_ENABLED", fileCfg.tavilyEnabled(), true),
+		ExaAPIURL:       envOrFile("EXA_API_URL", fileCfg.exaAPIURL(), "https://api.exa.ai"),
+		ExaAPIKey:       envOrFile("EXA_API_KEY", fileCfg.exaAPIKey(), ""),
+		ExaEnabled:      boolEnvOrFile("EXA_ENABLED", fileCfg.exaEnabled(), true),
 		JinaAPIURL:      envOrFile("JINA_API_URL", fileCfg.jinaAPIURL(), "https://r.jina.ai"),
 		JinaAPIKey:      envOrFile("JINA_API_KEY", fileCfg.jinaAPIKey(), ""),
 		Debug:           boolEnvOrFile("GROK_DEBUG", fileCfg.debug(), false),
@@ -226,6 +235,12 @@ func normalizeEndpoints(eps []engine.GrokEndpoint) ([]engine.GrokEndpoint, error
 		if ep.Model == "" {
 			eps[i].Model = "grok-3-mini"
 		}
+		switch ep.APIType {
+		case "", "chat", "responses":
+			// valid
+		default:
+			return nil, fmt.Errorf("endpoint #%d (name=%q) has invalid apiType %q: must be \"\" (or \"chat\") or \"responses\"", i, ep.Name, ep.APIType)
+		}
 	}
 	return eps, nil
 }
@@ -315,6 +330,27 @@ func (c *fileConfig) tavilyEnabled() *bool {
 		return nil
 	}
 	return c.Tavily.Enabled
+}
+
+func (c *fileConfig) exaAPIURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.Exa.APIURL
+}
+
+func (c *fileConfig) exaAPIKey() string {
+	if c == nil {
+		return ""
+	}
+	return c.Exa.APIKey
+}
+
+func (c *fileConfig) exaEnabled() *bool {
+	if c == nil {
+		return nil
+	}
+	return c.Exa.Enabled
 }
 
 func (c *fileConfig) jinaAPIURL() string {

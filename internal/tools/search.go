@@ -21,11 +21,13 @@ type SourceCacher interface {
 //
 // Routing order:
 //  1. Grok pool (each endpoint in priority order) — primary AI web search.
-//  2. Tavily Search                               — fallback when every Grok
+//  2. Exa Search                                 — source-first fallback.
+//  3. Tavily Search                              — final fallback when every
+//     previous engine fails.
 //     endpoint either errors or returns empty content.
-func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engine.TavilyClient, cache SourceCacher) {
+func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, exa *engine.ExaClient, tavily *engine.TavilyClient, cache SourceCacher) {
 	tool := mcp.NewTool("web_search",
-		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to Tavily Search. Returns answer text, an engine label, and a session_id for source retrieval."),
+		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to Exa Search and Tavily Search. Returns answer/source text, an engine label, and a session_id for source retrieval."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
@@ -62,7 +64,14 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engin
 			poolErr = err
 		}
 
-		// 2) Fallback to Tavily Search.
+		// 2) Fallback to Exa Search.
+		if exa != nil {
+			if eres, eerr := exa.Search(ctx, query); eerr == nil {
+				return mcp.NewToolResultText(formatExaResponse(eres, poolErr, cache)), nil
+			}
+		}
+
+		// 3) Fallback to Tavily Search.
 		if tavily != nil {
 			if tres, terr := tavily.Search(ctx, query); terr == nil {
 				return mcp.NewToolResultText(formatTavilyResponse(tres, poolErr, cache)), nil
@@ -74,6 +83,24 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tavily *engin
 		}
 		return mcp.NewToolResultError("search returned empty result and no fallback configured"), nil
 	})
+}
+
+// formatExaResponse renders Exa Search results in the same envelope as the
+// Grok branch and registers source URLs in the session cache.
+func formatExaResponse(res *engine.ExaSearchResult, grokErr error, cache SourceCacher) string {
+	sessionID := uuid.New().String()
+	urls := engine.ExaSearchSourceURLs(res)
+	cache.CacheSources(sessionID, urls)
+
+	var sb strings.Builder
+	if grokErr != nil {
+		fmt.Fprintf(&sb, "engine: Exa Search (Grok pool fallback: %v)\n", grokErr)
+	} else {
+		sb.WriteString("engine: Exa Search (no Grok endpoint configured)\n")
+	}
+	fmt.Fprintf(&sb, "session_id: %s\nsources_count: %d\n\n", sessionID, len(urls))
+	sb.WriteString(engine.FormatExaSearchContent(res))
+	return sb.String()
 }
 
 // formatTavilyResponse renders a Tavily Search result in the same shape as the

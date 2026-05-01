@@ -17,6 +17,7 @@ func resetConfigEnv(t *testing.T) {
 		"GROK_ENDPOINTS_JSON", "GROK_ENDPOINTS_FILE",
 		"GROK_API_URL", "GROK_API_KEY", "GROK_NAME", "GROK_MODEL", "GROK_SEND_SEARCH_FLAG",
 		"TAVILY_API_URL", "TAVILY_API_KEY", "TAVILY_ENABLED",
+		"EXA_API_URL", "EXA_API_KEY", "EXA_ENABLED",
 		"JINA_API_URL", "JINA_API_KEY",
 		"GROK_DEBUG", "GROK_LOG_LEVEL",
 		"GROK_POOL_TIMEOUT_SEC",
@@ -237,6 +238,12 @@ func TestLoad_DefaultBaseURLs(t *testing.T) {
 	if cfg.TavilyAPIURL != "https://api.tavily.com" {
 		t.Errorf("default TavilyAPIURL = %q", cfg.TavilyAPIURL)
 	}
+	if cfg.ExaAPIURL != "https://api.exa.ai" {
+		t.Errorf("default ExaAPIURL = %q", cfg.ExaAPIURL)
+	}
+	if !cfg.ExaEnabled {
+		t.Error("default ExaEnabled = false, want true")
+	}
 	if cfg.JinaAPIURL != "https://r.jina.ai" {
 		t.Errorf("default JinaAPIURL = %q", cfg.JinaAPIURL)
 	}
@@ -301,6 +308,11 @@ func TestLoad_DefaultAppConfigFile(t *testing.T) {
 			"apiKey": "tvly-file",
 			"enabled": false
 		},
+		"exa": {
+			"apiURL": "https://exa.example",
+			"apiKey": "exa-file",
+			"enabled": false
+		},
 		"jina": {
 			"apiURL": "https://jina.example",
 			"apiKey": "jina-file"
@@ -326,6 +338,9 @@ func TestLoad_DefaultAppConfigFile(t *testing.T) {
 	}
 	if cfg.TavilyAPIURL != "https://tavily.example" || cfg.TavilyAPIKey != "tvly-file" || cfg.TavilyEnabled {
 		t.Errorf("tavily config = url:%q key:%q enabled:%v", cfg.TavilyAPIURL, cfg.TavilyAPIKey, cfg.TavilyEnabled)
+	}
+	if cfg.ExaAPIURL != "https://exa.example" || cfg.ExaAPIKey != "exa-file" || cfg.ExaEnabled {
+		t.Errorf("exa config = url:%q key:%q enabled:%v", cfg.ExaAPIURL, cfg.ExaAPIKey, cfg.ExaEnabled)
 	}
 	if cfg.JinaAPIURL != "https://jina.example" || cfg.JinaAPIKey != "jina-file" {
 		t.Errorf("jina config = url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)
@@ -396,6 +411,7 @@ func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
 	body := `{
 		"grokEndpoints": [{"name":"file","baseURL":"https://file/v1","apiKey":"kf"}],
 		"tavily": {"apiURL":"https://file-tavily","apiKey":"tvly-file","enabled":true},
+		"exa": {"apiURL":"https://file-exa","apiKey":"exa-file","enabled":true},
 		"jina": {"apiURL":"https://file-jina","apiKey":"jina-file"},
 		"debug": true,
 		"logLevel": "DEBUG",
@@ -409,6 +425,9 @@ func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
 	t.Setenv("TAVILY_API_URL", "https://env-tavily")
 	t.Setenv("TAVILY_API_KEY", "tvly-env")
 	t.Setenv("TAVILY_ENABLED", "false")
+	t.Setenv("EXA_API_URL", "https://env-exa")
+	t.Setenv("EXA_API_KEY", "exa-env")
+	t.Setenv("EXA_ENABLED", "false")
 	t.Setenv("JINA_API_URL", "https://env-jina")
 	t.Setenv("JINA_API_KEY", "jina-env")
 	t.Setenv("GROK_DEBUG", "false")
@@ -424,6 +443,9 @@ func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
 	}
 	if cfg.TavilyAPIURL != "https://env-tavily" || cfg.TavilyAPIKey != "tvly-env" || cfg.TavilyEnabled {
 		t.Errorf("tavily env override failed: url:%q key:%q enabled:%v", cfg.TavilyAPIURL, cfg.TavilyAPIKey, cfg.TavilyEnabled)
+	}
+	if cfg.ExaAPIURL != "https://env-exa" || cfg.ExaAPIKey != "exa-env" || cfg.ExaEnabled {
+		t.Errorf("exa env override failed: url:%q key:%q enabled:%v", cfg.ExaAPIURL, cfg.ExaAPIKey, cfg.ExaEnabled)
 	}
 	if cfg.JinaAPIURL != "https://env-jina" || cfg.JinaAPIKey != "jina-env" {
 		t.Errorf("jina env override failed: url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)

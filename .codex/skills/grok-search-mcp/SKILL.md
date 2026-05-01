@@ -9,9 +9,9 @@ Use the `grok-search` MCP server as the primary web-research tool when current o
 
 ## Tools
 
-- `web_search`: search via configured Grok endpoint pool, with Tavily fallback when configured.
+- `web_search`: search via configured Grok endpoint pool, with Exa then Tavily fallback when configured.
 - `get_sources`: retrieve source URLs from a prior `web_search` result using `session_id`.
-- `web_fetch`: fetch a page as Markdown via Jina Reader, with Tavily Extract fallback when configured.
+- `web_fetch`: fetch a page as Markdown via Jina Reader, with Exa Contents then Tavily Extract fallback when configured.
 - `web_map`: map URLs on a site via Tavily; requires `TAVILY_API_KEY`.
 - `get_config_info`: inspect configured endpoints and `/models` probe status.
 - `search_planning`: create a staged search plan for complex research before running searches/fetches.
@@ -36,6 +36,7 @@ The server needs at least one Grok-compatible endpoint:
 Optional keys:
 
 - `TAVILY_API_KEY` for search/fetch fallback and `web_map`
+- `EXA_API_KEY` for source-first search/fetch fallback
 - `JINA_API_KEY` for higher Jina Reader rate limits
 
 Never print full API keys. Use `get_config_info` for masked diagnostics.

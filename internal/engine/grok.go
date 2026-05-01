@@ -27,14 +27,18 @@ type GrokClient struct {
 	BaseURL string
 	APIKey  string
 	Model   string
-	// SendSearchFlag controls whether the request body includes "search": true.
-	// xAI native Grok requires the flag to enable web search; many grok2api
-	// proxies auto-search and either ignore or reject it, so it's opt-out.
+	// APIType selects the request/response protocol:
+	//   ""  or "chat"      → POST /v1/chat/completions  (default, all grok2api proxies)
+	//   "responses"        → POST /v1/responses         (xAI Responses API, native xAI endpoints)
+	APIType string
+	// SendSearchFlag controls web-search activation. The exact mechanism differs
+	// by APIType: "chat" sends "search":true; "responses" appends a web_search tool.
+	// Many grok2api proxies auto-search and either ignore or reject the flag, so
+	// it's configurable per-endpoint.
 	SendSearchFlag bool
 	HTTPClient     *http.Client
-	// RetryConfig governs httpDoWithRetry behaviour for the underlying chat
-	// completions request: 429/5xx + network errors are retried with capped
-	// exponential backoff, honouring any Retry-After header from upstream.
+	// RetryConfig governs httpDoWithRetry behaviour: 429/5xx + network errors are
+	// retried with capped exponential backoff, honouring any Retry-After header.
 	RetryConfig RetryConfig
 }
 
@@ -92,8 +96,17 @@ type grokRawResponse struct {
 	} `json:"search_results"`
 }
 
-// Search sends a query to the Grok chat completions endpoint.
+// Search sends a query to the configured Grok endpoint.
+// It routes to /v1/responses or /v1/chat/completions based on c.APIType.
 func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, error) {
+	if c.APIType == "responses" {
+		return c.searchViaResponses(ctx, query)
+	}
+	return c.searchViaChatCompletions(ctx, query)
+}
+
+// searchViaChatCompletions sends a query to the Grok chat completions endpoint.
+func (c *GrokClient) searchViaChatCompletions(ctx context.Context, query string) (*SearchResult, error) {
 	body := map[string]any{
 		"model": c.Model,
 		"messages": []map[string]string{
@@ -152,6 +165,143 @@ func (c *GrokClient) Search(ctx context.Context, query string) (*SearchResult, e
 		SourceURLs:   urls,
 		SourcesCount: len(urls),
 	}, nil
+}
+
+// responsesAPIResponse mirrors the xAI Responses API response schema.
+type responsesAPIResponse struct {
+	// Output is an ordered list of response items (messages, tool calls, reasoning).
+	Output []struct {
+		Type    string `json:"type"`
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+			// Annotations live on output_text content blocks.
+			Annotations []struct {
+				Type  string `json:"type"`
+				URL   string `json:"url"`
+				Title string `json:"title"`
+			} `json:"annotations"`
+		} `json:"content"`
+	} `json:"output"`
+	// Citations is the top-level fallback used when annotation-level citations
+	// are absent (mirrors native xAI chat completions behaviour).
+	Citations []string `json:"citations"`
+}
+
+// searchViaResponses sends a query to the xAI Responses API endpoint (/v1/responses).
+// It uses the OpenAI Responses API request/response shape which differs from
+// /v1/chat/completions: "input" instead of "messages", "output" instead of "choices".
+func (c *GrokClient) searchViaResponses(ctx context.Context, query string) (*SearchResult, error) {
+	body := map[string]any{
+		"model": c.Model,
+		"input": []map[string]string{
+			{"role": "user", "content": query},
+		},
+		"store": false,
+	}
+	if c.SendSearchFlag {
+		body["tools"] = []map[string]any{
+			{"type": "web_search"},
+		}
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	factory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.BaseURL+"/responses", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		return req, nil
+	}
+
+	resp, err := httpDoWithRetry(ctx, c.HTTPClient, factory, c.RetryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("grok responses request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("grok responses API %d: %s", resp.StatusCode, string(data))
+	}
+
+	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return nil, fmt.Errorf("grok responses API returned streaming response; streaming not yet supported for apiType=responses")
+	}
+
+	var raw responsesAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode responses API response: %w", err)
+	}
+
+	content, urls := extractResponsesAPIResult(&raw)
+
+	return &SearchResult{
+		Content:      content,
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
+	}, nil
+}
+
+// extractResponsesAPIResult extracts text content and source URLs from a
+// Responses API response. It concatenates all output_text blocks and collects
+// citations in this priority order:
+//  1. annotations on output_text content blocks
+//  2. top-level citations[]
+//  3. http(s) URLs scraped from the combined text (regex fallback)
+func extractResponsesAPIResult(raw *responsesAPIResponse) (string, []string) {
+	var textParts []string
+	var annotationURLs []string
+
+	for _, item := range raw.Output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, block := range item.Content {
+			if block.Type != "output_text" {
+				continue
+			}
+			if block.Text != "" {
+				textParts = append(textParts, block.Text)
+			}
+			for _, ann := range block.Annotations {
+				if ann.Type == "url_citation" && ann.URL != "" {
+					annotationURLs = append(annotationURLs, ann.URL)
+				}
+			}
+		}
+	}
+
+	content := strings.Join(textParts, "\n")
+
+	if len(annotationURLs) > 0 {
+		return content, dedupURLs(annotationURLs)
+	}
+	if len(raw.Citations) > 0 {
+		return content, dedupURLs(raw.Citations)
+	}
+	if content != "" {
+		matches := urlRegex.FindAllString(content, -1)
+		cleaned := make([]string, 0, len(matches))
+		for _, m := range matches {
+			m = strings.TrimRight(m, urlTrailingPunct)
+			if m != "" {
+				cleaned = append(cleaned, m)
+			}
+		}
+		if len(cleaned) > 0 {
+			return content, dedupURLs(cleaned)
+		}
+	}
+	return content, nil
 }
 
 type grokStreamChunk struct {

@@ -29,6 +29,9 @@ type probeOutput struct {
 	TavilyEnabled bool            `json:"tavily_enabled"`
 	TavilyAPIURL  string          `json:"tavily_api_url"`
 	TavilyKey     string          `json:"tavily_key_status"`
+	ExaEnabled    bool            `json:"exa_enabled"`
+	ExaAPIURL     string          `json:"exa_api_url"`
+	ExaKey        string          `json:"exa_key_status"`
 	JinaAPIURL    string          `json:"jina_api_url"`
 	JinaKey       string          `json:"jina_key_status"`
 	Debug         bool            `json:"debug"`
@@ -59,6 +62,9 @@ func runProbe(args []string) int {
 		TavilyEnabled: cfg.TavilyEnabled,
 		TavilyAPIURL:  cfg.TavilyAPIURL,
 		TavilyKey:     keyStatus(cfg.TavilyAPIKey),
+		ExaEnabled:    cfg.ExaEnabled,
+		ExaAPIURL:     cfg.ExaAPIURL,
+		ExaKey:        keyStatus(cfg.ExaAPIKey),
 		JinaAPIURL:    cfg.JinaAPIURL,
 		JinaKey:       keyStatus(cfg.JinaAPIKey),
 		Debug:         cfg.Debug,
@@ -102,6 +108,9 @@ func runProbe(args []string) int {
 	fmt.Printf("Tavily Enabled: %v\n", out.TavilyEnabled)
 	fmt.Printf("Tavily API URL: %s\n", out.TavilyAPIURL)
 	fmt.Printf("Tavily API Key: %s\n", out.TavilyKey)
+	fmt.Printf("Exa Enabled: %v\n", out.ExaEnabled)
+	fmt.Printf("Exa API URL: %s\n", out.ExaAPIURL)
+	fmt.Printf("Exa API Key: %s\n", out.ExaKey)
 	fmt.Printf("Jina Reader URL: %s\n", out.JinaAPIURL)
 	fmt.Printf("Jina API Key: %s\n", out.JinaKey)
 	fmt.Printf("Debug: %v\n", out.Debug)

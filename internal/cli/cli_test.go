@@ -102,6 +102,9 @@ func TestProbeOutputJSONShape(t *testing.T) {
 		TavilyEnabled: true,
 		TavilyAPIURL:  "https://api.tavily.com",
 		TavilyKey:     "abcd...wxyz",
+		ExaEnabled:    true,
+		ExaAPIURL:     "https://api.exa.ai",
+		ExaKey:        "exa_...1234",
 		JinaAPIURL:    "https://r.jina.ai",
 		JinaKey:       "(not set)",
 		Endpoints: []probeEndpoint{
@@ -115,6 +118,8 @@ func TestProbeOutputJSONShape(t *testing.T) {
 	got := string(b)
 	for _, want := range []string{
 		`"tavily_enabled":true`,
+		`"exa_enabled":true`,
+		`"exa_key_status":"exa_...1234"`,
 		`"jina_key_status":"(not set)"`,
 		`"endpoints":[`,
 		`"name":"e1"`,

@@ -9,9 +9,9 @@
 - 配置入口：`internal/config/config.go`
 - MCP 注册：`internal/server/server.go`
 - 工具：
-  - `web_search`：Grok endpoint pool -> Tavily Search 兜底
+  - `web_search`：Grok endpoint pool -> Exa Search -> Tavily Search 兜底
   - `get_sources`：按 `session_id` 取上次搜索来源
-  - `web_fetch`：Jina Reader -> Tavily Extract 兜底
+  - `web_fetch`：Jina Reader -> Exa Contents -> Tavily Extract 兜底
   - `web_map`：Tavily Map
   - `search_planning`：复杂研究前生成分阶段搜索计划
   - `get_config_info`：配置诊断和 endpoint `/models` 探活
@@ -63,6 +63,11 @@ chmod 600 ~/.config/grok-search/config.json
     "apiURL": "https://api.tavily.com",
     "enabled": true
   },
+  "exa": {
+    "apiKey": "exa-...",
+    "apiURL": "https://api.exa.ai",
+    "enabled": true
+  },
   "jina": {
     "apiKey": "jina_...",
     "apiURL": "https://r.jina.ai"
@@ -98,6 +103,10 @@ chmod 600 ~/.config/grok-search/config.json
     "apiKey": "tvly-...",
     "enabled": true
   },
+  "exa": {
+    "apiKey": "exa-...",
+    "enabled": true
+  },
   "jina": {
     "apiKey": "jina_..."
   },
@@ -109,6 +118,7 @@ chmod 600 ~/.config/grok-search/config.json
 
 ```bash
 export TAVILY_API_KEY="tvly-..."
+export EXA_API_KEY="exa-..."
 export JINA_API_KEY="jina_..."
 export GROK_POOL_TIMEOUT_SEC="45"
 ```
@@ -144,6 +154,10 @@ export GROK_POOL_TIMEOUT_SEC="45"
   ],
   "tavily": {
     "apiKey": "tvly-...",
+    "enabled": true
+  },
+  "exa": {
+    "apiKey": "exa-...",
     "enabled": true
   },
   "jina": {
@@ -251,6 +265,10 @@ claude mcp add-json grok-search '{
 ### `web_map` 不可用
 
 需要在 `config.json` 的 `tavily.apiKey` 或环境变量 `TAVILY_API_KEY` 中配置 Tavily key。未配置 Tavily 时，`web_search` 仍可用 Grok，`web_fetch` 仍可用 Jina。
+
+### Exa 不生效
+
+检查 `config.json` 的 `exa.apiKey` 或环境变量 `EXA_API_KEY`。`EXA_ENABLED=false` 会关闭 Exa。Exa 当前只作为 Grok 后、Tavily 前的 fallback，不会主动并行打多家搜索。
 
 ### 速度慢或多个 endpoint 叠加等待
 

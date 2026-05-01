@@ -295,3 +295,232 @@ func TestListModels_RetriesOn429ThenSucceeds(t *testing.T) {
 		t.Fatalf("calls = %d, want 2 (initial 429 + retry)", got)
 	}
 }
+
+// --- Responses API tests ---
+
+// newMockResponsesGrok creates a GrokClient with apiType="responses" pointed at a mock server.
+func newMockResponsesGrok(t *testing.T, status int, body string) *GrokClient {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewGrokClient(srv.URL, "test-key", "grok-4.20-reasoning")
+	c.APIType = "responses"
+	return c
+}
+
+func TestSearch_ResponsesAPI_Basic(t *testing.T) {
+	body := `{
+		"output": [
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{
+						"type": "output_text",
+						"text": "Grok 4.20 answer.",
+						"annotations": [
+							{"type":"url_citation","url":"https://a.example.com/1","title":"A1"},
+							{"type":"url_citation","url":"https://b.example.com/2","title":"B2"},
+							{"type":"url_citation","url":"https://a.example.com/1","title":"A1 dup"}
+						]
+					}
+				]
+			}
+		]
+	}`
+	c := newMockResponsesGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "Grok 4.20 answer." {
+		t.Fatalf("Content = %q", res.Content)
+	}
+	want := []string{"https://a.example.com/1", "https://b.example.com/2"}
+	if !reflect.DeepEqual(res.SourceURLs, want) {
+		t.Fatalf("SourceURLs = %v, want %v", res.SourceURLs, want)
+	}
+	if res.SourcesCount != 2 {
+		t.Fatalf("SourcesCount = %d, want 2", res.SourcesCount)
+	}
+}
+
+func TestSearch_ResponsesAPI_MultipleOutputBlocks(t *testing.T) {
+	body := `{
+		"output": [
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "output_text", "text": "Part one.", "annotations": [{"type":"url_citation","url":"https://src1.example.com"}]},
+					{"type": "output_text", "text": "Part two.", "annotations": [{"type":"url_citation","url":"https://src2.example.com"}]}
+				]
+			}
+		]
+	}`
+	c := newMockResponsesGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "Part one.\nPart two." {
+		t.Fatalf("Content = %q", res.Content)
+	}
+	want := []string{"https://src1.example.com", "https://src2.example.com"}
+	if !reflect.DeepEqual(res.SourceURLs, want) {
+		t.Fatalf("SourceURLs = %v, want %v", res.SourceURLs, want)
+	}
+}
+
+func TestSearch_ResponsesAPI_TopLevelCitationsFallback(t *testing.T) {
+	body := `{
+		"output": [
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [{"type": "output_text", "text": "Answer with no annotations."}]
+			}
+		],
+		"citations": ["https://cite1.example.com", "https://cite2.example.com"]
+	}`
+	c := newMockResponsesGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://cite1.example.com", "https://cite2.example.com"}
+	if !reflect.DeepEqual(res.SourceURLs, want) {
+		t.Fatalf("SourceURLs = %v, want %v", res.SourceURLs, want)
+	}
+}
+
+func TestSearch_ResponsesAPI_RegexFallback(t *testing.T) {
+	body := `{
+		"output": [
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [{"type": "output_text", "text": "See https://fallback.example.com/page for details."}]
+			}
+		]
+	}`
+	c := newMockResponsesGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res.SourceURLs, []string{"https://fallback.example.com/page"}) {
+		t.Fatalf("SourceURLs = %v", res.SourceURLs)
+	}
+}
+
+func TestSearch_ResponsesAPI_SkipsNonMessageOutput(t *testing.T) {
+	body := `{
+		"output": [
+			{"type": "web_search_call", "content": []},
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "output_text", "text": "Final answer.", "annotations": [{"type":"url_citation","url":"https://real.example.com"}]}
+				]
+			}
+		]
+	}`
+	c := newMockResponsesGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "Final answer." {
+		t.Fatalf("Content = %q", res.Content)
+	}
+	if !reflect.DeepEqual(res.SourceURLs, []string{"https://real.example.com"}) {
+		t.Fatalf("SourceURLs = %v", res.SourceURLs)
+	}
+}
+
+func TestSearch_ResponsesAPI_SendsSearchTool(t *testing.T) {
+	var receivedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf, _ := io.ReadAll(r.Body)
+		receivedBody = string(buf)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"x"}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "k", "m")
+	c.APIType = "responses"
+	c.SendSearchFlag = true
+	if _, err := c.Search(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(receivedBody, `"web_search"`) {
+		t.Fatalf("expected web_search tool in body; got %s", receivedBody)
+	}
+	if strings.Contains(receivedBody, `"search":true`) {
+		t.Fatalf("chat-completions search flag should not appear in responses API body; got %s", receivedBody)
+	}
+	if !strings.Contains(receivedBody, `"store":false`) {
+		t.Fatalf("store:false should be set; got %s", receivedBody)
+	}
+}
+
+func TestSearch_ResponsesAPI_RoutesToCorrectEndpoint(t *testing.T) {
+	var calledPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"x"}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "k", "m")
+	c.APIType = "responses"
+	c.SendSearchFlag = false
+	if _, err := c.Search(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	if calledPath != "/responses" {
+		t.Fatalf("expected path /responses, got %s", calledPath)
+	}
+}
+
+func TestSearch_ResponsesAPI_HTTPError(t *testing.T) {
+	c := newMockResponsesGrok(t, http.StatusUnauthorized, `{"error":"bad key"}`)
+	_, err := c.Search(context.Background(), "q")
+	if err == nil {
+		t.Fatal("expected error for 401")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("error should contain status 401, got %v", err)
+	}
+}
+
+func TestSearch_ResponsesAPI_SSEReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("data: {}\n\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "k", "m")
+	c.APIType = "responses"
+	c.SendSearchFlag = false
+	_, err := c.Search(context.Background(), "q")
+	if err == nil {
+		t.Fatal("expected error for SSE response in responses API mode")
+	}
+	if !strings.Contains(err.Error(), "streaming") {
+		t.Fatalf("error should mention streaming, got %v", err)
+	}
+}
+

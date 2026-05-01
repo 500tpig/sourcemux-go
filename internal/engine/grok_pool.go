@@ -16,6 +16,10 @@ type GrokEndpoint struct {
 	APIKey         string `json:"apiKey"`
 	Model          string `json:"model"`
 	SendSearchFlag bool   `json:"sendSearchFlag"`
+	// APIType selects the request protocol. Valid values:
+	//   "" or "chat"   → POST /v1/chat/completions (default)
+	//   "responses"    → POST /v1/responses        (xAI Responses API)
+	APIType string `json:"apiType"`
 }
 
 // GrokPool routes a search through an ordered list of Grok endpoints,
@@ -38,6 +42,7 @@ func NewGrokPool(endpoints []GrokEndpoint) *GrokPool {
 			c.Name = ep.Name
 		}
 		c.SendSearchFlag = ep.SendSearchFlag
+		c.APIType = ep.APIType
 		clients = append(clients, c)
 	}
 	return &GrokPool{clients: clients}
@@ -107,6 +112,10 @@ func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*P
 			errs = append(errs, fmt.Sprintf("%s: empty content", active.Name))
 			continue
 		}
+		if res.SourcesCount == 0 && looksLikeGrokUnavailableContent(res.Content) {
+			errs = append(errs, fmt.Sprintf("%s: unavailable response: %s", active.Name, strings.TrimSpace(res.Content)))
+			continue
+		}
 		return &PoolSearchResult{
 			SearchResult:  res,
 			EndpointName:  active.Name,
@@ -115,4 +124,25 @@ func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*P
 	}
 	return nil, fmt.Errorf("all %d grok endpoints failed: %s",
 		len(p.clients), strings.Join(errs, "; "))
+}
+
+func looksLikeGrokUnavailableContent(content string) bool {
+	s := strings.ToLower(strings.TrimSpace(content))
+	if s == "" || len([]rune(s)) > 400 {
+		return false
+	}
+	needles := []string{
+		"this model is overloaded",
+		"model is overloaded",
+		"please try again shortly",
+		"temporarily unavailable",
+		"only super grok users",
+		"supergrok users",
+	}
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }
