@@ -75,6 +75,20 @@ func runSearch(args []string) int {
 		out.GrokError = gErr.Error()
 	}
 
+	// TinyFish Search fallback.
+	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
+		tf := engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
+		if tres, terr := tf.Search(ctx, engine.TinyFishSearchRequest{Query: query}); terr == nil && tres != nil {
+			out.Engine = "tinyfish"
+			out.EndpointName = tres.KeyName
+			out.Fallback = "tinyfish"
+			out.Content = engine.FormatTinyFishSearchContent(tres.TinyFishSearchResponse)
+			out.SourceURLs = engine.TinyFishSearchSourceURLs(tres.TinyFishSearchResponse)
+			out.SourcesCount = len(out.SourceURLs)
+			return emitSearch(*jsonOut, out)
+		}
+	}
+
 	// Exa Search fallback.
 	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
 		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)

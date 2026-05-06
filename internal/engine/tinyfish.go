@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,8 +22,8 @@ const (
 )
 
 // TinyFishClient wraps TinyFish's REST Search, Fetch, and synchronous Agent APIs.
-// It is used only by the local benchmark CLI, not by production MCP routing.
 type TinyFishClient struct {
+	Name      string
 	APIKey    string
 	SearchURL string
 	FetchURL  string
@@ -63,6 +65,123 @@ type TinyFishSearchResult struct {
 	Title    string `json:"title"`
 	Snippet  string `json:"snippet"`
 	URL      string `json:"url"`
+}
+
+type TinyFishKey struct {
+	Name   string `json:"name"`
+	APIKey string `json:"apiKey"`
+}
+
+// TinyFishPool routes production Search/Fetch calls across configured keys.
+// Each request starts at a rotating key, then falls through the remaining keys
+// on upstream errors, rate limits, or empty provider results.
+type TinyFishPool struct {
+	mu      sync.Mutex
+	next    int
+	clients []*TinyFishClient
+}
+
+func NewTinyFishPool(keys []TinyFishKey, searchURL, fetchURL string) *TinyFishPool {
+	clients := make([]*TinyFishClient, 0, len(keys))
+	for i, key := range keys {
+		if strings.TrimSpace(key.APIKey) == "" {
+			continue
+		}
+		c := NewTinyFishClient(key.APIKey)
+		c.Name = key.Name
+		if c.Name == "" {
+			c.Name = fmt.Sprintf("key-%d", i)
+		}
+		if searchURL != "" {
+			c.SearchURL = searchURL
+		}
+		if fetchURL != "" {
+			c.FetchURL = fetchURL
+		}
+		clients = append(clients, c)
+	}
+	return &TinyFishPool{clients: clients}
+}
+
+func (p *TinyFishPool) Len() int {
+	if p == nil {
+		return 0
+	}
+	return len(p.clients)
+}
+
+func (p *TinyFishPool) Clients() []*TinyFishClient {
+	if p == nil {
+		return nil
+	}
+	return p.clients
+}
+
+type TinyFishPoolSearchResult struct {
+	*TinyFishSearchResponse
+	KeyName string
+}
+
+type TinyFishPoolFetchResult struct {
+	*TinyFishFetchResponse
+	KeyName string
+}
+
+func (p *TinyFishPool) Search(ctx context.Context, req TinyFishSearchRequest) (*TinyFishPoolSearchResult, error) {
+	clients := p.orderedClients()
+	if len(clients) == 0 {
+		return nil, errors.New("tinyfish pool is empty: no keys configured")
+	}
+	var errs []string
+	for _, c := range clients {
+		res, err := c.Search(ctx, req)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", c.Name, err))
+			continue
+		}
+		if res == nil || len(res.Results) == 0 {
+			errs = append(errs, fmt.Sprintf("%s: empty results", c.Name))
+			continue
+		}
+		return &TinyFishPoolSearchResult{TinyFishSearchResponse: res, KeyName: c.Name}, nil
+	}
+	return nil, fmt.Errorf("all %d tinyfish keys failed: %s", len(clients), strings.Join(errs, "; "))
+}
+
+func (p *TinyFishPool) Fetch(ctx context.Context, req TinyFishFetchRequest) (*TinyFishPoolFetchResult, error) {
+	clients := p.orderedClients()
+	if len(clients) == 0 {
+		return nil, errors.New("tinyfish pool is empty: no keys configured")
+	}
+	var errs []string
+	for _, c := range clients {
+		res, err := c.Fetch(ctx, req)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", c.Name, err))
+			continue
+		}
+		if content := firstTinyFishFetchContent(res); content == "" {
+			errs = append(errs, fmt.Sprintf("%s: empty fetch result%s", c.Name, tinyFishFetchFailureSummary(res)))
+			continue
+		}
+		return &TinyFishPoolFetchResult{TinyFishFetchResponse: res, KeyName: c.Name}, nil
+	}
+	return nil, fmt.Errorf("all %d tinyfish keys failed: %s", len(clients), strings.Join(errs, "; "))
+}
+
+func (p *TinyFishPool) orderedClients() []*TinyFishClient {
+	if p == nil || len(p.clients) == 0 {
+		return nil
+	}
+	p.mu.Lock()
+	start := p.next % len(p.clients)
+	p.next = (p.next + 1) % len(p.clients)
+	p.mu.Unlock()
+
+	ordered := make([]*TinyFishClient, 0, len(p.clients))
+	ordered = append(ordered, p.clients[start:]...)
+	ordered = append(ordered, p.clients[:start]...)
+	return ordered
 }
 
 func (c *TinyFishClient) Search(ctx context.Context, req TinyFishSearchRequest) (*TinyFishSearchResponse, error) {
@@ -307,4 +426,84 @@ func TinyFishTextLength(raw json.RawMessage) int {
 		return len(s)
 	}
 	return len(raw)
+}
+
+func TinyFishFetchContent(res *TinyFishFetchResponse) string {
+	return firstTinyFishFetchContent(res)
+}
+
+func firstTinyFishFetchContent(res *TinyFishFetchResponse) string {
+	if res == nil || len(res.Results) == 0 {
+		return ""
+	}
+	raw := bytes.TrimSpace(res.Results[0].Text)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
+}
+
+func TinyFishSearchSourceURLs(res *TinyFishSearchResponse) []string {
+	if res == nil {
+		return nil
+	}
+	urls := make([]string, 0, len(res.Results))
+	for _, r := range res.Results {
+		if r.URL != "" {
+			urls = append(urls, r.URL)
+		}
+	}
+	return dedupURLs(urls)
+}
+
+func FormatTinyFishSearchContent(res *TinyFishSearchResponse) string {
+	if res == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("TinyFish returned source-first search results. Use get_sources/web_fetch for verification.\n\n")
+	for i, r := range res.Results {
+		title := r.Title
+		if title == "" {
+			title = r.URL
+		}
+		if title == "" {
+			title = fmt.Sprintf("Result %d", i+1)
+		}
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, title)
+		if r.URL != "" {
+			fmt.Fprintf(&sb, "   URL: %s\n", r.URL)
+		}
+		if r.SiteName != "" {
+			fmt.Fprintf(&sb, "   Site: %s\n", r.SiteName)
+		}
+		if snippet := strings.TrimSpace(r.Snippet); snippet != "" {
+			fmt.Fprintf(&sb, "   Snippet: %s\n", snippet)
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func tinyFishFetchFailureSummary(res *TinyFishFetchResponse) string {
+	if res == nil || len(res.Errors) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, e := range res.Errors {
+		code := e.Code
+		if code == "" {
+			code = e.Error
+		}
+		if code != "" {
+			parts = append(parts, code)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(parts, ", ")
 }

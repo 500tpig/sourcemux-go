@@ -19,6 +19,7 @@ func resetConfigEnv(t *testing.T) {
 		"TAVILY_API_URL", "TAVILY_API_KEY", "TAVILY_ENABLED",
 		"EXA_API_URL", "EXA_API_KEY", "EXA_ENABLED",
 		"JINA_API_URL", "JINA_API_KEY",
+		"TINYFISH_ENABLED", "TINYFISH_API_KEYS", "TINYFISH_API_KEY", "TINYFISH_KEY_NAMES", "TINYFISH_SEARCH_URL", "TINYFISH_FETCH_URL",
 		"GROK_DEBUG", "GROK_LOG_LEVEL",
 		"GROK_POOL_TIMEOUT_SEC",
 	} {
@@ -317,6 +318,15 @@ func TestLoad_DefaultAppConfigFile(t *testing.T) {
 			"apiURL": "https://jina.example",
 			"apiKey": "jina-file"
 		},
+		"tinyfish": {
+			"enabled": true,
+			"searchURL": "https://tinyfish-search.example",
+			"fetchURL": "https://tinyfish-fetch.example",
+			"keys": [
+				{"name": "tf-a", "apiKey": "tf-file-a"},
+				{"apiKey": "tf-file-b"}
+			]
+		},
 		"debug": true,
 		"logLevel": "DEBUG",
 		"grokPoolTimeoutSec": 45
@@ -344,6 +354,12 @@ func TestLoad_DefaultAppConfigFile(t *testing.T) {
 	}
 	if cfg.JinaAPIURL != "https://jina.example" || cfg.JinaAPIKey != "jina-file" {
 		t.Errorf("jina config = url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)
+	}
+	if !cfg.TinyFishEnabled || cfg.TinyFishSearchURL != "https://tinyfish-search.example" || cfg.TinyFishFetchURL != "https://tinyfish-fetch.example" {
+		t.Errorf("tinyfish config = enabled:%v search:%q fetch:%q", cfg.TinyFishEnabled, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
+	}
+	if len(cfg.TinyFishKeys) != 2 || cfg.TinyFishKeys[0].Name != "tf-a" || cfg.TinyFishKeys[1].Name != "key-1" {
+		t.Errorf("tinyfish keys = %+v", cfg.TinyFishKeys)
 	}
 	if !cfg.Debug || cfg.LogLevel != "DEBUG" || cfg.GrokPoolTimeout != 45*time.Second {
 		t.Errorf("general config = debug:%v log:%q timeout:%v", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout)
@@ -430,6 +446,11 @@ func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
 	t.Setenv("EXA_ENABLED", "false")
 	t.Setenv("JINA_API_URL", "https://env-jina")
 	t.Setenv("JINA_API_KEY", "jina-env")
+	t.Setenv("TINYFISH_ENABLED", "false")
+	t.Setenv("TINYFISH_API_KEYS", "tf-env-a, tf-env-b")
+	t.Setenv("TINYFISH_KEY_NAMES", "env-a, env-b")
+	t.Setenv("TINYFISH_SEARCH_URL", "https://env-tinyfish-search")
+	t.Setenv("TINYFISH_FETCH_URL", "https://env-tinyfish-fetch")
 	t.Setenv("GROK_DEBUG", "false")
 	t.Setenv("GROK_LOG_LEVEL", "WARN")
 	t.Setenv("GROK_POOL_TIMEOUT_SEC", "10")
@@ -449,6 +470,12 @@ func TestLoad_EnvOverridesDefaultAppConfig(t *testing.T) {
 	}
 	if cfg.JinaAPIURL != "https://env-jina" || cfg.JinaAPIKey != "jina-env" {
 		t.Errorf("jina env override failed: url:%q key:%q", cfg.JinaAPIURL, cfg.JinaAPIKey)
+	}
+	if cfg.TinyFishEnabled || cfg.TinyFishSearchURL != "https://env-tinyfish-search" || cfg.TinyFishFetchURL != "https://env-tinyfish-fetch" {
+		t.Errorf("tinyfish env override failed: enabled:%v search:%q fetch:%q", cfg.TinyFishEnabled, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
+	}
+	if len(cfg.TinyFishKeys) != 2 || cfg.TinyFishKeys[0].Name != "env-a" || cfg.TinyFishKeys[1].APIKey != "tf-env-b" {
+		t.Errorf("tinyfish env keys = %+v", cfg.TinyFishKeys)
 	}
 	if cfg.Debug || cfg.LogLevel != "WARN" || cfg.GrokPoolTimeout != 10*time.Second {
 		t.Errorf("general env override failed: debug:%v log:%q timeout:%v", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout)

@@ -31,6 +31,13 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 		sb.WriteString(fmt.Sprintf("\nExa API Key: %s", optionalKeyStatus(cfg.ExaAPIKey)))
 		sb.WriteString(fmt.Sprintf("\nJina Reader URL: %s", cfg.JinaAPIURL))
 		sb.WriteString(fmt.Sprintf("\nJina API Key: %s", optionalKeyStatus(cfg.JinaAPIKey)))
+		sb.WriteString(fmt.Sprintf("\nTinyFish Enabled: %v", cfg.TinyFishEnabled))
+		sb.WriteString(fmt.Sprintf("\nTinyFish Search URL: %s", cfg.TinyFishSearchURL))
+		sb.WriteString(fmt.Sprintf("\nTinyFish Fetch URL: %s", cfg.TinyFishFetchURL))
+		sb.WriteString(fmt.Sprintf("\nTinyFish Keys: %d configured", len(cfg.TinyFishKeys)))
+		for i, key := range cfg.TinyFishKeys {
+			sb.WriteString(fmt.Sprintf("\n    [%d] %s: %s", i+1, key.Name, maskKey(key.APIKey)))
+		}
 		sb.WriteString(fmt.Sprintf("\nDebug: %v", cfg.Debug))
 
 		sb.WriteString(fmt.Sprintf("\n\n=== Grok Endpoint Pool (%d configured, in priority order) ===", pool.Len()))

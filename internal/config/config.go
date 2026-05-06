@@ -37,6 +37,12 @@ type Config struct {
 	JinaAPIURL string
 	JinaAPIKey string
 
+	// TinyFish — browser-rendered Search/Fetch production fallback.
+	TinyFishEnabled   bool
+	TinyFishKeys      []engine.TinyFishKey
+	TinyFishSearchURL string
+	TinyFishFetchURL  string
+
 	// General
 	Debug    bool
 	LogLevel string
@@ -55,6 +61,8 @@ type fileConfig struct {
 	Exa    serviceFileConfig `json:"exa"`
 	Jina   serviceFileConfig `json:"jina"`
 
+	TinyFish tinyFishFileConfig `json:"tinyfish"`
+
 	Debug              *bool  `json:"debug"`
 	LogLevel           string `json:"logLevel"`
 	GrokPoolTimeoutSec *int   `json:"grokPoolTimeoutSec"`
@@ -64,6 +72,13 @@ type serviceFileConfig struct {
 	APIURL  string `json:"apiURL"`
 	APIKey  string `json:"apiKey"`
 	Enabled *bool  `json:"enabled"`
+}
+
+type tinyFishFileConfig struct {
+	Enabled   *bool                `json:"enabled"`
+	Keys      []engine.TinyFishKey `json:"keys"`
+	SearchURL string               `json:"searchURL"`
+	FetchURL  string               `json:"fetchURL"`
 }
 
 // Load reads environment variables and returns a validated Config.
@@ -93,6 +108,18 @@ func Load() (*Config, error) {
 		ExaEnabled:      boolEnvOrFile("EXA_ENABLED", fileCfg.exaEnabled(), true),
 		JinaAPIURL:      envOrFile("JINA_API_URL", fileCfg.jinaAPIURL(), "https://r.jina.ai"),
 		JinaAPIKey:      envOrFile("JINA_API_KEY", fileCfg.jinaAPIKey(), ""),
+		TinyFishEnabled: boolEnvOrFile("TINYFISH_ENABLED", fileCfg.tinyFishEnabled(), true),
+		TinyFishKeys:    loadTinyFishKeys(fileCfg),
+		TinyFishSearchURL: envOrFile(
+			"TINYFISH_SEARCH_URL",
+			fileCfg.tinyFishSearchURL(),
+			engine.DefaultTinyFishSearchURL,
+		),
+		TinyFishFetchURL: envOrFile(
+			"TINYFISH_FETCH_URL",
+			fileCfg.tinyFishFetchURL(),
+			engine.DefaultTinyFishFetchURL,
+		),
 		Debug:           boolEnvOrFile("GROK_DEBUG", fileCfg.debug(), false),
 		LogLevel:        envOrFile("GROK_LOG_LEVEL", fileCfg.logLevel(), "INFO"),
 		GrokPoolTimeout: parsePoolTimeout(fileCfg),
@@ -280,6 +307,61 @@ func boolEnvOrFile(key string, fileValue *bool, fallback bool) bool {
 	return fallback
 }
 
+func loadTinyFishKeys(fileCfg *fileConfig) []engine.TinyFishKey {
+	raw := os.Getenv("TINYFISH_API_KEYS")
+	if raw == "" {
+		raw = os.Getenv("TINYFISH_API_KEY")
+	}
+	if raw != "" {
+		keys := splitCSV(raw)
+		names := splitCSV(os.Getenv("TINYFISH_KEY_NAMES"))
+		out := make([]engine.TinyFishKey, 0, len(keys))
+		for i, key := range keys {
+			item := engine.TinyFishKey{APIKey: key}
+			if i < len(names) {
+				item.Name = names[i]
+			}
+			if item.Name == "" {
+				item.Name = fmt.Sprintf("env-%d", i)
+			}
+			out = append(out, item)
+		}
+		return normalizeTinyFishKeys(out)
+	}
+	if fileCfg == nil {
+		return nil
+	}
+	return normalizeTinyFishKeys(fileCfg.TinyFish.Keys)
+}
+
+func normalizeTinyFishKeys(keys []engine.TinyFishKey) []engine.TinyFishKey {
+	out := make([]engine.TinyFishKey, 0, len(keys))
+	for i, key := range keys {
+		key.APIKey = strings.TrimSpace(key.APIKey)
+		key.Name = strings.TrimSpace(key.Name)
+		if key.APIKey == "" {
+			continue
+		}
+		if key.Name == "" {
+			key.Name = fmt.Sprintf("key-%d", i)
+		}
+		out = append(out, key)
+	}
+	return out
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // parsePoolTimeout parses GROK_POOL_TIMEOUT_SEC into a time.Duration. An empty,
 // zero, or non-numeric value disables the cap (returns 0).
 func parsePoolTimeout(fileCfg *fileConfig) time.Duration {
@@ -365,6 +447,27 @@ func (c *fileConfig) jinaAPIKey() string {
 		return ""
 	}
 	return c.Jina.APIKey
+}
+
+func (c *fileConfig) tinyFishEnabled() *bool {
+	if c == nil {
+		return nil
+	}
+	return c.TinyFish.Enabled
+}
+
+func (c *fileConfig) tinyFishSearchURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.TinyFish.SearchURL
+}
+
+func (c *fileConfig) tinyFishFetchURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.TinyFish.FetchURL
 }
 
 func (c *fileConfig) debug() *bool {

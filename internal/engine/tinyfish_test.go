@@ -176,3 +176,96 @@ func TestTinyFishHTTPErrorAndJSONTextLength(t *testing.T) {
 		t.Fatalf("JSON text length = %d", got)
 	}
 }
+
+func TestTinyFishPoolFetchFallsBackAcrossKeys(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("X-API-Key"))
+		if r.Header.Get("X-API-Key") == "tf-limited" {
+			http.Error(w, `{"error":"rate limited","key":"tf-limited"}`, http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(TinyFishFetchResponse{
+			Results: []TinyFishFetchResult{{
+				URL:    "https://example.com",
+				Text:   json.RawMessage(`"fallback content"`),
+				Format: "markdown",
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	pool := NewTinyFishPool([]TinyFishKey{
+		{Name: "limited", APIKey: "tf-limited"},
+		{Name: "ok", APIKey: "tf-ok"},
+	}, srv.URL, srv.URL)
+
+	res, err := pool.Fetch(context.Background(), TinyFishFetchRequest{
+		URLs: []string{"https://example.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.KeyName != "ok" || TinyFishFetchContent(res.TinyFishFetchResponse) != "fallback content" {
+		t.Fatalf("result = %+v content=%q", res, TinyFishFetchContent(res.TinyFishFetchResponse))
+	}
+	if strings.Join(seen, ",") != "tf-limited,tf-ok" {
+		t.Fatalf("seen keys = %v", seen)
+	}
+}
+
+func TestTinyFishPoolSearchRotatesStartKey(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-API-Key")
+		seen = append(seen, key)
+		_ = json.NewEncoder(w).Encode(TinyFishSearchResponse{
+			Query: r.URL.Query().Get("query"),
+			Results: []TinyFishSearchResult{{
+				Position: 1,
+				Title:    key,
+				URL:      "https://" + key + ".example",
+			}},
+			TotalResults: 1,
+		})
+	}))
+	defer srv.Close()
+
+	pool := NewTinyFishPool([]TinyFishKey{
+		{Name: "a", APIKey: "tf-a"},
+		{Name: "b", APIKey: "tf-b"},
+	}, srv.URL, srv.URL)
+
+	first, err := pool.Search(context.Background(), TinyFishSearchRequest{Query: "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pool.Search(context.Background(), TinyFishSearchRequest{Query: "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.KeyName != "a" || second.KeyName != "b" {
+		t.Fatalf("key names = %q, %q", first.KeyName, second.KeyName)
+	}
+	if strings.Join(seen, ",") != "tf-a,tf-b" {
+		t.Fatalf("seen keys = %v", seen)
+	}
+}
+
+func TestTinyFishSearchFormattingAndSourceURLs(t *testing.T) {
+	res := &TinyFishSearchResponse{
+		Results: []TinyFishSearchResult{
+			{Title: "A", SiteName: "example.com", Snippet: "Alpha", URL: "https://example.com/a"},
+			{Title: "A dup", URL: "https://example.com/a"},
+			{Title: "B", URL: "https://example.com/b"},
+		},
+	}
+	urls := TinyFishSearchSourceURLs(res)
+	if strings.Join(urls, ",") != "https://example.com/a,https://example.com/b" {
+		t.Fatalf("urls = %v", urls)
+	}
+	body := FormatTinyFishSearchContent(res)
+	if !strings.Contains(body, "TinyFish returned source-first search results") || !strings.Contains(body, "Snippet: Alpha") {
+		t.Fatalf("body = %s", body)
+	}
+}

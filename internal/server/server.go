@@ -18,6 +18,7 @@ type App struct {
 	Tavily   *engine.TavilyClient
 	Exa      *engine.ExaClient
 	Jina     *engine.JinaClient
+	TinyFish *engine.TinyFishPool
 
 	// Source cache: sessionID -> []string (URLs)
 	SourcesMu sync.RWMutex
@@ -41,6 +42,9 @@ func Run(cfg *config.Config) error {
 	}
 	// Jina Reader works without a key — always enabled.
 	app.Jina = engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
+	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
+		app.TinyFish = engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
+	}
 
 	s := mcp.NewMCPServer(
 		"grok-search",
@@ -48,8 +52,8 @@ func Run(cfg *config.Config) error {
 	)
 
 	// Register tools
-	tools.RegisterSearch(s, app.GrokPool, app.Exa, app.Tavily, app)
-	tools.RegisterFetch(s, app.Jina, app.Exa, app.Tavily)
+	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app)
+	tools.RegisterFetch(s, app.Jina, app.TinyFish, app.Exa, app.Tavily)
 	tools.RegisterMap(s, app.Tavily)
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.GrokPool)

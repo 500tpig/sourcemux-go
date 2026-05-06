@@ -49,6 +49,25 @@ func runFetch(args []string) int {
 		return emitFetch(*jsonOut, fetchOutput{Source: "jina", URL: url, Content: r.Content})
 	}
 
+	// TinyFish Fetch (browser-rendered fallback).
+	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
+		tf := engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
+		if r, err := tf.Fetch(ctx, engine.TinyFishFetchRequest{URLs: []string{url}, Format: "markdown"}); err == nil && r != nil {
+			content := engine.TinyFishFetchContent(r.TinyFishFetchResponse)
+			if content != "" {
+				resultURL := url
+				if len(r.Results) > 0 {
+					if r.Results[0].FinalURL != "" {
+						resultURL = r.Results[0].FinalURL
+					} else if r.Results[0].URL != "" {
+						resultURL = r.Results[0].URL
+					}
+				}
+				return emitFetch(*jsonOut, fetchOutput{Source: "tinyfish:" + r.KeyName, URL: resultURL, Content: content})
+			}
+		}
+	}
+
 	// Exa Contents (fallback).
 	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
 		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
@@ -65,7 +84,7 @@ func runFetch(args []string) int {
 		}
 	}
 
-	return reportFetchErr(*jsonOut, url, "Jina Reader, Exa Contents, and Tavily Extract all failed or are not configured")
+	return reportFetchErr(*jsonOut, url, "Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured")
 }
 
 func emitFetch(asJSON bool, out fetchOutput) int {
