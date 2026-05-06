@@ -1,0 +1,28 @@
+{
+  "search": [
+    {
+      "name": "tinyfish-docs-search",
+      "query": "TinyFish Search API reference",
+      "location": "US",
+      "language": "en"
+    }
+  ],
+  "fetch": [
+    {
+      "name": "tinyfish-docs-fetch",
+      "urls": [
+        "https://docs.tinyfish.ai/fetch-api/reference"
+      ],
+      "format": "markdown"
+    }
+  ],
+  "agent": [
+    {
+      "name": "tinyfish-docs-agent",
+      "url": "https://docs.tinyfish.ai/",
+      "goal": "Find the page that documents the Search API endpoint and return its endpoint URL.",
+      "browser_profile": "lite",
+      "max_steps": 8
+    }
+  ]
+}

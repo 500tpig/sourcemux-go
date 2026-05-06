@@ -174,6 +174,7 @@ codex mcp add grok-search /Users/johnsmith/Project/Study/grok-search-go/grok-sea
 ./grok-search cli fetch  "https://example.com/article" --json             # Jina, Tavily 兑底
 ./grok-search cli map    "https://example.com" --limit 50 --json          # 需 TAVILY_API_KEY
 ./grok-search cli plan   "调研主题" --depth deep                          # 离线计划，不打网络
+./grok-search cli tinyfish-bench --json                                   # 本地 TinyFish 评测，不进 MCP 路由
 ./grok-search cli --help                                                  # 完整 usage
 ```
 
@@ -186,6 +187,7 @@ codex mcp add grok-search /Users/johnsmith/Project/Study/grok-search-go/grok-sea
 | `map <url>` | Tavily Map | `--max-depth` `--max-breadth` `--limit` `--timeout` `--json` |
 | `probe` | 配置 + `/models` 探活 | `--list-timeout` `--preview` `--json` |
 | `plan <query>` | 纯逻辑（不调网络）| `--depth` `--platform` |
+| `tinyfish-bench` | TinyFish Search / Fetch / Agent 本地评测 | `--cases` `--keys-file` `--surfaces` `--timeout` `--json` |
 
 设计要点：
 
@@ -193,6 +195,37 @@ codex mcp add grok-search /Users/johnsmith/Project/Study/grok-search-go/grok-sea
 - `--json` 全部子命令都支持；不传时输出人读格式。
 - 配置链与 MCP 一致：env > `~/.config/grok-search/config.json` > `~/.config/grok-search/endpoints.json`。
 - Codex 用户可直接 `claude mcp add grok-search ...`（MCP）+ `./grok-search cli ...`（CLI）双管齐下；CLI 模式对应 skill 见 `.codex/skills/grok-search-cli/SKILL.md`。
+
+### TinyFish 本地 benchmark
+
+`tinyfish-bench` 是隔离评测工具，只调用 TinyFish REST Search / Fetch / sync Agent API；不会加入生产 MCP `web_search` / `web_fetch` fallback。
+
+```bash
+export TINYFISH_API_KEYS='tf_key_1,tf_key_2'
+export TINYFISH_KEY_NAMES='free-a,free-b' # 可选，仅用于输出标识
+
+./grok-search cli tinyfish-bench \
+  --cases docs/tinyfish-benchmark-cases.sample.json \
+  --surfaces search,fetch,agent \
+  --json
+```
+
+也可以用本地密钥文件（不要提交）：
+
+```json
+{
+  "keys": [
+    {"name": "acct-a", "apiKey": "tf_..."},
+    {"name": "acct-b", "apiKey": "tf_..."}
+  ]
+}
+```
+
+```bash
+./grok-search cli tinyfish-bench --keys-file /path/to/tinyfish-keys.json --json
+```
+
+输出只包含 masked key status（如 `tf_1...abcd`），不会打印完整 API key。样例 cases 文件在 `docs/tinyfish-benchmark-cases.sample.json`，不包含任何密钥。
 
 ### 健康检查脚本（`scripts/test_grok_models.sh`）
 

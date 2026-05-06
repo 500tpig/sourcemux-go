@@ -27,6 +27,7 @@ Commands:
   map    <url>        Discover URLs on a site (Tavily Map; needs TAVILY_API_KEY).
   probe               Show config and probe each Grok endpoint (/models).
   plan   <query>      Print a deterministic multi-step search plan.
+  tinyfish-bench      Benchmark TinyFish Search, Fetch, and Agent locally.
 
 Common flags (subcommand-dependent):
   --json              Emit machine-readable JSON instead of human text.
@@ -41,6 +42,7 @@ Examples:
   grok-search cli fetch  "https://example.com/article" --json
   grok-search cli probe  --json
   grok-search cli plan   "Notion AI agents" --depth deep
+  grok-search cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
 `
 
 // Run dispatches the cli subcommand tree. args is everything after the
@@ -63,6 +65,8 @@ func Run(args []string) int {
 		return runProbe(rest)
 	case "plan":
 		return runPlan(rest)
+	case "tinyfish-bench":
+		return runTinyFishBench(rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n%s", cmd, usage)
 		return 2
