@@ -72,3 +72,37 @@ Parallelized research_run search+fetch loops with sync.WaitGroup + semaphore (qu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Cleanup: bootstrap docs + 05-06 surfaces archive sweep
+
+**Date**: 2026-05-07
+**Task**: Cleanup: bootstrap docs + 05-06 surfaces archive sweep
+**Branch**: `main`
+
+### Summary
+
+Cleanup sweep over 4 long-running in_progress tasks. 45aa61e — populate backend quality-guidelines spec scenarios + AGENTS scaffolding for 00-bootstrap-guidelines. 550a7c9 — bundle landed code for 05-06-ai-fund-decision-prompt-pack (Tavily Crawl wrapper, web_crawl MCP+CLI, Exa advanced search/contents MCP+CLI, dispatch/config wiring, docs) and 05-06-deep-research-workflow (cli research subcommand, RegisterResearchRun in server.go); split was infeasible because both tasks touch server.go and README.md. 05-06-tinyfish-integration-eval had no uncommitted code (its work shipped earlier via 3515418/cdd1e4b/etc.), archived as bookkeeping. Working tree now fully clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45aa61e` | (see git log) |
+| `550a7c9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
