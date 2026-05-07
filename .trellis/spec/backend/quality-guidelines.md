@@ -209,6 +209,186 @@ result, err := pool.Fetch(ctx, request)
 
 ---
 
+### Scenario: Standalone external-API MCP and CLI surfaces
+
+#### 1. Scope / Trigger
+
+- Trigger: adding a user-facing MCP tool and matching CLI command that calls a third-party API directly, outside the search/fetch fallback chain.
+- Scope: the surface may call the external service at runtime, but tests must use local test servers or fakes and must not call live APIs.
+
+#### 2. Signatures
+
+- Runtime placement:
+  - Reusable REST client methods belong under `internal/engine/`.
+  - MCP tool registration belongs under `internal/tools/`.
+  - CLI command orchestration belongs under `internal/cli/`.
+  - MCP registration is wired in `internal/server/server.go`.
+- CLI command pattern:
+  - `grok-search cli <capability> <url> --json`
+  - Capability-specific flags should mirror MCP parameter names using CLI hyphen style, for example `max_depth` -> `--max-depth`.
+- MCP tool pattern:
+  - Tool name should be stable snake_case, for example `web_crawl`.
+  - Required user input should be marked with `mcp.Required()`.
+
+#### 3. Contracts
+
+- Configuration:
+  - Use the existing provider config block and env keys when the provider is already configured.
+  - For Tavily surfaces, use `TAVILY_API_KEY`, `TAVILY_API_URL`, and `TAVILY_ENABLED`.
+- Behavior:
+  - If the provider is disabled or missing a required key, return a clear unavailable error without network calls.
+  - Engine methods should set `Content-Type: application/json` and `Authorization: Bearer <key>`.
+  - Engine methods should reuse `httpDoWithRetry` for 429/5xx and network errors.
+  - Human/MCP output should be compact and LLM-readable; JSON output may preserve the full typed response.
+- Documentation:
+  - README must document the MCP tool, CLI command, required config, and how it differs from adjacent tools.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing required URL/query | Return a usage/tool error before network calls |
+| Provider disabled | Return unavailable error before network calls |
+| Provider key missing | Return unavailable error before network calls |
+| Upstream 429/5xx or transient network error | Retry via shared retry helper |
+| Upstream non-retryable non-2xx | Return status code plus response body, with secrets redacted if applicable |
+| Upstream 200 with empty required result set | Treat as failure and return a clear empty-result error |
+| CLI `--json` requested | Emit stable machine-readable JSON with an `error` field on failure |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `grok-search cli crawl https://example.com/docs --instructions "Find API pages" --limit 10 --json` calls a configured Tavily test server in tests and returns typed crawl results.
+- Base: the MCP tool returns a concise text envelope with source, base URL, result count, and page snippets.
+- Bad: adding a CLI command that calls a live API in unit tests, or exposing a new MCP tool without documenting the matching CLI and config requirements.
+
+#### 6. Tests Required
+
+- Engine:
+  - Request path, method, auth header, content type, and JSON body fields.
+  - Success response parsing into typed structs.
+  - Retry path for 429/5xx.
+  - Empty input and empty response error paths.
+- Tools/CLI:
+  - MCP registration or formatter behavior for the new surface.
+  - CLI JSON shape.
+  - CLI config path using a local test server and dummy endpoint config.
+- Docs:
+  - README command table and MCP tool table include the new surface.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```go
+func runCrawl(args []string) int {
+	resp, _ := http.Post("https://api.tavily.com/crawl", "application/json", body)
+	_ = resp
+	return 0
+}
+```
+
+Correct:
+
+```go
+t := engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
+result, err := t.Crawl(ctx, engine.TavilyCrawlRequest{URL: url, Limit: limit})
+```
+
+---
+
+### Scenario: Composable research workflow surfaces
+
+#### 1. Scope / Trigger
+
+- Trigger: adding a higher-level MCP/CLI workflow that composes existing search, source retrieval, fetch, map, and crawl capabilities into one output pack.
+- Scope: the workflow may call live providers at runtime through existing routing helpers, but unit tests must use fakes or local test servers and must not call live APIs.
+
+#### 2. Signatures
+
+- MCP tool:
+  - Name: `research_run`
+  - Inputs: `query` (required), `depth` (`quick` / `standard` / `deep`), `platform` (optional), `domains` (optional array), `max_fetches` (optional number).
+- CLI command:
+  - `grok-search cli research <query> --depth <quick|standard|deep> --platform <focus> --domain <domain> --max-fetches <n> --json`
+  - CLI hyphen names mirror MCP snake_case fields, for example `max_fetches` -> `--max-fetches`.
+- Runtime placement:
+  - Pure orchestration helpers and MCP registration live under `internal/tools/`.
+  - CLI parsing/wiring lives under `internal/cli/`.
+  - Server registration is wired in `internal/server/server.go`.
+
+#### 3. Contracts
+
+- Composition:
+  - Start from the existing planning logic (`BuildSearchPlan`) and parse the planned `web_search query=...` lines.
+  - Execute searches through the shared web-search routing helper so provider fallback order remains unchanged.
+  - Retrieve sources through the same source cache contract used by `get_sources`.
+  - Fetch selected URLs through the shared web-fetch routing helper so fetch fallback order remains unchanged.
+  - Use existing `web_map` / `web_crawl` clients for site expansion; do not duplicate crawler/provider code.
+- Output:
+  - JSON output must be stable and use empty arrays instead of `null` for list fields.
+  - Required pack sections: `query`, `effective_depth`, `executed_searches`, `source_summary`, `fetched_pages_summary`, `high_signal_sources`, `confirmed_facts`, `likely_inferences`, `open_questions`.
+  - Human/MCP output must be compact and LLM-readable, with fetched/crawled content clipped.
+- Bounds:
+  - Default `max_fetches`: quick=2, standard=4, deep=8.
+  - First-version hard cap: `max_fetches <= 12`, to avoid exploding research packs and provider cost.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing required query | Return usage/tool error before network calls |
+| Unknown depth | Normalize to `standard` |
+| `max_fetches <= 0` | Use the depth default |
+| `max_fetches > 12` | Clamp to 12 and record the effective value |
+| Provider disabled or unconfigured | Existing shared routing decides fallback/unavailable behavior |
+| A search round fails | Preserve the failed query and error in `executed_searches`; continue with remaining searches |
+| A selected fetch fails | Preserve the URL and error in `fetched_pages_summary`; downrank the source |
+| No sources discovered | Return a valid pack with empty arrays and open questions, not malformed JSON |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `grok-search cli research "Grok Search MCP" --depth deep --domain github.com --max-fetches 6 --json` returns a bounded research pack with stable sections.
+- Base: MCP `research_run` with only `query` produces planned searches, ranked sources, fetched page summaries, and heuristic facts/inferences.
+- Bad: adding a separate crawler implementation for research, changing `web_search` fallback order only for research, or returning unbounded full page bodies.
+
+#### 6. Tests Required
+
+- Plan parsing:
+  - Extract quoted and escaped `web_search query=...` values from planning output.
+- URL/source handling:
+  - Normalize and deduplicate URLs, strip tracking parameters, preserve meaningful query strings.
+  - Rank official/repeated/relevant/recent sources above lower-signal sources.
+  - Downrank failed fetches and boilerplate pages.
+- Output:
+  - JSON shape includes every required pack section and uses stable empty arrays.
+  - Human output includes compact section headings and clipped excerpts.
+- CLI:
+  - Parse `--depth`, `--platform`, repeatable `--domain`, `--max-fetches`, and `--json`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```go
+// Research path silently forks the provider route and returns full bodies.
+res, _ := tavily.Search(ctx, query)
+fmt.Println(res.Answer + fullFetchedPage)
+```
+
+Correct:
+
+```go
+pack, err := executor.Run(ctx, tools.ResearchOptions{
+	Query:      query,
+	Depth:      depth,
+	Domains:    domains,
+	MaxFetches: maxFetches,
+})
+fmt.Println(tools.FormatResearchPack(pack))
+```
+
+---
+
 ## Code Review Checklist
 
 <!-- What reviewers should check -->
