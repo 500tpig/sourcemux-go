@@ -1,13 +1,19 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bettas/grok-search-go/internal/engine"
+	"github.com/bettas/grok-search-go/internal/tools"
 )
 
 func TestRunUsageOnEmpty(t *testing.T) {
@@ -85,6 +91,67 @@ func TestFetchOutputJSONShape(t *testing.T) {
 	}
 }
 
+func TestExaSearchOutputJSONShape(t *testing.T) {
+	s := exaSearchOutput{
+		Source:      "exa-search-advanced",
+		Query:       "q",
+		SearchType:  "deep",
+		ResultCount: 2,
+		SourceURLs:  []string{"u1"},
+		Content:     "c",
+		StructuredOutput: map[string]any{
+			"answer": "ok",
+		},
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		`"source":"exa-search-advanced"`,
+		`"query":"q"`,
+		`"search_type":"deep"`,
+		`"result_count":2`,
+		`"source_urls":["u1"]`,
+		`"structured_output":{"answer":"ok"}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+}
+
+func TestExaContentsOutputJSONShape(t *testing.T) {
+	f := exaContentsOutput{
+		Source:    "exa-contents-advanced",
+		URL:       "https://x",
+		ResultURL: "https://x",
+		Content:   "md",
+		Subpages: []exaContentsSubpageOutput{{
+			URL:     "https://x/a",
+			Title:   "A",
+			Content: "sub",
+		}},
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		`"source":"exa-contents-advanced"`,
+		`"url":"https://x"`,
+		`"result_url":"https://x"`,
+		`"content":"md"`,
+		`"subpages":[{"url":"https://x/a","title":"A","content":"sub"}]`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+}
+
 func TestMapOutputJSONShape(t *testing.T) {
 	m := mapOutput{URL: "https://x", URLs: []string{"a", "b"}, Count: 2}
 	b, err := json.Marshal(m)
@@ -97,6 +164,260 @@ func TestMapOutputJSONShape(t *testing.T) {
 			t.Errorf("missing %q in %s", want, got)
 		}
 	}
+}
+
+func TestCrawlOutputJSONShape(t *testing.T) {
+	c := crawlOutput{
+		Source:  "tavily",
+		URL:     "https://x",
+		BaseURL: "x",
+		Results: []engine.TavilyCrawlPage{{
+			URL:        "https://x/a",
+			RawContent: "md",
+		}},
+		Count:        1,
+		ResponseTime: 0.25,
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		`"source":"tavily"`,
+		`"url":"https://x"`,
+		`"base_url":"x"`,
+		`"raw_content":"md"`,
+		`"count":1`,
+		`"response_time":0.25`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+}
+
+func TestRunResearchJSONParsesParameters(t *testing.T) {
+	runner := &fakeCLIResearchRunner{}
+	out := captureStdout(t, func() {
+		if got := runResearchWithRunner([]string{
+			"Grok Search MCP",
+			"--depth", "deep",
+			"--platform", "GitHub",
+			"--domain", "example.com",
+			"--domain", "github.com",
+			"--max-fetches", "3",
+			"--json",
+		}, runner); got != 0 {
+			t.Fatalf("runResearchWithRunner = %d, want 0", got)
+		}
+	})
+
+	if runner.opts.Query != "Grok Search MCP" || runner.opts.Depth != "deep" || runner.opts.Platform != "GitHub" {
+		t.Fatalf("runner opts = %+v", runner.opts)
+	}
+	if strings.Join(runner.opts.Domains, ",") != "example.com,github.com" {
+		t.Fatalf("domains = %#v", runner.opts.Domains)
+	}
+	if runner.opts.MaxFetches != 3 {
+		t.Fatalf("max_fetches = %d", runner.opts.MaxFetches)
+	}
+
+	var decoded tools.ResearchPack
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Query != "Grok Search MCP" || decoded.EffectiveDepth != "deep" || decoded.Platform != "GitHub" {
+		t.Fatalf("decoded metadata = %+v", decoded)
+	}
+	if decoded.SourceSummary.SelectedForFetch != 3 {
+		t.Fatalf("source summary = %+v", decoded.SourceSummary)
+	}
+}
+
+func TestRunCrawlJSONUsesTavilyConfig(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/crawl" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer tvly-test" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"base_url":"example.com","results":[{"url":"https://example.com/a","raw_content":"# A"}],"response_time":0.25}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
+	t.Setenv("TAVILY_API_URL", ts.URL)
+	t.Setenv("TAVILY_API_KEY", "tvly-test")
+	t.Setenv("TAVILY_ENABLED", "true")
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"crawl", "https://example.com", "--instructions", "Find docs", "--limit", "1", "--json"}); got != 0 {
+			t.Fatalf("Run(crawl) = %d, want 0", got)
+		}
+	})
+	var decoded crawlOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "tavily" || decoded.Count != 1 || decoded.Results[0].RawContent != "# A" {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+}
+
+func TestRunExaSearchJSONUsesConfig(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["type"] != "deep" {
+			t.Fatalf("type = %v", body["type"])
+		}
+		if body["numResults"] != float64(6) {
+			t.Fatalf("numResults = %v", body["numResults"])
+		}
+		if body["systemPrompt"] != "Prefer official sources" {
+			t.Fatalf("systemPrompt = %v", body["systemPrompt"])
+		}
+		if _, ok := body["outputSchema"].(map[string]any); !ok {
+			t.Fatalf("outputSchema missing: %#v", body["outputSchema"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"searchType":"deep",
+			"results":[{"title":"Docs","url":"https://example.com/docs","highlights":["official docs"]}],
+			"output":{"content":{"answer":"grounded"}}
+		}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
+	t.Setenv("EXA_API_URL", ts.URL)
+	t.Setenv("EXA_API_KEY", "exa-test")
+	t.Setenv("EXA_ENABLED", "true")
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{
+			"exa-search", "hello world",
+			"--type", "deep",
+			"--num-results", "6",
+			"--text",
+			"--text-max-characters", "500",
+			"--highlights-query", "main points",
+			"--system-prompt", "Prefer official sources",
+			"--output-schema-json", `{"type":"object","properties":{"answer":{"type":"string"}}}`,
+			"--json",
+		}); got != 0 {
+			t.Fatalf("Run(exa-search) = %d, want 0", got)
+		}
+	})
+	var decoded exaSearchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "exa-search-advanced" || decoded.SearchType != "deep" || decoded.ResultCount != 1 {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+}
+
+func TestRunExaContentsJSONUsesConfig(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/contents" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["subpages"] != float64(2) {
+			t.Fatalf("subpages = %v", body["subpages"])
+		}
+		if body["maxAgeHours"] != float64(0) {
+			t.Fatalf("maxAgeHours = %v", body["maxAgeHours"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results":[{"url":"https://example.com/root","text":"root content","subpages":[{"url":"https://example.com/a","title":"A","text":"sub page"}]}],
+			"statuses":[{"id":"https://example.com/root","status":"success"}]
+		}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
+	t.Setenv("EXA_API_URL", ts.URL)
+	t.Setenv("EXA_API_KEY", "exa-test")
+	t.Setenv("EXA_ENABLED", "true")
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{
+			"exa-contents", "https://example.com/root",
+			"--subpages", "2",
+			"--subpage-target", "api",
+			"--subpage-target", "docs",
+			"--max-age-hours", "0",
+			"--json",
+		}); got != 0 {
+			t.Fatalf("Run(exa-contents) = %d, want 0", got)
+		}
+	})
+	var decoded exaContentsOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "exa-contents-advanced" || len(decoded.Subpages) != 1 || decoded.Subpages[0].URL != "https://example.com/a" {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+}
+
+type fakeCLIResearchRunner struct {
+	opts tools.ResearchOptions
+}
+
+func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOptions) (tools.ResearchPack, error) {
+	r.opts = opts
+	return tools.ResearchPack{
+		Query:          opts.Query,
+		EffectiveDepth: opts.Depth,
+		Platform:       opts.Platform,
+		Domains:        opts.Domains,
+		MaxFetches:     opts.MaxFetches,
+		PlanQueries:    []string{opts.Query},
+		ExecutedSearches: []tools.ResearchSearchSummary{{
+			Query:        opts.Query,
+			Engine:       "fake",
+			SourcesCount: 1,
+		}},
+		SourceSummary: tools.ResearchSourceSummary{
+			TotalURLs:          3,
+			UniqueURLs:         3,
+			SelectedForFetch:   opts.MaxFetches,
+			SelectedSourceURLs: []string{"https://example.com/a"},
+		},
+		FetchedPagesSummary: []tools.ResearchFetchedPage{{
+			URL:     "https://example.com/a",
+			Source:  "fake",
+			Success: true,
+			Excerpt: "Grok Search MCP is test content.",
+		}},
+		HighSignalSources: []tools.ResearchSource{{
+			URL:         "https://example.com/a",
+			Domain:      "example.com",
+			Score:       1,
+			Occurrences: 1,
+		}},
+		ConfirmedFacts:   []string{"Grok Search MCP is test content. (source: https://example.com/a)"},
+		LikelyInferences: []string{"fake inference"},
+		OpenQuestions:    []string{"fake question"},
+	}, nil
 }
 
 func TestProbeOutputJSONShape(t *testing.T) {
@@ -132,6 +453,28 @@ func TestProbeOutputJSONShape(t *testing.T) {
 			t.Errorf("missing %q in %s", want, got)
 		}
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestParsePositionalInterleaved(t *testing.T) {

@@ -23,7 +23,7 @@ type Config struct {
 	//   - GROK_API_URL + GROK_API_KEY [+ GROK_MODEL] (legacy single endpoint)
 	GrokEndpoints []engine.GrokEndpoint
 
-	// Tavily — web_search final fallback + web_fetch / web_map source.
+	// Tavily — web_search final fallback + web_fetch / web_map / web_crawl source.
 	TavilyAPIURL  string
 	TavilyAPIKey  string
 	TavilyEnabled bool

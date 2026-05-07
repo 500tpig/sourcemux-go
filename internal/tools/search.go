@@ -17,6 +17,31 @@ type SourceCacher interface {
 	CacheSources(sessionID string, urls []string)
 }
 
+// WebSearchClients groups the production search providers in the same order
+// used by the web_search MCP tool and CLI search command.
+type WebSearchClients struct {
+	Pool     *engine.GrokPool
+	TinyFish *engine.TinyFishPool
+	Exa      *engine.ExaClient
+	Tavily   *engine.TavilyClient
+	Cache    SourceCacher
+}
+
+// WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
+// and the higher-level research workflow.
+type WebSearchResult struct {
+	Query        string   `json:"query"`
+	Engine       string   `json:"engine"`
+	EndpointName string   `json:"endpoint_name,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	SessionID    string   `json:"session_id,omitempty"`
+	Content      string   `json:"content"`
+	SourceURLs   []string `json:"source_urls"`
+	SourcesCount int      `json:"sources_count"`
+	Fallback     string   `json:"fallback,omitempty"`
+	GrokError    string   `json:"grok_error,omitempty"`
+}
+
 // RegisterSearch registers the web_search tool.
 //
 // Routing order:
@@ -36,101 +61,129 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query, _ := req.Params.Arguments["query"].(string)
-		if query == "" {
-			return mcp.NewToolResultError("query is required"), nil
-		}
-
-		// Inject time context for temporal queries.
-		query = injectTimeContext(query)
-
-		if platform, _ := req.Params.Arguments["platform"].(string); platform != "" {
-			query = fmt.Sprintf("[Focus: %s] %s", platform, query)
-		}
+		platform, _ := req.Params.Arguments["platform"].(string)
 		model, _ := req.Params.Arguments["model"].(string)
 
-		// 1) Try Grok pool.
-		var poolErr error
-		if pool != nil && pool.Len() > 0 {
-			res, err := pool.SearchWithModel(ctx, query, model)
-			if err == nil && res != nil && res.Content != "" {
-				sessionID := uuid.New().String()
-				cache.CacheSources(sessionID, res.SourceURLs)
-				response := fmt.Sprintf(
-					"engine: %s (%s)\nsession_id: %s\nsources_count: %d\n\n%s",
-					res.EndpointName, res.EndpointModel,
-					sessionID, res.SourcesCount, res.Content,
-				)
-				return mcp.NewToolResultText(response), nil
-			}
-			poolErr = err
+		res, err := RunWebSearch(ctx, WebSearchClients{
+			Pool:     pool,
+			TinyFish: tinyfish,
+			Exa:      exa,
+			Tavily:   tavily,
+			Cache:    cache,
+		}, query, platform, model)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
-
-		// 2) Fallback to TinyFish Search.
-		if tinyfish != nil && tinyfish.Len() > 0 {
-			if tres, terr := tinyfish.Search(ctx, engine.TinyFishSearchRequest{Query: query}); terr == nil {
-				return mcp.NewToolResultText(formatTinyFishResponse(tres, poolErr, cache)), nil
-			}
-		}
-
-		// 3) Fallback to Exa Search.
-		if exa != nil {
-			if eres, eerr := exa.Search(ctx, query); eerr == nil {
-				return mcp.NewToolResultText(formatExaResponse(eres, poolErr, cache)), nil
-			}
-		}
-
-		// 4) Fallback to Tavily Search.
-		if tavily != nil {
-			if tres, terr := tavily.Search(ctx, query); terr == nil {
-				return mcp.NewToolResultText(formatTavilyResponse(tres, poolErr, cache)), nil
-			}
-		}
-
-		if poolErr != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", poolErr)), nil
-		}
-		return mcp.NewToolResultError("search returned empty result and no fallback configured"), nil
+		return mcp.NewToolResultText(FormatWebSearchResult(res)), nil
 	})
 }
 
-func formatTinyFishResponse(res *engine.TinyFishPoolSearchResult, grokErr error, cache SourceCacher) string {
+// RunWebSearch executes the production web_search routing chain. Keep this as
+// the single shared implementation so higher-level workflows do not fork the
+// provider fallback order.
+func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform, model string) (*WebSearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
+	// Inject time context for temporal queries.
+	query = injectTimeContext(query)
+
+	if platform = strings.TrimSpace(platform); platform != "" {
+		query = fmt.Sprintf("[Focus: %s] %s", platform, query)
+	}
+
+	// 1) Try Grok pool.
+	var poolErr error
+	if clients.Pool != nil && clients.Pool.Len() > 0 {
+		res, err := clients.Pool.SearchWithModel(ctx, query, model)
+		if err == nil && res != nil && res.Content != "" {
+			sessionID := uuid.New().String()
+			cacheSources(clients.Cache, sessionID, res.SourceURLs)
+			return &WebSearchResult{
+				Query:        query,
+				Engine:       res.EndpointName,
+				EndpointName: res.EndpointName,
+				Model:        res.EndpointModel,
+				SessionID:    sessionID,
+				Content:      res.Content,
+				SourceURLs:   res.SourceURLs,
+				SourcesCount: res.SourcesCount,
+			}, nil
+		}
+		poolErr = err
+	}
+
+	// 2) Fallback to TinyFish Search.
+	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
+		if tres, terr := clients.TinyFish.Search(ctx, engine.TinyFishSearchRequest{Query: query}); terr == nil && tres != nil {
+			return webSearchTinyFishResult(query, tres, poolErr, clients.Cache), nil
+		}
+	}
+
+	// 3) Fallback to Exa Search.
+	if clients.Exa != nil {
+		if eres, eerr := clients.Exa.Search(ctx, query); eerr == nil && eres != nil {
+			return webSearchExaResult(query, eres, poolErr, clients.Cache), nil
+		}
+	}
+
+	// 4) Fallback to Tavily Search.
+	if clients.Tavily != nil {
+		if tres, terr := clients.Tavily.Search(ctx, query); terr == nil && tres != nil {
+			return webSearchTavilyResult(query, tres, poolErr, clients.Cache), nil
+		}
+	}
+
+	if poolErr != nil {
+		return nil, fmt.Errorf("search failed: %v", poolErr)
+	}
+	return nil, fmt.Errorf("search returned empty result and no fallback configured")
+}
+
+func webSearchTinyFishResult(query string, res *engine.TinyFishPoolSearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
 	sessionID := uuid.New().String()
 	urls := engine.TinyFishSearchSourceURLs(res.TinyFishSearchResponse)
-	cache.CacheSources(sessionID, urls)
+	cacheSources(cache, sessionID, urls)
 
-	var sb strings.Builder
-	if grokErr != nil {
-		fmt.Fprintf(&sb, "engine: TinyFish Search (%s; Grok pool fallback: %v)\n", res.KeyName, grokErr)
-	} else {
-		fmt.Fprintf(&sb, "engine: TinyFish Search (%s; no Grok endpoint configured)\n", res.KeyName)
+	out := &WebSearchResult{
+		Query:        query,
+		Engine:       "TinyFish Search",
+		EndpointName: res.KeyName,
+		SessionID:    sessionID,
+		Content:      engine.FormatTinyFishSearchContent(res.TinyFishSearchResponse),
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
+		Fallback:     "tinyfish",
 	}
-	fmt.Fprintf(&sb, "session_id: %s\nsources_count: %d\n\n", sessionID, len(urls))
-	sb.WriteString(engine.FormatTinyFishSearchContent(res.TinyFishSearchResponse))
-	return sb.String()
+	if grokErr != nil {
+		out.GrokError = grokErr.Error()
+	}
+	return out
 }
 
-// formatExaResponse renders Exa Search results in the same envelope as the
-// Grok branch and registers source URLs in the session cache.
-func formatExaResponse(res *engine.ExaSearchResult, grokErr error, cache SourceCacher) string {
+func webSearchExaResult(query string, res *engine.ExaSearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
 	sessionID := uuid.New().String()
 	urls := engine.ExaSearchSourceURLs(res)
-	cache.CacheSources(sessionID, urls)
+	cacheSources(cache, sessionID, urls)
 
-	var sb strings.Builder
-	if grokErr != nil {
-		fmt.Fprintf(&sb, "engine: Exa Search (Grok pool fallback: %v)\n", grokErr)
-	} else {
-		sb.WriteString("engine: Exa Search (no Grok endpoint configured)\n")
+	out := &WebSearchResult{
+		Query:        query,
+		Engine:       "Exa Search",
+		SessionID:    sessionID,
+		Content:      engine.FormatExaSearchContent(res),
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
+		Fallback:     "exa",
 	}
-	fmt.Fprintf(&sb, "session_id: %s\nsources_count: %d\n\n", sessionID, len(urls))
-	sb.WriteString(engine.FormatExaSearchContent(res))
-	return sb.String()
+	if grokErr != nil {
+		out.GrokError = grokErr.Error()
+	}
+	return out
 }
 
-// formatTavilyResponse renders a Tavily Search result in the same shape as the
-// Grok branch (engine + session_id + sources_count + body), and registers the
-// source URLs in the session cache for later get_sources calls.
-func formatTavilyResponse(res *engine.TavilySearchResult, grokErr error, cache SourceCacher) string {
+func webSearchTavilyResult(query string, res *engine.TavilySearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
 	sessionID := uuid.New().String()
 	urls := make([]string, 0, len(res.Results))
 	for _, r := range res.Results {
@@ -138,15 +191,9 @@ func formatTavilyResponse(res *engine.TavilySearchResult, grokErr error, cache S
 			urls = append(urls, r.URL)
 		}
 	}
-	cache.CacheSources(sessionID, urls)
+	cacheSources(cache, sessionID, urls)
 
 	var sb strings.Builder
-	if grokErr != nil {
-		fmt.Fprintf(&sb, "engine: Tavily Search (Grok pool fallback: %v)\n", grokErr)
-	} else {
-		sb.WriteString("engine: Tavily Search (no Grok endpoint configured)\n")
-	}
-	fmt.Fprintf(&sb, "session_id: %s\nsources_count: %d\n\n", sessionID, len(urls))
 	if res.Answer != "" {
 		sb.WriteString(res.Answer)
 		sb.WriteString("\n\n")
@@ -161,7 +208,57 @@ func formatTavilyResponse(res *engine.TavilySearchResult, grokErr error, cache S
 			fmt.Fprintf(&sb, "- %s \u2014 %s\n", title, r.URL)
 		}
 	}
+
+	out := &WebSearchResult{
+		Query:        query,
+		Engine:       "Tavily Search",
+		SessionID:    sessionID,
+		Content:      strings.TrimSpace(sb.String()),
+		SourceURLs:   urls,
+		SourcesCount: len(urls),
+		Fallback:     "tavily",
+	}
+	if grokErr != nil {
+		out.GrokError = grokErr.Error()
+	}
+	return out
+}
+
+// FormatWebSearchResult renders the shared search result in the MCP text
+// envelope expected by existing clients.
+func FormatWebSearchResult(res *WebSearchResult) string {
+	if res == nil {
+		return ""
+	}
+	var sb strings.Builder
+	switch res.Fallback {
+	case "tinyfish":
+		fmt.Fprintf(&sb, "engine: TinyFish Search (%s; %s)\n", res.EndpointName, grokFallbackText(res.GrokError))
+	case "exa":
+		fmt.Fprintf(&sb, "engine: Exa Search (%s)\n", grokFallbackText(res.GrokError))
+	case "tavily":
+		fmt.Fprintf(&sb, "engine: Tavily Search (%s)\n", grokFallbackText(res.GrokError))
+	default:
+		fmt.Fprintf(&sb, "engine: %s (%s)\n", res.Engine, res.Model)
+	}
+	if res.SessionID != "" {
+		fmt.Fprintf(&sb, "session_id: %s\n", res.SessionID)
+	}
+	fmt.Fprintf(&sb, "sources_count: %d\n\n%s", res.SourcesCount, res.Content)
 	return sb.String()
+}
+
+func grokFallbackText(grokErr string) string {
+	if grokErr != "" {
+		return "Grok pool fallback: " + grokErr
+	}
+	return "no Grok endpoint configured"
+}
+
+func cacheSources(cache SourceCacher, sessionID string, urls []string) {
+	if cache != nil {
+		cache.CacheSources(sessionID, urls)
+	}
 }
 
 // injectTimeContext prepends local time info when the query contains temporal keywords.

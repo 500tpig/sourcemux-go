@@ -9,6 +9,21 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
+// WebFetchClients groups the production fetch providers in fallback order.
+type WebFetchClients struct {
+	Jina     *engine.JinaClient
+	TinyFish *engine.TinyFishPool
+	Exa      *engine.ExaClient
+	Tavily   *engine.TavilyClient
+}
+
+// WebFetchResult is the shared fetch envelope used by MCP, CLI, and research.
+type WebFetchResult struct {
+	Source  string `json:"source"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+}
+
 // RegisterFetch registers the web_fetch tool.
 //
 // Routing order:
@@ -24,56 +39,77 @@ func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tinyfish *en
 
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		url, _ := req.Params.Arguments["url"].(string)
-		if url == "" {
-			return mcp.NewToolResultError("url is required"), nil
+		result, err := RunWebFetch(ctx, WebFetchClients{
+			Jina:     jina,
+			TinyFish: tinyfish,
+			Exa:      exa,
+			Tavily:   tavily,
+		}, url)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
-
-		// Try Jina Reader first.
-		if jina != nil {
-			result, err := jina.Fetch(ctx, url)
-			if err == nil && result.Content != "" {
-				return mcp.NewToolResultText(fmt.Sprintf("Source: Jina Reader\nURL: %s\n\n%s", url, result.Content)), nil
-			}
-		}
-
-		// Fallback to TinyFish Fetch.
-		if tinyfish != nil && tinyfish.Len() > 0 {
-			result, err := tinyfish.Fetch(ctx, engine.TinyFishFetchRequest{
-				URLs:   []string{url},
-				Format: "markdown",
-			})
-			if err == nil {
-				content := engine.TinyFishFetchContent(result.TinyFishFetchResponse)
-				if content != "" {
-					resultURL := url
-					if len(result.Results) > 0 {
-						if result.Results[0].FinalURL != "" {
-							resultURL = result.Results[0].FinalURL
-						} else if result.Results[0].URL != "" {
-							resultURL = result.Results[0].URL
-						}
-					}
-					return mcp.NewToolResultText(fmt.Sprintf("Source: TinyFish Fetch (%s)\nURL: %s\n\n%s", result.KeyName, resultURL, content)), nil
-				}
-			}
-		}
-
-		// Fallback to Exa Contents.
-		if exa != nil {
-			result, err := exa.Extract(ctx, url)
-			if err == nil && result.Content != "" {
-				return mcp.NewToolResultText(fmt.Sprintf("Source: Exa Contents\nURL: %s\n\n%s", result.URL, result.Content)), nil
-			}
-		}
-
-		// Final fallback to Tavily Extract.
-		if tavily != nil {
-			result, err := tavily.Extract(ctx, url)
-			if err == nil && result.Content != "" {
-				return mcp.NewToolResultText(fmt.Sprintf("Source: Tavily Extract\nURL: %s\n\n%s", url, result.Content)), nil
-			}
-		}
-
-		return mcp.NewToolResultError("Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured"), nil
+		return mcp.NewToolResultText(FormatWebFetchResult(result)), nil
 	})
+}
+
+// RunWebFetch executes the production web_fetch fallback chain.
+func RunWebFetch(ctx context.Context, clients WebFetchClients, url string) (*WebFetchResult, error) {
+	if url == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+
+	// Try Jina Reader first.
+	if clients.Jina != nil {
+		result, err := clients.Jina.Fetch(ctx, url)
+		if err == nil && result.Content != "" {
+			return &WebFetchResult{Source: "Jina Reader", URL: url, Content: result.Content}, nil
+		}
+	}
+
+	// Fallback to TinyFish Fetch.
+	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
+		result, err := clients.TinyFish.Fetch(ctx, engine.TinyFishFetchRequest{
+			URLs:   []string{url},
+			Format: "markdown",
+		})
+		if err == nil {
+			content := engine.TinyFishFetchContent(result.TinyFishFetchResponse)
+			if content != "" {
+				resultURL := url
+				if len(result.Results) > 0 {
+					if result.Results[0].FinalURL != "" {
+						resultURL = result.Results[0].FinalURL
+					} else if result.Results[0].URL != "" {
+						resultURL = result.Results[0].URL
+					}
+				}
+				return &WebFetchResult{Source: "TinyFish Fetch (" + result.KeyName + ")", URL: resultURL, Content: content}, nil
+			}
+		}
+	}
+
+	// Fallback to Exa Contents.
+	if clients.Exa != nil {
+		result, err := clients.Exa.Extract(ctx, url)
+		if err == nil && result.Content != "" {
+			return &WebFetchResult{Source: "Exa Contents", URL: result.URL, Content: result.Content}, nil
+		}
+	}
+
+	// Final fallback to Tavily Extract.
+	if clients.Tavily != nil {
+		result, err := clients.Tavily.Extract(ctx, url)
+		if err == nil && result.Content != "" {
+			return &WebFetchResult{Source: "Tavily Extract", URL: url, Content: result.Content}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured")
+}
+
+func FormatWebFetchResult(result *WebFetchResult) string {
+	if result == nil {
+		return ""
+	}
+	return fmt.Sprintf("Source: %s\nURL: %s\n\n%s", result.Source, result.URL, result.Content)
 }

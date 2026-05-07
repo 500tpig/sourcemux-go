@@ -9,11 +9,13 @@
 - 配置入口：`internal/config/config.go`
 - MCP 注册：`internal/server/server.go`
 - 工具：
-  - `web_search`：Grok endpoint pool -> Exa Search -> Tavily Search 兜底
+  - `web_search`：Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search 兜底
   - `get_sources`：按 `session_id` 取上次搜索来源
-  - `web_fetch`：Jina Reader -> Exa Contents -> Tavily Extract 兜底
-  - `web_map`：Tavily Map
+  - `web_fetch`：Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract 兜底
+  - `web_map`：Tavily Map，只发现 URL
+  - `web_crawl`：Tavily Crawl，站点遍历 + 内容抽取
   - `search_planning`：复杂研究前生成分阶段搜索计划
+  - `research_run`：组合式 research workflow，串联计划、搜索、来源读取、抓取和打包
   - `get_config_info`：配置诊断和 endpoint `/models` 探活
 - 已支持：
   - 多 Grok-compatible endpoint
@@ -238,9 +240,16 @@ claude mcp add-json grok-search '{
    - 期望：返回 `Source: Jina Reader`
 4. `web_map`
    - 仅在配置 `TAVILY_API_KEY` 后测试
-5. `search_planning`
+5. `web_crawl`
+   - 仅在配置 `TAVILY_API_KEY` 后测试
+   - 示例 URL：`https://example.com`
+   - 期望：返回 `Source: Tavily Crawl`、`base_url` 和抓取页面内容摘要
+6. `search_planning`
    - 示例 query：`评估某个开源项目的最新状态`
    - 期望：返回分阶段搜索计划
+7. `research_run`
+   - 示例 query：`评估某个开源项目的最新状态`
+   - 期望：返回 compact research pack，包含 executed searches、source summary、fetched pages summary、confirmed facts、likely inferences 和 open questions
 
 ## 常见问题
 
@@ -262,7 +271,7 @@ claude mcp add-json grok-search '{
 
 已支持 SSE 解析。如果遇到 decode 错误，检查返回是否是非标准 SSE 或错误页。
 
-### `web_map` 不可用
+### `web_map` / `web_crawl` 不可用
 
 需要在 `config.json` 的 `tavily.apiKey` 或环境变量 `TAVILY_API_KEY` 中配置 Tavily key。未配置 Tavily 时，`web_search` 仍可用 Grok，`web_fetch` 仍可用 Jina。
 

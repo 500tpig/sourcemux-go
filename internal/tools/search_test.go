@@ -19,7 +19,7 @@ func (c *testSourceCache) CacheSources(sessionID string, urls []string) {
 
 func TestFormatTinyFishResponseCachesSources(t *testing.T) {
 	cache := &testSourceCache{}
-	body := formatTinyFishResponse(&engine.TinyFishPoolSearchResult{
+	res := webSearchTinyFishResult("query", &engine.TinyFishPoolSearchResult{
 		KeyName: "acct-a",
 		TinyFishSearchResponse: &engine.TinyFishSearchResponse{
 			Results: []engine.TinyFishSearchResult{
@@ -28,6 +28,7 @@ func TestFormatTinyFishResponseCachesSources(t *testing.T) {
 			},
 		},
 	}, nil, cache)
+	body := FormatWebSearchResult(res)
 
 	if !strings.Contains(body, "engine: TinyFish Search (acct-a; no Grok endpoint configured)") {
 		t.Fatalf("body = %s", body)

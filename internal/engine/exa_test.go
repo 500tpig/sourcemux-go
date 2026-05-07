@@ -95,6 +95,168 @@ func TestExaContents_Success(t *testing.T) {
 	}
 }
 
+func TestExaSearchAdvanced_RequestAndStructuredOutput(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["type"] != "deep" {
+			t.Fatalf("type = %v", body["type"])
+		}
+		if body["numResults"] != float64(7) {
+			t.Fatalf("numResults = %v", body["numResults"])
+		}
+		contents, ok := body["contents"].(map[string]any)
+		if !ok {
+			t.Fatalf("contents = %#v", body["contents"])
+		}
+		if _, ok := contents["text"].(map[string]any); !ok {
+			t.Fatalf("text field = %#v", contents["text"])
+		}
+		if _, ok := contents["highlights"].(map[string]any); !ok {
+			t.Fatalf("highlights field = %#v", contents["highlights"])
+		}
+		if body["systemPrompt"] != "Prefer official sources" {
+			t.Fatalf("systemPrompt = %v", body["systemPrompt"])
+		}
+		schema, ok := body["outputSchema"].(map[string]any)
+		if !ok || schema["type"] != "object" {
+			t.Fatalf("outputSchema = %#v", body["outputSchema"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"requestId": "req-structured",
+			"searchType": "deep",
+			"results": [
+				{"title": "Docs", "url": "https://example.com/docs", "highlights": ["official docs"]}
+			],
+			"output": {
+				"content": {"answer": "grounded"},
+				"grounding": [
+					{"field": "answer", "confidence": "high", "citations": [{"url":"https://example.com/docs","title":"Docs"}]}
+				]
+			}
+		}`))
+	}))
+	defer ts.Close()
+
+	c := NewExaClient(ts.URL, "exa-test")
+	res, err := c.SearchAdvanced(context.Background(), ExaSearchRequest{
+		Query:        "hello world",
+		Type:         "deep",
+		NumResults:   7,
+		Text:         ExaSearchTextOptions{Enabled: true, MaxCharacters: 900},
+		Highlights:   ExaHighlightsOptions{Query: "official summary"},
+		SystemPrompt: "Prefer official sources",
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"answer": map[string]any{"type": "string"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SearchAdvanced failed: %v", err)
+	}
+	if res.Output == nil {
+		t.Fatal("expected structured output")
+	}
+	formatted := FormatExaSearchContent(res)
+	if !strings.Contains(formatted, `"answer": "grounded"`) || !strings.Contains(formatted, "Grounding:") {
+		t.Fatalf("formatted content missing structured output:\n%s", formatted)
+	}
+}
+
+func TestExaSearchAdvanced_FallsBackToRequestedSearchType(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"requestId": "req-no-type",
+			"results": [
+				{"title": "Docs", "url": "https://example.com/docs", "highlights": ["official docs"]}
+			]
+		}`))
+	}))
+	defer ts.Close()
+
+	c := NewExaClient(ts.URL, "exa-test")
+	res, err := c.SearchAdvanced(context.Background(), ExaSearchRequest{
+		Query: "hello world",
+		Type:  "fast",
+	})
+	if err != nil {
+		t.Fatalf("SearchAdvanced failed: %v", err)
+	}
+	if res.SearchType != "fast" {
+		t.Fatalf("SearchType = %q, want %q", res.SearchType, "fast")
+	}
+}
+
+func TestExaContentsAdvanced_RequestAndSubpages(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/contents" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["subpages"] != float64(2) {
+			t.Fatalf("subpages = %v", body["subpages"])
+		}
+		targets, ok := body["subpageTarget"].([]any)
+		if !ok || len(targets) != 2 || targets[0] != "api" || targets[1] != "docs" {
+			t.Fatalf("subpageTarget = %#v", body["subpageTarget"])
+		}
+		if body["maxAgeHours"] != float64(0) {
+			t.Fatalf("maxAgeHours = %v", body["maxAgeHours"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"requestId": "req-subpages",
+			"results": [
+				{
+					"url": "https://example.com/root",
+					"text": "root content",
+					"subpages": [
+						{"url":"https://example.com/api","title":"API","text":"api content"},
+						{"url":"https://example.com/docs","title":"Docs","text":"docs content"}
+					]
+				}
+			],
+			"statuses": [{"id":"https://example.com/root","status":"success"}]
+		}`))
+	}))
+	defer ts.Close()
+
+	age := 0
+	c := NewExaClient(ts.URL, "exa-test")
+	res, err := c.ContentsAdvanced(context.Background(), ExaContentsRequest{
+		URL:           "https://example.com/root",
+		Text:          ExaSearchTextOptions{Enabled: true},
+		Subpages:      2,
+		SubpageTarget: []string{"api", "docs"},
+		MaxAgeHours:   &age,
+	})
+	if err != nil {
+		t.Fatalf("ContentsAdvanced failed: %v", err)
+	}
+	if len(res.Results) != 1 || len(res.Results[0].Subpages) != 2 {
+		t.Fatalf("unexpected subpages result: %+v", res.Results)
+	}
+	formatted := FormatExaContentsContent(res, 500, 300)
+	if !strings.Contains(formatted, "Subpages:") || !strings.Contains(formatted, "https://example.com/api") {
+		t.Fatalf("formatted content missing subpages:\n%s", formatted)
+	}
+}
+
 func TestExaSearch_HTTPError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

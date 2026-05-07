@@ -54,10 +54,31 @@ func Run(cfg *config.Config) error {
 	// Register tools
 	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app)
 	tools.RegisterFetch(s, app.Jina, app.TinyFish, app.Exa, app.Tavily)
+	tools.RegisterExaSearchAdvanced(s, app.Exa)
+	tools.RegisterExaContentsAdvanced(s, app.Exa)
 	tools.RegisterMap(s, app.Tavily)
+	tools.RegisterCrawl(s, app.Tavily)
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.GrokPool)
 	tools.RegisterSearchPlanning(s)
+	tools.RegisterResearchRun(s, tools.NewResearchExecutor(tools.ResearchExecutorDeps{
+		Search: tools.WebSearchClients{
+			Pool:     app.GrokPool,
+			TinyFish: app.TinyFish,
+			Exa:      app.Exa,
+			Tavily:   app.Tavily,
+			Cache:    app,
+		},
+		Fetch: tools.WebFetchClients{
+			Jina:     app.Jina,
+			TinyFish: app.TinyFish,
+			Exa:      app.Exa,
+			Tavily:   app.Tavily,
+		},
+		Sources: app,
+		Mapper:  app.Tavily,
+		Crawler: app.Tavily,
+	}))
 
 	// Serve on stdio
 	stdioServer := mcp.NewStdioServer(s)
