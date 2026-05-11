@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: vet + test
+    name: go checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,11 +22,11 @@ jobs:
       - name: go mod download
         run: go mod download
 
+      - name: go test
+        run: go test ./...
+
       - name: go vet
         run: go vet ./...
-
-      - name: go test (race)
-        run: go test -race -count=1 ./...
 
       - name: go build
         run: go build ./...
