@@ -213,7 +213,7 @@ func (p *ReasoningPool) Complete(ctx context.Context, req ReasoningRequest, endp
 			}
 		}
 		if len(clients) == 0 {
-			return nil, fmt.Errorf("reasoning endpoint %q not found", endpointName)
+			return nil, fmt.Errorf("reasoning endpoint %q not found in reasoningEndpoints (available: %s)", endpointName, strings.Join(p.endpointNames(), ", "))
 		}
 	}
 
@@ -238,4 +238,15 @@ func (p *ReasoningPool) Complete(ctx context.Context, req ReasoningRequest, endp
 		}
 	}
 	return nil, fmt.Errorf("all %d reasoning endpoints failed: %s", len(clients), strings.Join(errs, "; "))
+}
+
+func (p *ReasoningPool) endpointNames() []string {
+	names := make([]string, 0, len(p.clients))
+	for _, c := range p.clients {
+		names = append(names, c.Name)
+	}
+	if len(names) == 0 {
+		return []string{"(none)"}
+	}
+	return names
 }

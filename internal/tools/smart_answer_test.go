@@ -61,8 +61,23 @@ func TestSmartAnswererRun(t *testing.T) {
 func TestSmartAnswererRequiresReasoner(t *testing.T) {
 	answerer := &SmartAnswerer{Researcher: &fakeSmartResearcher{}}
 	_, err := answerer.Run(context.Background(), SmartAnswerOptions{Query: "hello"})
-	if err == nil || !strings.Contains(err.Error(), "reasoning endpoint is not configured") {
+	if err == nil || !strings.Contains(err.Error(), "no reasoningEndpoints configured") || !strings.Contains(err.Error(), "grok-search.json") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSmartAnswererRejectsEmptyReasoningPoolBeforeResearch(t *testing.T) {
+	researcher := &fakeSmartResearcher{}
+	answerer := &SmartAnswerer{
+		Researcher: researcher,
+		Reasoner:   engine.NewReasoningPool(nil),
+	}
+	_, err := answerer.Run(context.Background(), SmartAnswerOptions{Query: "hello"})
+	if err == nil || !strings.Contains(err.Error(), "no reasoningEndpoints configured") {
+		t.Fatalf("err = %v", err)
+	}
+	if researcher.opts.Query != "" {
+		t.Fatalf("research should not run when reasoningEndpoints is empty: %+v", researcher.opts)
 	}
 }
 

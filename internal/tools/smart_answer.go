@@ -11,6 +11,7 @@ import (
 )
 
 const smartAnswerEvidenceMaxChars = 48000
+const missingReasoningEndpointsMessage = "no reasoningEndpoints configured; add a reasoningEndpoints[] entry to grok-search.json (for example DeepSeek Flash/Pro), then rerun smart_answer. Do not put synthesis-only models in grokEndpoints."
 
 // SmartAnswerOptions controls the evidence-gathering plus reasoning workflow.
 type SmartAnswerOptions struct {
@@ -41,6 +42,10 @@ type SmartResearcher interface {
 // SmartReasoner is satisfied by engine.ReasoningPool and by tests.
 type SmartReasoner interface {
 	Complete(ctx context.Context, req engine.ReasoningRequest, endpointName string) (*engine.PoolReasoningResult, error)
+}
+
+type smartReasonerWithLen interface {
+	Len() int
 }
 
 // SmartAnswerer composes research_run with a final reasoning endpoint.
@@ -101,7 +106,10 @@ func (a *SmartAnswerer) Run(ctx context.Context, opts SmartAnswerOptions) (Smart
 		return SmartAnswerResult{Query: query}, fmt.Errorf("researcher is not configured")
 	}
 	if a.Reasoner == nil {
-		return SmartAnswerResult{Query: query}, fmt.Errorf("reasoning endpoint is not configured")
+		return SmartAnswerResult{Query: query}, fmt.Errorf(missingReasoningEndpointsMessage)
+	}
+	if pool, ok := a.Reasoner.(smartReasonerWithLen); ok && pool.Len() == 0 {
+		return SmartAnswerResult{Query: query}, fmt.Errorf(missingReasoningEndpointsMessage)
 	}
 
 	pack, err := a.Researcher.Run(ctx, ResearchOptions{

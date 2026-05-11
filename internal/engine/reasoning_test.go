@@ -94,6 +94,23 @@ func TestReasoningPoolNamedEndpoint(t *testing.T) {
 	}
 }
 
+func TestReasoningPoolNamedEndpointNotFoundListsAvailable(t *testing.T) {
+	pool := NewReasoningPool([]ReasoningEndpoint{
+		{Name: "flash", BaseURL: "http://unused/v1", APIKey: "sk-a", Model: "deepseek-v4-flash"},
+		{Name: "pro", BaseURL: "http://unused/v1", APIKey: "sk-b", Model: "deepseek-v4-pro"},
+	})
+
+	_, err := pool.Complete(context.Background(), ReasoningRequest{UserPrompt: "hello"}, "missing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{`reasoning endpoint "missing" not found`, "flash", "pro"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing %q in error: %v", want, err)
+		}
+	}
+}
+
 func noRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts: 1,
