@@ -141,3 +141,36 @@ Refactored runtime configuration to a single grok-search.json file with explicit
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: DeepSeek smart answer workflow
+
+**Date**: 2026-05-11
+**Task**: DeepSeek smart answer workflow
+**Branch**: `main`
+
+### Summary
+
+Added a smart_answer MCP/CLI path that runs research evidence gathering first, then synthesizes final answers through configured OpenAI-compatible reasoning endpoints such as DeepSeek Flash/Pro.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0f6acbb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
