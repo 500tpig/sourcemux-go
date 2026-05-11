@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend package index for review."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review expected tests, CLI JSON shape, MCP behavior, and docs."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check that orchestration reuses existing search/fetch/crawl surfaces instead of duplicating them."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check data contracts across builder, MCP, CLI, tests, and docs."}

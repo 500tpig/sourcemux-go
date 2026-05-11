@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend package index for this MCP/CLI feature."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality rules for standalone MCP/CLI surfaces and external API boundaries."}
-{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide index."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "The task extracts shared pure orchestration logic and must avoid duplicating existing crawl/search behavior."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature spans pure builder, MCP tool, CLI command, tests, and docs."}

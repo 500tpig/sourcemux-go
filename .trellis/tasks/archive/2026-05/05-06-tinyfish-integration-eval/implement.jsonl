@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index and project development context."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality expectations for backend changes."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling expectations for API clients and CLI output."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Directory organization guidance for new benchmark code."}
-{"file": ".trellis/tasks/05-06-tinyfish-integration-eval/research/tinyfish-docs-summary.md", "reason": "TinyFish API endpoints, response models, rate limits, and benchmark-relevant docs."}

@@ -25,3 +25,11 @@ Thumbs.db
 .env
 grok-search.json
 config.local.json
+
+# Local AI workflow state.
+# These directories may contain personal tasks, hooks, journals, or client-specific
+# settings. Keep them developer-local and convert reusable guidance into docs/.
+.trellis/
+.agents/
+.codex/
+.claude/

@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index and project development context."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality expectations for verification."}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling expectations for API clients and CLI output."}
-{"file": ".trellis/tasks/05-06-tinyfish-integration-eval/research/tinyfish-docs-summary.md", "reason": "TinyFish benchmark requirements and API behavior to verify against."}
