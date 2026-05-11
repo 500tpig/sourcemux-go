@@ -106,3 +106,38 @@ Cleanup sweep over 4 long-running in_progress tasks. 45aa61e — populate backen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: CLI-first single-file config productization
+
+**Date**: 2026-05-11
+**Task**: CLI-first single-file config productization
+**Branch**: `main`
+
+### Summary
+
+Refactored runtime configuration to a single grok-search.json file with explicit --config support, added CLI setup/config surfaces and tests, updated docs/skills/specs, and verified CLI/MCP search/fetch behavior.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `469b4f1` | (see git log) |
+| `f0a0c01` | (see git log) |
+| `0563427` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
