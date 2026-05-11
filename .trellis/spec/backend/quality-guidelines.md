@@ -124,14 +124,9 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 #### 2. Signatures
 
 - Config file shape:
-  - `~/.config/grok-search/config.json`
+  - `./grok-search.json` by default, or one explicit path supplied with `--config`.
   - Provider block pattern: `{ "enabled": true, "keys": [{"name": "...", "apiKey": "..."}], "<surface>URL": "..." }`
-- Env override pattern:
-  - `<PROVIDER>_ENABLED`
-  - `<PROVIDER>_API_KEYS` for comma-separated multi-key pools
-  - `<PROVIDER>_API_KEY` for single-key compatibility when useful
-  - `<PROVIDER>_KEY_NAMES` for optional display names
-  - `<PROVIDER>_<SURFACE>_URL` for endpoint overrides
+- Runtime config must not add environment-variable fallbacks or hidden user config files.
 - Runtime placement:
   - Config parsing belongs in `internal/config/`.
   - Reusable provider REST clients and key pools belong in `internal/engine/`.
@@ -141,7 +136,7 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 #### 3. Contracts
 
 - Secrets:
-  - Accept production API keys only from environment variables or user-local config files.
+  - Accept production API keys only from the active single config file.
   - Do not commit real keys, generated key files, or provider dashboard exports.
   - Diagnostic tools may show key counts and masked key status only.
 - Routing:
@@ -160,8 +155,8 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 | --- | --- |
 | Provider disabled | Skip provider without error |
 | Provider enabled but no keys | Skip provider without network calls |
-| Blank key in config/env list | Ignore during normalization |
-| Missing optional key name | Fill stable generated name such as `key-N` or `env-N` |
+| Blank key in config list | Ignore during normalization |
+| Missing optional key name | Fill stable generated name such as `key-N` |
 | Upstream 429 | Try another configured key before falling through to the next provider |
 | Upstream 401/403/5xx or network error | Treat as key/provider failure and continue fallback routing |
 | Provider returns 200 with empty content/results | Treat as fallback signal |
@@ -178,7 +173,6 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 
 - Config:
   - file config loading
-  - env override loading
   - blank key normalization and generated names
 - Engine:
   - request construction and auth header
@@ -233,8 +227,8 @@ result, err := pool.Fetch(ctx, request)
 #### 3. Contracts
 
 - Configuration:
-  - Use the existing provider config block and env keys when the provider is already configured.
-  - For Tavily surfaces, use `TAVILY_API_KEY`, `TAVILY_API_URL`, and `TAVILY_ENABLED`.
+  - Use the existing provider config block from the active single config file.
+  - For Tavily surfaces, use the active config file's `tavily.apiKey`, `tavily.apiURL`, and `tavily.enabled`.
 - Behavior:
   - If the provider is disabled or missing a required key, return a clear unavailable error without network calls.
   - Engine methods should set `Content-Type: application/json` and `Authorization: Bearer <key>`.
@@ -385,6 +379,105 @@ pack, err := executor.Run(ctx, tools.ResearchOptions{
 	MaxFetches: maxFetches,
 })
 fmt.Println(tools.FormatResearchPack(pack))
+```
+
+---
+
+### Scenario: CLI configuration and setup surfaces
+
+#### 1. Scope / Trigger
+
+- Trigger: adding or changing CLI commands that inspect, diagnose, or write local runtime configuration.
+- Scope: config UX commands must preserve the single-file contract; do not add environment-variable config chains, hidden home-directory config, or legacy fallback files.
+
+#### 2. Signatures
+
+- Config inspection:
+  - `grok-search cli config path [--json]`
+  - `grok-search cli config files [--json]`
+  - `grok-search cli config list [--json]`
+- Global config selection:
+  - `grok-search --config <path>` for MCP/server mode.
+  - `grok-search cli --config <path> <command>` for CLI mode.
+- Setup:
+  - `grok-search cli setup [--non-interactive] --api-url <url> --api-key <key> [--model <model>] [--api-type chat|responses] [--send-search-flag] [--tavily-key <key>] [--exa-key <key>] [--jina-key <key>] [--tinyfish-keys <csv>] [--tinyfish-key-names <csv>] [--force] [--json]`
+- Diagnostics:
+  - `grok-search cli doctor [--list-timeout <dur>] [--preview <n>] [--json]`
+  - `grok-search cli probe ...` remains a backward-compatible alias.
+
+#### 3. Contracts
+
+- Config path:
+  - Default config is `config.DefaultConfigPath()` (`./grok-search.json`).
+  - `--config` selects exactly one explicit JSON file.
+  - No environment variables, `~/.config/grok-search/*`, or legacy `endpoints.json` files are loaded.
+- Config list:
+  - Must call the same config loader used by MCP/CLI runtime.
+  - Must mask all secrets with `keyStatus`; never print full API keys.
+  - Must not probe network or call provider APIs.
+- Config files:
+  - Must show only the active config file by name/path/stat.
+  - Must not read or print secret values.
+  - Must explain that hidden home config and legacy endpoint files are ignored.
+- Setup:
+  - Must write the active `grok-search.json` shape, including `grokEndpoints`, optional provider blocks, and `logLevel`.
+  - Must create the config file's parent directory automatically with user-only permissions when possible.
+  - Must write the file with `0600` permissions when possible.
+  - Must refuse to overwrite an existing config unless `--force` is passed.
+  - Interactive prompts must go to stderr so `--json` stdout remains parseable.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Explicit `--config ""` or `--config=` | Return usage error; do not silently fall back to default config |
+| `config path` with no existing config | Return the active path and missing status; do not error |
+| `config files` with historical hidden files elsewhere | Do not scan or load them; show only the active config file |
+| `config list` with missing config file | Return clear error plus next steps |
+| `config list` with provider-only config | Load successfully; Grok endpoints may be empty |
+| Missing `--api-url` in `setup --non-interactive` | Return setup error before writing |
+| Missing `--api-key` in `setup --non-interactive` | Return setup error before writing |
+| Invalid `--api-type` | Return setup error before writing |
+| Existing active config without `--force` | Refuse overwrite and keep existing file unchanged |
+| Any JSON output path | Emit stable JSON to stdout and human diagnostics/prompts to stderr |
+| Any output includes keys | Mask or omit secrets; never print raw keys |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `grok-search cli setup --non-interactive --api-url https://example.com/v1 --api-key sk-... --json` writes `./grok-search.json` and returns masked next steps.
+- Base: `grok-search cli config list --json` shows endpoint/provider status with masked key values and no live network calls.
+- Bad: adding a second CLI-only config file, reading `~/.config/grok-search`, requiring env vars for runtime config, asking users to hand-edit JSON as the only setup path, or printing raw keys in errors/tests/docs.
+
+#### 6. Tests Required
+
+- CLI dispatch:
+  - `doctor --help` returns success and uses the doctor command name.
+  - `setup --help` returns success.
+- Config path/list:
+  - `config path --json` reports the active `--config` path, absolute path, and existence status.
+  - `config files --json` reports only the active single file and loading notes without leaking secrets.
+  - `config list --json` masks all provider and endpoint secrets.
+  - Missing config returns next steps.
+- Setup:
+  - Non-interactive setup writes a loadable config file.
+  - Setup JSON output masks secrets.
+  - Existing config is not overwritten unless `--force` is passed.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```go
+fmt.Printf("wrote apiKey=%s\n", opts.APIKey)
+_ = os.WriteFile("grok-search-cli.json", data, 0o644)
+_ = os.ReadFile(filepath.Join(os.Getenv("HOME"), ".config/grok-search/config.json"))
+```
+
+Correct:
+
+```go
+fmt.Printf("wrote key=%s\n", keyStatus(opts.APIKey))
+_ = os.WriteFile(currentConfigPath(), data, 0o600)
 ```
 
 ---
