@@ -130,6 +130,7 @@ func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
 func TestConfigListMasksSecrets(t *testing.T) {
 	path := writeCLIConfig(t, `{
 	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test"}],
+	  "reasoningEndpoints": [{"name":"deepseek","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-deepseek-secret","model":"deepseek-v4-flash"}],
 	  "tavily": {"apiKey": "tvly-secret"},
 	  "exa": {"apiKey": "exa-secret"},
 	  "jina": {"apiKey": "jina-secret"},
@@ -141,7 +142,7 @@ func TestConfigListMasksSecrets(t *testing.T) {
 			t.Fatalf("Run(config list --json) = %d, want 0", got)
 		}
 	})
-	for _, secret := range []string{"sk-super-secret", "tvly-secret", "exa-secret", "jina-secret", "tf-secret-a", "tf-secret-b"} {
+	for _, secret := range []string{"sk-super-secret", "sk-deepseek-secret", "tvly-secret", "exa-secret", "jina-secret", "tf-secret-a", "tf-secret-b"} {
 		if strings.Contains(out, secret) {
 			t.Fatalf("config list leaked secret %q in %s", secret, out)
 		}
@@ -153,6 +154,9 @@ func TestConfigListMasksSecrets(t *testing.T) {
 	}
 	if len(parsed.GrokEndpoints) != 1 || parsed.GrokEndpoints[0].KeyStatus == "" {
 		t.Fatalf("grok endpoint key status missing: %+v", parsed.GrokEndpoints)
+	}
+	if len(parsed.ReasoningEndpoints) != 1 || parsed.ReasoningEndpoints[0].KeyStatus == "" {
+		t.Fatalf("reasoning endpoint key status missing: %+v", parsed.ReasoningEndpoints)
 	}
 	if parsed.TavilyKey == "(not set)" || len(parsed.TinyFishKeys) != 2 {
 		t.Fatalf("masked provider keys missing: %+v", parsed)
@@ -493,6 +497,42 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	}
 }
 
+func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
+	runner := &fakeCLISmartAnswerRunner{}
+	out := captureStdout(t, func() {
+		if got := runSmartAnswerWithRunner([]string{
+			"Should I use DeepSeek?",
+			"--depth", "quick",
+			"--platform", "GitHub",
+			"--domain", "example.com",
+			"--max-fetches", "2",
+			"--reasoning-endpoint", "deepseek",
+			"--reasoning-model", "deepseek-v4-pro",
+			"--json",
+		}, runner); got != 0 {
+			t.Fatalf("runSmartAnswerWithRunner = %d, want 0", got)
+		}
+	})
+
+	if runner.opts.Query != "Should I use DeepSeek?" || runner.opts.Depth != "quick" || runner.opts.Platform != "GitHub" {
+		t.Fatalf("runner opts = %+v", runner.opts)
+	}
+	if strings.Join(runner.opts.Domains, ",") != "example.com" || runner.opts.MaxFetches != 2 {
+		t.Fatalf("domain/max_fetches opts = %+v", runner.opts)
+	}
+	if runner.opts.ReasoningEndpoint != "deepseek" || runner.opts.ReasoningModel != "deepseek-v4-pro" {
+		t.Fatalf("reasoning opts = %+v", runner.opts)
+	}
+
+	var decoded tools.SmartAnswerResult
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Answer == "" || decoded.ReasoningModel != "deepseek-v4-pro" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+}
+
 func TestRunCrawlJSONUsesTavilyConfig(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/crawl" {
@@ -671,6 +711,26 @@ func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOpti
 		ConfirmedFacts:   []string{"Grok Search MCP is test content. (source: https://example.com/a)"},
 		LikelyInferences: []string{"fake inference"},
 		OpenQuestions:    []string{"fake question"},
+	}, nil
+}
+
+type fakeCLISmartAnswerRunner struct {
+	opts tools.SmartAnswerOptions
+}
+
+func (r *fakeCLISmartAnswerRunner) Run(ctx context.Context, opts tools.SmartAnswerOptions) (tools.SmartAnswerResult, error) {
+	r.opts = opts
+	return tools.SmartAnswerResult{
+		Query:             opts.Query,
+		Answer:            "Use Grok for search and DeepSeek for synthesis.",
+		ReasoningEndpoint: opts.ReasoningEndpoint,
+		ReasoningModel:    opts.ReasoningModel,
+		Research: tools.ResearchPack{
+			Query:          opts.Query,
+			EffectiveDepth: opts.Depth,
+			MaxFetches:     opts.MaxFetches,
+			SourceSummary:  tools.ResearchSourceSummary{UniqueURLs: 1},
+		},
 	}, nil
 }
 

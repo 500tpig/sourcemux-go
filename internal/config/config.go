@@ -16,7 +16,8 @@ const DefaultConfigFilename = "grok-search.json"
 
 // Config holds all runtime configuration, resolved from one explicit JSON file.
 type Config struct {
-	GrokEndpoints []engine.GrokEndpoint
+	GrokEndpoints      []engine.GrokEndpoint
+	ReasoningEndpoints []engine.ReasoningEndpoint
 
 	TavilyAPIURL  string
 	TavilyAPIKey  string
@@ -41,7 +42,8 @@ type Config struct {
 }
 
 type fileConfig struct {
-	GrokEndpoints []engine.GrokEndpoint `json:"grokEndpoints"`
+	GrokEndpoints      []engine.GrokEndpoint      `json:"grokEndpoints"`
+	ReasoningEndpoints []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
 
 	Tavily serviceFileConfig `json:"tavily"`
 	Exa    serviceFileConfig `json:"exa"`
@@ -97,9 +99,14 @@ func buildConfig(fileCfg fileConfig, path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s grokEndpoints: %w", path, err)
 	}
+	reasoningEndpoints, err := normalizeReasoningEndpoints(fileCfg.ReasoningEndpoints)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s reasoningEndpoints: %w", path, err)
+	}
 
 	return &Config{
-		GrokEndpoints: endpoints,
+		GrokEndpoints:      endpoints,
+		ReasoningEndpoints: reasoningEndpoints,
 
 		TavilyAPIURL:  stringOr(fileCfg.Tavily.APIURL, "https://api.tavily.com"),
 		TavilyAPIKey:  strings.TrimSpace(fileCfg.Tavily.APIKey),
@@ -157,6 +164,28 @@ func normalizeEndpoints(eps []engine.GrokEndpoint) ([]engine.GrokEndpoint, error
 		case "", "chat", "responses":
 		default:
 			return nil, fmt.Errorf("endpoint #%d (name=%q) has invalid apiType %q: must be \"\" (or \"chat\") or \"responses\"", i, ep.Name, ep.APIType)
+		}
+		out = append(out, ep)
+	}
+	return out, nil
+}
+
+func normalizeReasoningEndpoints(eps []engine.ReasoningEndpoint) ([]engine.ReasoningEndpoint, error) {
+	out := make([]engine.ReasoningEndpoint, 0, len(eps))
+	for i, ep := range eps {
+		ep.Name = strings.TrimSpace(ep.Name)
+		ep.BaseURL = strings.TrimSpace(ep.BaseURL)
+		ep.APIKey = strings.TrimSpace(ep.APIKey)
+		ep.Model = strings.TrimSpace(ep.Model)
+		if ep.BaseURL == "" || ep.APIKey == "" {
+			return nil, fmt.Errorf("endpoint #%d (name=%q) missing baseURL or apiKey", i, ep.Name)
+		}
+		ep.BaseURL = normalizeOpenAIBaseURL(ep.BaseURL)
+		if ep.Name == "" {
+			ep.Name = fmt.Sprintf("reasoning-%d", i)
+		}
+		if ep.Model == "" {
+			ep.Model = "deepseek-v4-flash"
 		}
 		out = append(out, ep)
 	}

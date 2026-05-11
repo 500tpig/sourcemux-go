@@ -20,7 +20,8 @@ LLM Client ────MCP──► Grok Search Server (same binary)
                        ├─ map / web_map
                        ├─ crawl / web_crawl
                        ├─ plan / search_planning
-                       └─ research / research_run（计划→搜索→取源→抓取→打包）
+                       ├─ research / research_run（计划→搜索→取源→抓取→打包）
+                       └─ smart-answer / smart_answer（research 取证→DeepSeek/推理端点综合）
 ```
 
 ## 特性
@@ -36,6 +37,7 @@ LLM Client ────MCP──► Grok Search Server (same binary)
 - 📥 **零成本抓取** — Jina Reader 免费、无需 key、Markdown 输出
 - 🕸️ **站点级 Crawl** — Tavily Crawl 可遍历站点并返回抽取内容；`web_map` 只发现 URL，`web_crawl` 返回内容
 - 🧩 **组合式 Research Run** — `research_run` / `cli research` 执行有界内存工作流，串联 `search_planning`、`web_search`、`get_sources`、`web_fetch`，必要时使用 `web_map` / `web_crawl`
+- 🧠 **低成本智能综合** — `smart_answer` / `cli smart-answer` 保留现有搜索取证链路，再用 DeepSeek V4 Flash/Pro 等 OpenAI-compatible 推理端点输出最终答案
 - ⏰ **自动时间注入** — 检测时间相关查询，注入本地时间上下文
 - 🔑 **OpenAI 兼容** — 任意 Grok 镜像 / grok2api / xAI 原生
 
@@ -93,6 +95,10 @@ cat > grok-search.json <<'JSON'
     {"name":"wykon","baseURL":"https://grok2api.wykon.homes/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false},
     {"name":"yyds","baseURL":"https://yyds.215.im/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false}
   ],
+  "reasoningEndpoints": [
+    {"name":"deepseek-flash","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-flash"},
+    {"name":"deepseek-pro","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-pro"}
+  ],
   "tavily": {
     "apiKey": "tvly-...",
     "apiURL": "https://api.tavily.com",
@@ -144,6 +150,10 @@ grok-search cli doctor --json
 | `grokEndpoints[].model` | 否 | 默认 `grok-3-mini` |
 | `grokEndpoints[].sendSearchFlag` | 否 | xAI 原生通常为 `true`；多数 grok2api 代理建议 `false` |
 | `grokEndpoints[].apiType` | 否 | `chat` 或 `responses` |
+| `reasoningEndpoints[]` | 否 | 最终综合/推理端点池，OpenAI-compatible Chat Completions；不参与 `web_search` 路由 |
+| `reasoningEndpoints[].baseURL` | ✅ | OpenAI-compatible 根路径；缺 `/v1` 时会自动补齐 |
+| `reasoningEndpoints[].apiKey` | ✅ | Bearer token |
+| `reasoningEndpoints[].model` | 否 | 默认 `deepseek-v4-flash` |
 | `tavily` | 否 | Tavily Search / Extract / Map / Crawl 配置 |
 | `exa` | 否 | Exa Search / Contents 配置 |
 | `jina` | 否 | Jina Reader 配置；无 key 也可用 |
@@ -162,6 +172,34 @@ grok-search cli doctor --json
 - 兼容兜底：`grok-3-mini`（旧端点默认值）
 
 如果使用 xAI 原生端点通常需要 `sendSearchFlag: true`；多数 grok2api / OpenAI-compatible 代理建议 `false`。
+
+### DeepSeek 智能综合配置
+
+如果你想用免费/低价 Grok 账号负责搜索，再用 DeepSeek 做最终推理，添加独立的 `reasoningEndpoints`，不要把 DeepSeek 放进 `grokEndpoints`：
+
+```json
+{
+  "grokEndpoints": [
+    {"name":"grok2api-fast","baseURL":"https://your-grok2api/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false}
+  ],
+  "reasoningEndpoints": [
+    {"name":"deepseek-flash","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-flash"},
+    {"name":"deepseek-pro","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-pro"}
+  ]
+}
+```
+
+使用方式：
+
+```bash
+./grok-search cli smart-answer "我应该买 SuperGrok 还是接 DeepSeek？" \
+  --depth standard --reasoning-endpoint deepseek-flash
+
+./grok-search cli smart-answer "复杂技术决策" \
+  --depth deep --reasoning-model deepseek-v4-pro --json
+```
+
+心智模型：`grokEndpoints` 是“眼睛”（搜索/找来源），`reasoningEndpoints` 是“大脑”（基于 research pack 综合推理）。
 
 这样 Claude Code / Cherry Studio 那边的 MCP 注册不需要传 env；如果 MCP 进程工作目录不是配置所在目录，就显式传 `--config`：
 
@@ -220,6 +258,8 @@ codex mcp add-json grok-search '{
 ./grok-search cli plan   "调研主题" --depth deep                          # 离线计划，不打网络
 ./grok-search cli research "调研主题" \
   --depth deep --domain example.com --max-fetches 6 --json                # 执行搜索/抓取并输出 research pack
+./grok-search cli smart-answer "调研主题" \
+  --depth standard --reasoning-endpoint deepseek-flash --json             # research 取证后交给推理端点综合
 ./grok-search cli tinyfish-bench --json                                   # 本地 TinyFish 评测
 ./grok-search cli --help                                                  # 完整 usage
 ```
@@ -242,6 +282,7 @@ codex mcp add-json grok-search '{
 | `setup` | 写入当前 `grok-search.json`，避免手写 JSON；默认不覆盖已有文件 | `--non-interactive` `--api-url` `--api-key` `--model` `--api-type` `--send-search-flag` `--tavily-key` `--exa-key` `--jina-key` `--tinyfish-keys` `--force` `--json` |
 | `plan <query>` | 纯逻辑（不调网络）| `--depth` `--platform` |
 | `research <query>` | 组合式执行：规划查询 → 多轮搜索 → 取 sources → 去重排序 → 抓取 top-N → 输出 research pack | `--depth` `--platform` `--domain` `--max-fetches` `--timeout` `--json` |
+| `smart-answer <query>` | 组合式 research 取证 → DeepSeek/推理端点综合输出最终答案 | `--depth` `--platform` `--domain` `--max-fetches` `--reasoning-endpoint` `--reasoning-model` `--timeout` `--json` |
 | `tinyfish-bench` | TinyFish Search / Fetch / Agent 本地评测 | `--cases` `--keys-file` `--surfaces` `--timeout` `--json` |
 
 `map` 和 `crawl` 的区别：
@@ -255,6 +296,7 @@ codex mcp add-json grok-search '{
 - `fetch` 只抓取一个 URL；`research` 会对候选 URL 去重、启发式排序后抓取 top-N。
 - `crawl` 是站点遍历能力；`research` 只在指定 `--domain` 且有用时复用现有 Tavily Map/Crawl，不重新实现 crawl provider。
 - `max_fetches` / `--max-fetches` 是执行上限，v1 会限制在最多 12 个 URL，避免 research pack 过大。
+- `smart-answer` 在 `research` 之后多做一步：把 compact research pack 交给 `reasoningEndpoints`，适合低成本提升最终推理质量。
 
 ### 高级 Exa 模式
 
@@ -350,6 +392,7 @@ codex mcp add-json grok-search '{
 | `get_config_info` | 列出每个 Grok 端点 + 探活（GET /models）+ Tavily/Jina 状态 |
 | `search_planning` | 复杂研究前生成分阶段搜索计划，指导后续 `web_search` / `get_sources` / `web_fetch` / `web_crawl` |
 | `research_run` | 执行组合式研究工作流：调用规划逻辑、跑多轮 `web_search`、读取 `get_sources`、去重/排序 URL、抓取 top-N，并输出 compact research pack |
+| `smart_answer` | 先执行组合式 research 取证，再用配置的 DeepSeek/推理端点综合最终答案 |
 
 `web_search` 参数：
 
@@ -404,6 +447,18 @@ codex mcp add-json grok-search '{
 | `domains` | 否 | 域名/站点 allow-list；用于过滤/优先排序，也可触发 `web_map` / `web_crawl` 站点扩展 |
 | `max_fetches` | 否 | 最多抓取的高信号 URL 数；默认随 depth 调整，v1 上限为 12 |
 
+`smart_answer` 参数：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `query` | ✅ | 要回答的问题 |
+| `depth` | 否 | research 深度：`quick` / `standard` / `deep`，默认 `standard` |
+| `platform` | 否 | 聚焦平台 |
+| `domains` | 否 | 域名/站点 allow-list，传给 research 阶段 |
+| `max_fetches` | 否 | research 阶段最多抓取的高信号 URL 数 |
+| `reasoning_endpoint` | 否 | 指定 `reasoningEndpoints[].name`，如 `deepseek-flash` |
+| `reasoning_model` | 否 | 按次覆盖推理模型，如 `deepseek-v4-pro` |
+
 `web_crawl` 参数：
 
 | 参数 | 必填 | 说明 |
@@ -427,6 +482,15 @@ codex mcp add-json grok-search '{
 | `model` | 否 | `grok-3-mini` | 模型 ID |
 | `sendSearchFlag` | 否 | `false` | xAI 原生需 `true`；多数 grok2api 自动联网，置 `false` |
 | `apiType` | 否 | `chat` | `chat` 使用 `/v1/chat/completions`；`responses` 使用 `/v1/responses` |
+
+## 推理端点字段
+
+| 字段 | 必填 | 默认 | 说明 |
+|------|------|------|------|
+| `name` | 否 | `reasoning-N` | 显示名，可被 `smart_answer.reasoning_endpoint` / `--reasoning-endpoint` 选择 |
+| `baseURL` | ✅ | — | OpenAI-compatible 根路径；缺 `/v1` 时会自动补齐 |
+| `apiKey` | ✅ | — | Bearer token |
+| `model` | 否 | `deepseek-v4-flash` | 默认综合模型 |
 
 ## 超时与限额
 

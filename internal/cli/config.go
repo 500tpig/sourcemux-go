@@ -68,7 +68,8 @@ type configNamedKeyOutput struct {
 type configListOutput struct {
 	Paths configPathOutput `json:"paths"`
 
-	GrokEndpoints []configEndpointOutput `json:"grok_endpoints"`
+	GrokEndpoints      []configEndpointOutput `json:"grok_endpoints"`
+	ReasoningEndpoints []configEndpointOutput `json:"reasoning_endpoints"`
 
 	TavilyEnabled bool   `json:"tavily_enabled"`
 	TavilyAPIURL  string `json:"tavily_api_url"`
@@ -216,6 +217,13 @@ func runConfigList(args []string) int {
 		fmt.Printf("      Send search flag: %v\n", ep.SendSearchFlag)
 		fmt.Printf("      API key: %s\n", ep.KeyStatus)
 	}
+	fmt.Printf("\nReasoning endpoints: %d\n", len(out.ReasoningEndpoints))
+	for i, ep := range out.ReasoningEndpoints {
+		fmt.Printf("  [%d] %s\n", i+1, ep.Name)
+		fmt.Printf("      Base URL: %s\n", ep.BaseURL)
+		fmt.Printf("      Model: %s\n", ep.Model)
+		fmt.Printf("      API key: %s\n", ep.KeyStatus)
+	}
 	fmt.Printf("\nTavily: enabled=%v url=%s key=%s\n", out.TavilyEnabled, out.TavilyAPIURL, out.TavilyKey)
 	fmt.Printf("Exa:    enabled=%v url=%s key=%s\n", out.ExaEnabled, out.ExaAPIURL, out.ExaKey)
 	fmt.Printf("Jina:   url=%s key=%s\n", out.JinaAPIURL, out.JinaKey)
@@ -293,6 +301,14 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 			APIType:        ep.APIType,
 			SendSearchFlag: ep.SendSearchFlag,
 			KeyStatus:      keyStatus(ep.APIKey),
+		})
+	}
+	for _, ep := range cfg.ReasoningEndpoints {
+		out.ReasoningEndpoints = append(out.ReasoningEndpoints, configEndpointOutput{
+			Name:      ep.Name,
+			BaseURL:   ep.BaseURL,
+			Model:     ep.Model,
+			KeyStatus: keyStatus(ep.APIKey),
 		})
 	}
 	for _, key := range cfg.TinyFishKeys {

@@ -38,6 +38,13 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 		for i, key := range cfg.TinyFishKeys {
 			sb.WriteString(fmt.Sprintf("\n    [%d] %s: %s", i+1, key.Name, maskKey(key.APIKey)))
 		}
+		sb.WriteString(fmt.Sprintf("\nReasoning Endpoints: %d configured", len(cfg.ReasoningEndpoints)))
+		for i, ep := range cfg.ReasoningEndpoints {
+			sb.WriteString(fmt.Sprintf("\n    [%d] %s", i+1, ep.Name))
+			sb.WriteString(fmt.Sprintf("\n        Base URL: %s", ep.BaseURL))
+			sb.WriteString(fmt.Sprintf("\n        API Key:  %s", maskKey(ep.APIKey)))
+			sb.WriteString(fmt.Sprintf("\n        Model:    %s", ep.Model))
+		}
 		sb.WriteString(fmt.Sprintf("\nDebug: %v", cfg.Debug))
 
 		sb.WriteString(fmt.Sprintf("\n\n=== Grok Endpoint Pool (%d configured, in priority order) ===", pool.Len()))

@@ -1,7 +1,8 @@
 // Package cli exposes the grok-search engine layer (Grok pool, Jina Reader,
 // Tavily) as a non-MCP one-shot CLI. It is invoked via `grok-search cli
 // <subcommand> [flags]` and mirrors the MCP tool surface: search / fetch /
-// map / crawl / doctor / probe / config / setup / plan / research.
+// map / crawl / doctor / probe / config / setup / plan / research /
+// smart-answer.
 //
 // Design notes:
 //
@@ -37,6 +38,8 @@ Commands:
   setup               Write grok-search.json without hand-editing JSON.
   plan   <query>      Print a deterministic multi-step search plan.
   research <query>    Run a composable in-memory research workflow.
+  smart-answer <query>
+                      Research sources, then synthesize with a reasoning endpoint.
   tinyfish-bench      Benchmark TinyFish Search, Fetch, and Agent locally.
 
 Common flags (subcommand-dependent):
@@ -63,6 +66,7 @@ Examples:
   grok-search cli probe  --json
   grok-search cli plan   "Notion AI agents" --depth deep
   grok-search cli research "Notion AI agents" --depth deep --domain example.com --max-fetches 6 --json
+  grok-search cli smart-answer "Should I use SuperGrok or DeepSeek?" --reasoning-model deepseek-v4-flash --json
   grok-search cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
 `
 
@@ -114,6 +118,8 @@ func RunWithConfig(args []string, configPath string) int {
 		return runPlan(rest)
 	case "research":
 		return runResearch(rest)
+	case "smart-answer":
+		return runSmartAnswer(rest)
 	case "tinyfish-bench":
 		return runTinyFishBench(rest)
 	default:

@@ -62,6 +62,14 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	      "apiType": "responses"
 	    }
 	  ],
+	  "reasoningEndpoints": [
+	    {
+	      "name": "deepseek",
+	      "baseURL": "https://api.deepseek.com",
+	      "apiKey": "sk-deepseek",
+	      "model": "deepseek-v4-flash"
+	    }
+	  ],
 	  "tavily": {"apiURL": "https://tavily.test", "apiKey": "tvly-test", "enabled": false},
 	  "exa": {"apiURL": "https://exa.test", "apiKey": "exa-test", "enabled": true},
 	  "jina": {"apiURL": "https://jina.test", "apiKey": "jina-test"},
@@ -86,6 +94,13 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	ep := cfg.GrokEndpoints[0]
 	if ep.BaseURL != "https://grok.example/v1" || ep.APIType != "responses" || ep.Model != "grok-4.20-fast" {
 		t.Fatalf("endpoint = %+v", ep)
+	}
+	if len(cfg.ReasoningEndpoints) != 1 {
+		t.Fatalf("reasoning endpoints len = %d, want 1", len(cfg.ReasoningEndpoints))
+	}
+	rep := cfg.ReasoningEndpoints[0]
+	if rep.Name != "deepseek" || rep.BaseURL != "https://api.deepseek.com/v1" || rep.APIKey != "sk-deepseek" || rep.Model != "deepseek-v4-flash" {
+		t.Fatalf("reasoning endpoint = %+v", rep)
 	}
 	if cfg.TavilyEnabled || cfg.TavilyAPIURL != "https://tavily.test" || cfg.TavilyAPIKey != "tvly-test" {
 		t.Fatalf("tavily config = enabled=%v url=%q key=%q", cfg.TavilyEnabled, cfg.TavilyAPIURL, cfg.TavilyAPIKey)
@@ -161,6 +176,34 @@ func TestLoadFile_InvalidAPITypeErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid apiType") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFile_InvalidReasoningEndpointErrors(t *testing.T) {
+	path := writeConfig(t, `{"reasoningEndpoints":[{"name":"bad","baseURL":"https://deepseek","apiKey":""}]}`)
+
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "reasoningEndpoints") || !strings.Contains(err.Error(), "missing baseURL or apiKey") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFile_ReasoningEndpointDefaults(t *testing.T) {
+	path := writeConfig(t, `{"reasoningEndpoints":[{"baseURL":"https://api.deepseek.com","apiKey":"sk-test"}]}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if len(cfg.ReasoningEndpoints) != 1 {
+		t.Fatalf("reasoning endpoints len = %d, want 1", len(cfg.ReasoningEndpoints))
+	}
+	ep := cfg.ReasoningEndpoints[0]
+	if ep.Name != "reasoning-0" || ep.Model != "deepseek-v4-flash" || ep.BaseURL != "https://api.deepseek.com/v1" {
+		t.Fatalf("reasoning endpoint defaults = %+v", ep)
 	}
 }
 

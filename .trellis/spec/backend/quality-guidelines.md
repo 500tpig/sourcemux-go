@@ -383,6 +383,106 @@ fmt.Println(tools.FormatResearchPack(pack))
 
 ---
 
+### Scenario: Evidence-grounded reasoning synthesis surfaces
+
+#### 1. Scope / Trigger
+
+- Trigger: adding a model-powered synthesis layer that consumes search/fetch/research evidence and calls a non-search LLM provider such as DeepSeek.
+- Scope: synthesis providers may call external OpenAI-compatible APIs at runtime, but they must not change `web_search` / `research_run` evidence collection semantics.
+
+#### 2. Signatures
+
+- Config shape:
+  - `reasoningEndpoints[]`: ordered OpenAI-compatible Chat Completions endpoint pool for final synthesis.
+  - Fields: `name`, `baseURL`, `apiKey`, `model`.
+- MCP tool:
+  - `smart_answer(query, depth?, platform?, domains?, max_fetches?, reasoning_endpoint?, reasoning_model?)`.
+- CLI command:
+  - `grok-search cli smart-answer <query> --depth <quick|standard|deep> --domain <domain> --max-fetches <n> --reasoning-endpoint <name> --reasoning-model <model> --json`.
+- Runtime placement:
+  - Generic reasoning client/pool: `internal/engine/`.
+  - Composition/MCP registration: `internal/tools/`.
+  - CLI parsing/wiring: `internal/cli/`.
+  - Server registration: `internal/server/server.go`.
+
+#### 3. Contracts
+
+- Search/fetch ownership:
+  - `web_search` and `research_run` remain the evidence layer.
+  - Reasoning endpoints synthesize only after research has produced a compact research pack.
+  - Do not place non-search synthesis providers in `grokEndpoints`, because any successful response would short-circuit source-first fallbacks.
+- Secrets:
+  - Reasoning API keys are read only from the active single config file.
+  - Config/diagnostic output must show masked key status only.
+  - Upstream error bodies must redact the configured secret before surfacing errors.
+- Routing:
+  - `reasoning_endpoint` selects one named endpoint.
+  - If no endpoint is selected, the pool tries configured `reasoningEndpoints` in priority order.
+  - `reasoning_model` may override the selected endpoint's configured model for a single call.
+- Output:
+  - Human/MCP output includes endpoint name, model, research depth, source count, final answer, and high-signal URLs.
+  - JSON output preserves the final answer plus the research pack for reproducibility.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing query | Return usage/tool error before network calls |
+| No `reasoningEndpoints` configured | Return clear unavailable error after/before synthesis; do not silently fall back to `grokEndpoints` |
+| Named `reasoning_endpoint` not found | Return clear endpoint-not-found error |
+| Reasoning endpoint missing `baseURL` or `apiKey` | Config load fails with `reasoningEndpoints` context |
+| Reasoning endpoint missing model | Default to `deepseek-v4-flash` |
+| Upstream 429/5xx or transient network error | Retry via shared retry helper |
+| Upstream non-retryable non-2xx | Return status plus redacted clipped response body |
+| Empty choices/content | Treat as failure and try the next reasoning endpoint when available |
+| `research_run` fails | Preserve the partial research pack and return a synthesis-blocking error |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `smart_answer` gathers sources with existing research routing, then sends the compact pack to `deepseek-v4-flash` for final synthesis.
+- Base: `reasoningEndpoints` contains two public/paid-compatible endpoints for the same model; the pool falls through when the first fails.
+- Bad: adding DeepSeek to `grokEndpoints` for `web_search`, using `*-search` reasoning models when local search already gathered sources, or printing full reasoning API keys in diagnostics.
+
+#### 6. Tests Required
+
+- Config:
+  - `reasoningEndpoints` load, `/v1` normalization, default names/models, invalid endpoint errors.
+- Engine:
+  - Chat Completions path, method, auth header, JSON body, response parsing, redacted error body, named endpoint selection.
+- Tools:
+  - `smart_answer` passes research options through, includes research pack in the reasoning prompt, returns endpoint/model metadata.
+- CLI:
+  - Parses `--depth`, repeatable `--domain`, `--max-fetches`, `--reasoning-endpoint`, `--reasoning-model`, and `--json`.
+- Docs:
+  - README documents config fields, MCP tool, CLI command, and why reasoning endpoints are separate from search endpoints.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```json
+{
+  "grokEndpoints": [
+    {"name":"deepseek","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-flash"}
+  ]
+}
+```
+
+Correct:
+
+```json
+{
+  "grokEndpoints": [
+    {"name":"grok-fast","baseURL":"https://grok2api.example/v1","apiKey":"sk-...","model":"grok-4.20-fast","sendSearchFlag":false}
+  ],
+  "reasoningEndpoints": [
+    {"name":"deepseek-flash","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-v4-flash"}
+  ]
+}
+```
+
+---
+
 ### Scenario: CLI configuration and setup surfaces
 
 #### 1. Scope / Trigger

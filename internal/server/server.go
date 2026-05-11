@@ -13,12 +13,13 @@ import (
 
 // App holds shared state for all MCP tools.
 type App struct {
-	Cfg      *config.Config
-	GrokPool *engine.GrokPool
-	Tavily   *engine.TavilyClient
-	Exa      *engine.ExaClient
-	Jina     *engine.JinaClient
-	TinyFish *engine.TinyFishPool
+	Cfg           *config.Config
+	GrokPool      *engine.GrokPool
+	ReasoningPool *engine.ReasoningPool
+	Tavily        *engine.TavilyClient
+	Exa           *engine.ExaClient
+	Jina          *engine.JinaClient
+	TinyFish      *engine.TinyFishPool
 
 	// Source cache: sessionID -> []string (URLs)
 	SourcesMu sync.RWMutex
@@ -28,9 +29,10 @@ type App struct {
 // Run starts the MCP server on stdio.
 func Run(cfg *config.Config) error {
 	app := &App{
-		Cfg:      cfg,
-		GrokPool: engine.NewGrokPool(cfg.GrokEndpoints),
-		Sources:  make(map[string][]string),
+		Cfg:           cfg,
+		GrokPool:      engine.NewGrokPool(cfg.GrokEndpoints),
+		ReasoningPool: engine.NewReasoningPool(cfg.ReasoningEndpoints),
+		Sources:       make(map[string][]string),
 	}
 	app.GrokPool.OverallTimeout = cfg.GrokPoolTimeout
 
@@ -61,7 +63,7 @@ func Run(cfg *config.Config) error {
 	tools.RegisterSources(s, app)
 	tools.RegisterConfig(s, cfg, app.GrokPool)
 	tools.RegisterSearchPlanning(s)
-	tools.RegisterResearchRun(s, tools.NewResearchExecutor(tools.ResearchExecutorDeps{
+	researchExecutor := tools.NewResearchExecutor(tools.ResearchExecutorDeps{
 		Search: tools.WebSearchClients{
 			Pool:     app.GrokPool,
 			TinyFish: app.TinyFish,
@@ -78,7 +80,12 @@ func Run(cfg *config.Config) error {
 		Sources: app,
 		Mapper:  app.Tavily,
 		Crawler: app.Tavily,
-	}))
+	})
+	tools.RegisterResearchRun(s, researchExecutor)
+	tools.RegisterSmartAnswer(s, &tools.SmartAnswerer{
+		Researcher: researchExecutor,
+		Reasoner:   app.ReasoningPool,
+	})
 
 	// Serve on stdio
 	stdioServer := mcp.NewStdioServer(s)
