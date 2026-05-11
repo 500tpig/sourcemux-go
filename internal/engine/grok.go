@@ -21,6 +21,20 @@ var urlRegex = regexp.MustCompile(`https?://[^\s)\]<>"']+`)
 // end with these right after the URL).
 const urlTrailingPunct = ".,;:!?"
 
+const (
+	// ResponseToolWebSearch enables xAI's built-in real-time web search tool on
+	// the Responses API.
+	ResponseToolWebSearch = "web_search"
+	// ResponseToolXSearch enables xAI's built-in X/Twitter search tool on the
+	// Responses API.
+	ResponseToolXSearch = "x_search"
+)
+
+var allowedResponseTools = map[string]struct{}{
+	ResponseToolWebSearch: {},
+	ResponseToolXSearch:   {},
+}
+
 // GrokClient wraps calls to a Grok-compatible (OpenAI-format) API with web search.
 type GrokClient struct {
 	Name    string
@@ -31,12 +45,15 @@ type GrokClient struct {
 	//   ""  or "chat"      → POST /v1/chat/completions  (default, all grok2api proxies)
 	//   "responses"        → POST /v1/responses         (xAI Responses API, native xAI endpoints)
 	APIType string
-	// SendSearchFlag controls web-search activation. The exact mechanism differs
-	// by APIType: "chat" sends "search":true; "responses" appends a web_search tool.
+	// SendSearchFlag controls search activation. The exact mechanism differs by
+	// APIType: "chat" sends "search":true; "responses" appends built-in tools.
 	// Many grok2api proxies auto-search and either ignore or reject the flag, so
 	// it's configurable per-endpoint.
 	SendSearchFlag bool
-	HTTPClient     *http.Client
+	// ResponseTools selects built-in Responses API tools when SendSearchFlag is
+	// true. Empty keeps the legacy default of web_search only.
+	ResponseTools []string
+	HTTPClient    *http.Client
 	// RetryConfig governs httpDoWithRetry behaviour: 429/5xx + network errors are
 	// retried with capped exponential backoff, honouring any Retry-After header.
 	RetryConfig RetryConfig
@@ -201,9 +218,11 @@ func (c *GrokClient) searchViaResponses(ctx context.Context, query string) (*Sea
 		"store": false,
 	}
 	if c.SendSearchFlag {
-		body["tools"] = []map[string]any{
-			{"type": "web_search"},
+		tools, err := NormalizeResponseTools(c.ResponseTools)
+		if err != nil {
+			return nil, fmt.Errorf("normalize response tools: %w", err)
 		}
+		body["tools"] = responseToolPayload(EffectiveResponseTools(tools))
 	}
 
 	jsonBody, err := json.Marshal(body)
@@ -249,6 +268,50 @@ func (c *GrokClient) searchViaResponses(ctx context.Context, query string) (*Sea
 		SourceURLs:   urls,
 		SourcesCount: len(urls),
 	}, nil
+}
+
+// NormalizeResponseTools trims, validates, and deduplicates Responses API tool
+// names while preserving first-seen order.
+func NormalizeResponseTools(tools []string) ([]string, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(tools))
+	seen := make(map[string]struct{}, len(tools))
+	for i, tool := range tools {
+		tool = strings.TrimSpace(tool)
+		if tool == "" {
+			return nil, fmt.Errorf("responseTools[%d] is empty", i)
+		}
+		if _, ok := allowedResponseTools[tool]; !ok {
+			return nil, fmt.Errorf("responseTools[%d] has unsupported tool %q (supported: %s, %s)",
+				i, tool, ResponseToolWebSearch, ResponseToolXSearch)
+		}
+		if _, ok := seen[tool]; ok {
+			continue
+		}
+		seen[tool] = struct{}{}
+		out = append(out, tool)
+	}
+	return out, nil
+}
+
+// EffectiveResponseTools returns the Responses API tools to send for a
+// search-enabled request. Empty config preserves the historical web_search-only
+// behavior.
+func EffectiveResponseTools(tools []string) []string {
+	if len(tools) == 0 {
+		return []string{ResponseToolWebSearch}
+	}
+	return append([]string(nil), tools...)
+}
+
+func responseToolPayload(tools []string) []map[string]any {
+	payload := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		payload = append(payload, map[string]any{"type": tool})
+	}
+	return payload
 }
 
 // extractResponsesAPIResult extracts text content and source URLs from a

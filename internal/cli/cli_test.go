@@ -129,7 +129,7 @@ func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
 
 func TestConfigListMasksSecrets(t *testing.T) {
 	path := writeCLIConfig(t, `{
-	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test"}],
+	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test","apiType":"responses","sendSearchFlag":true,"responseTools":["web_search","x_search"]}],
 	  "reasoningEndpoints": [{"name":"deepseek","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-deepseek-secret","model":"deepseek-v4-flash"}],
 	  "tavily": {"apiKey": "tvly-secret"},
 	  "exa": {"apiKey": "exa-secret"},
@@ -154,6 +154,9 @@ func TestConfigListMasksSecrets(t *testing.T) {
 	}
 	if len(parsed.GrokEndpoints) != 1 || parsed.GrokEndpoints[0].KeyStatus == "" {
 		t.Fatalf("grok endpoint key status missing: %+v", parsed.GrokEndpoints)
+	}
+	if strings.Join(parsed.GrokEndpoints[0].ResponseTools, ",") != "web_search,x_search" {
+		t.Fatalf("grok endpoint response tools missing: %+v", parsed.GrokEndpoints[0])
 	}
 	if len(parsed.ReasoningEndpoints) != 1 || parsed.ReasoningEndpoints[0].KeyStatus == "" {
 		t.Fatalf("reasoning endpoint key status missing: %+v", parsed.ReasoningEndpoints)
@@ -211,6 +214,9 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 			"--api-url", "https://setup.example/v1",
 			"--api-key", "sk-setup-secret",
 			"--model", "grok-setup",
+			"--api-type", "responses",
+			"--send-search-flag",
+			"--response-tools", "web_search,x_search",
 			"--tavily-key", "tvly-setup-secret",
 			"--tinyfish-keys", "tf-setup-a,tf-setup-b",
 			"--tinyfish-key-names", "a,b",
@@ -233,6 +239,9 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 	if parsed.ConfigFile != path {
 		t.Fatalf("config_file = %q, want %q", parsed.ConfigFile, path)
 	}
+	if strings.Join(parsed.Endpoint.ResponseTools, ",") != "web_search,x_search" {
+		t.Fatalf("setup output response tools = %+v", parsed.Endpoint)
+	}
 	if _, err := os.Stat(parsed.ConfigFile); err != nil {
 		t.Fatalf("config file not written: %v", err)
 	}
@@ -246,6 +255,9 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 	}
 	if cfg.GrokEndpoints[0].APIKey != "sk-setup-secret" {
 		t.Fatalf("setup did not write endpoint key")
+	}
+	if cfg.GrokEndpoints[0].APIType != "responses" || !cfg.GrokEndpoints[0].SendSearchFlag || strings.Join(cfg.GrokEndpoints[0].ResponseTools, ",") != "web_search,x_search" {
+		t.Fatalf("setup did not write responses tools: %+v", cfg.GrokEndpoints[0])
 	}
 	if cfg.TavilyAPIKey != "tvly-setup-secret" || len(cfg.TinyFishKeys) != 2 {
 		t.Fatalf("provider keys not loaded: tavily=%q tinyfish=%+v", cfg.TavilyAPIKey, cfg.TinyFishKeys)
@@ -276,6 +288,55 @@ func TestSetupRefusesExistingConfigWithoutForce(t *testing.T) {
 	})
 	if !strings.Contains(out, "already exists") || strings.Contains(out, "sk-setup-secret") {
 		t.Fatalf("unexpected setup existing output: %s", out)
+	}
+}
+
+func TestSetupRejectsInvalidResponseTools(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grok-search.json")
+	out := captureStdout(t, func() {
+		got := Run([]string{
+			"--config", path,
+			"setup",
+			"--non-interactive",
+			"--api-url", "https://setup.example/v1",
+			"--api-key", "sk-setup-secret",
+			"--api-type", "responses",
+			"--response-tools", "bad",
+			"--json",
+		})
+		if got != 1 {
+			t.Fatalf("Run(setup invalid response tools) = %d, want 1", got)
+		}
+	})
+	if !strings.Contains(out, "--response-tools") || !strings.Contains(out, "unsupported") {
+		t.Fatalf("unexpected invalid response tools output: %s", out)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("config should not be written, stat err=%v", err)
+	}
+}
+
+func TestSetupResponseToolsRequireResponsesAPI(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grok-search.json")
+	out := captureStdout(t, func() {
+		got := Run([]string{
+			"--config", path,
+			"setup",
+			"--non-interactive",
+			"--api-url", "https://setup.example/v1",
+			"--api-key", "sk-setup-secret",
+			"--response-tools", "web_search",
+			"--json",
+		})
+		if got != 1 {
+			t.Fatalf("Run(setup response tools with chat API) = %d, want 1", got)
+		}
+	})
+	if !strings.Contains(out, "--response-tools requires --api-type responses") {
+		t.Fatalf("unexpected response tools API type output: %s", out)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("config should not be written, stat err=%v", err)
 	}
 }
 

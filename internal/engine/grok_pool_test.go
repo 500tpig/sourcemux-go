@@ -120,7 +120,7 @@ func TestPool_EmptyPool(t *testing.T) {
 func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	eps := []GrokEndpoint{
 		{Name: "wykon", BaseURL: "http://x", APIKey: "k", Model: "m", SendSearchFlag: false},
-		{Name: "yyds", BaseURL: "http://y", APIKey: "k2", Model: "m2", SendSearchFlag: true},
+		{Name: "yyds", BaseURL: "http://y", APIKey: "k2", Model: "m2", SendSearchFlag: true, APIType: "responses", ResponseTools: []string{ResponseToolWebSearch, ResponseToolXSearch}},
 	}
 	pool := NewGrokPool(eps)
 	if pool.Len() != 2 {
@@ -130,8 +130,11 @@ func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	if cs[0].Name != "wykon" || cs[0].SendSearchFlag != false {
 		t.Fatalf("client 0 = %+v", cs[0])
 	}
-	if cs[1].Name != "yyds" || cs[1].SendSearchFlag != true {
+	if cs[1].Name != "yyds" || cs[1].SendSearchFlag != true || cs[1].APIType != "responses" {
 		t.Fatalf("client 1 = %+v", cs[1])
+	}
+	if !reflect.DeepEqual(cs[1].ResponseTools, []string{ResponseToolWebSearch, ResponseToolXSearch}) {
+		t.Fatalf("client 1 response tools = %v", cs[1].ResponseTools)
 	}
 }
 

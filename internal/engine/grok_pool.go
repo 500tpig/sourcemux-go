@@ -20,6 +20,10 @@ type GrokEndpoint struct {
 	//   "" or "chat"   → POST /v1/chat/completions (default)
 	//   "responses"    → POST /v1/responses        (xAI Responses API)
 	APIType string `json:"apiType"`
+	// ResponseTools selects built-in xAI Responses API tools when APIType is
+	// "responses" and SendSearchFlag is true. Empty means the legacy default:
+	// web_search only.
+	ResponseTools []string `json:"responseTools,omitempty"`
 }
 
 // GrokPool routes a search through an ordered list of Grok endpoints,
@@ -43,6 +47,7 @@ func NewGrokPool(endpoints []GrokEndpoint) *GrokPool {
 		}
 		c.SendSearchFlag = ep.SendSearchFlag
 		c.APIType = ep.APIType
+		c.ResponseTools = append([]string(nil), ep.ResponseTools...)
 		clients = append(clients, c)
 	}
 	return &GrokPool{clients: clients}

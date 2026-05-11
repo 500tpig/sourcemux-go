@@ -16,7 +16,9 @@ type probeEndpoint struct {
 	Name           string   `json:"name"`
 	BaseURL        string   `json:"base_url"`
 	Model          string   `json:"model"`
+	APIType        string   `json:"api_type,omitempty"`
 	SendSearchFlag bool     `json:"send_search_flag"`
+	ResponseTools  []string `json:"response_tools,omitempty"`
 	OK             bool     `json:"ok"`
 	DurationMS     int64    `json:"duration_ms"`
 	ModelsCount    int      `json:"models_count"`
@@ -82,7 +84,11 @@ func runProbeNamed(name string, args []string) int {
 			Name:           c.Name,
 			BaseURL:        c.BaseURL,
 			Model:          c.Model,
+			APIType:        c.APIType,
 			SendSearchFlag: c.SendSearchFlag,
+		}
+		if c.APIType == "responses" && c.SendSearchFlag {
+			ep.ResponseTools = engine.EffectiveResponseTools(c.ResponseTools)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 		start := time.Now()
@@ -122,8 +128,15 @@ func runProbeNamed(name string, args []string) int {
 	fmt.Printf("Debug: %v\n", out.Debug)
 	fmt.Printf("\n=== Grok Endpoint Pool (%d configured) ===\n", len(out.Endpoints))
 	for i, ep := range out.Endpoints {
-		fmt.Printf("\n[%d] %s\n  Base URL: %s\n  Model:    %s\n  Send `search:true`: %v\n",
-			i+1, ep.Name, ep.BaseURL, ep.Model, ep.SendSearchFlag)
+		fmt.Printf("\n[%d] %s\n  Base URL: %s\n  Model:    %s\n",
+			i+1, ep.Name, ep.BaseURL, ep.Model)
+		if ep.APIType != "" {
+			fmt.Printf("  API type: %s\n", ep.APIType)
+		}
+		fmt.Printf("  Send search flag/tools: %v\n", ep.SendSearchFlag)
+		if len(ep.ResponseTools) > 0 {
+			fmt.Printf("  Response tools: %s\n", strings.Join(ep.ResponseTools, ", "))
+		}
 		if ep.OK {
 			fmt.Printf("  Probe:    OK (%dms, %d models)\n", ep.DurationMS, ep.ModelsCount)
 			if len(ep.Models) > 0 {

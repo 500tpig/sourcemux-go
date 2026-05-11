@@ -60,6 +60,11 @@ chmod 600 grok-search.json
 
 Then replace placeholder endpoints and keys.
 
+For native xAI Responses API endpoints, `grokEndpoints[].responseTools` can opt
+into built-in tools such as `web_search` and `x_search` when
+`sendSearchFlag` is true. Leave it empty for the backward-compatible
+`web_search` default.
+
 ## Recommended production permissions
 
 ```bash

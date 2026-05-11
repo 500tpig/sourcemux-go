@@ -53,7 +53,15 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 			sb.WriteString(fmt.Sprintf("\n    Base URL: %s", c.BaseURL))
 			sb.WriteString(fmt.Sprintf("\n    API Key:  %s", maskKey(c.APIKey)))
 			sb.WriteString(fmt.Sprintf("\n    Model:    %s", c.Model))
-			sb.WriteString(fmt.Sprintf("\n    Send `search:true`: %v", c.SendSearchFlag))
+			apiType := c.APIType
+			if apiType == "" {
+				apiType = "chat"
+			}
+			sb.WriteString(fmt.Sprintf("\n    API type: %s", apiType))
+			sb.WriteString(fmt.Sprintf("\n    Send search flag/tools: %v", c.SendSearchFlag))
+			if c.APIType == "responses" && c.SendSearchFlag {
+				sb.WriteString(fmt.Sprintf("\n    Response tools: %s", strings.Join(engine.EffectiveResponseTools(c.ResponseTools), ", ")))
+			}
 
 			start := time.Now()
 			models, err := c.ListModels(ctx)

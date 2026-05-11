@@ -59,7 +59,8 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	      "apiKey": "sk-primary",
 	      "model": "grok-4.20-fast",
 	      "sendSearchFlag": false,
-	      "apiType": "responses"
+	      "apiType": "responses",
+	      "responseTools": [" web_search ", "x_search", "web_search"]
 	    }
 	  ],
 	  "reasoningEndpoints": [
@@ -94,6 +95,9 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	ep := cfg.GrokEndpoints[0]
 	if ep.BaseURL != "https://grok.example/v1" || ep.APIType != "responses" || ep.Model != "grok-4.20-fast" {
 		t.Fatalf("endpoint = %+v", ep)
+	}
+	if got := strings.Join(ep.ResponseTools, ","); got != "web_search,x_search" {
+		t.Fatalf("responseTools = %v", ep.ResponseTools)
 	}
 	if len(cfg.ReasoningEndpoints) != 1 {
 		t.Fatalf("reasoning endpoints len = %d, want 1", len(cfg.ReasoningEndpoints))
@@ -175,6 +179,30 @@ func TestLoadFile_InvalidAPITypeErrors(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "invalid apiType") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFile_InvalidResponseToolsErrors(t *testing.T) {
+	path := writeConfig(t, `{"grokEndpoints":[{"name":"bad","baseURL":"https://bad","apiKey":"sk","apiType":"responses","responseTools":["web_search","bad"]}]}`)
+
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "responseTools") || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFile_ResponseToolsRequireResponsesAPI(t *testing.T) {
+	path := writeConfig(t, `{"grokEndpoints":[{"name":"bad","baseURL":"https://bad","apiKey":"sk","apiType":"chat","responseTools":["web_search"]}]}`)
+
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "responseTools require apiType") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

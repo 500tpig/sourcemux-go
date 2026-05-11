@@ -150,6 +150,14 @@ func normalizeEndpoints(eps []engine.GrokEndpoint) ([]engine.GrokEndpoint, error
 		ep.APIKey = strings.TrimSpace(ep.APIKey)
 		ep.Model = strings.TrimSpace(ep.Model)
 		ep.APIType = strings.TrimSpace(ep.APIType)
+		responseTools, err := engine.NormalizeResponseTools(ep.ResponseTools)
+		if err != nil {
+			return nil, fmt.Errorf("endpoint #%d (name=%q): %w", i, ep.Name, err)
+		}
+		ep.ResponseTools = responseTools
+		if len(ep.ResponseTools) > 0 && ep.APIType != "responses" {
+			return nil, fmt.Errorf("endpoint #%d (name=%q) responseTools require apiType \"responses\"", i, ep.Name)
+		}
 		if ep.BaseURL == "" || ep.APIKey == "" {
 			return nil, fmt.Errorf("endpoint #%d (name=%q) missing baseURL or apiKey", i, ep.Name)
 		}

@@ -96,6 +96,7 @@ Config fields:
 | `grokEndpoints[].model` | No | Defaults to `grok-3-mini`. |
 | `grokEndpoints[].sendSearchFlag` | No | Usually `true` for native xAI search; often `false` for grok2api proxies. |
 | `grokEndpoints[].apiType` | No | `chat` or `responses`. |
+| `grokEndpoints[].responseTools` | No | Responses API built-in tools to send when `sendSearchFlag` is true. Supported: `web_search`, `x_search`. Empty defaults to `web_search`. |
 | `reasoningEndpoints[]` | No | Synthesis-only OpenAI-compatible Chat Completions endpoints. Used by `smart_answer`, not `web_search`. |
 | `reasoningEndpoints[].baseURL` | Yes | OpenAI-compatible API root; `/v1` is appended if omitted. |
 | `reasoningEndpoints[].apiKey` | Yes | Bearer token. |
@@ -194,6 +195,26 @@ MCP tools:
 - `reasoningEndpoints[]` are the "brain" used only for final synthesis.
 
 Do not place DeepSeek or another synthesis-only model in `grokEndpoints`; a successful non-search response would short-circuit the source-first search route.
+
+For native xAI Responses API endpoints, enable X search by opting into response tools on the search endpoint:
+
+```json
+{
+  "grokEndpoints": [
+    {
+      "name": "xai-search",
+      "baseURL": "https://api.x.ai/v1",
+      "apiKey": "sk-your-xai-key",
+      "model": "grok-4.20-fast",
+      "apiType": "responses",
+      "sendSearchFlag": true,
+      "responseTools": ["web_search", "x_search"]
+    }
+  ]
+}
+```
+
+Leave `responseTools` empty to keep the backward-compatible `web_search` default. Set `sendSearchFlag` to `false` for proxies that auto-search or reject tool flags.
 
 Example:
 

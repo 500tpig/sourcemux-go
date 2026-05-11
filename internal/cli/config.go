@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	cfgpkg "github.com/bettas/grok-search-go/internal/config"
+	"github.com/bettas/grok-search-go/internal/engine"
 )
 
 const configUsage = `Usage: grok-search cli config <command> [flags]
@@ -52,12 +53,13 @@ type configFilesOutput struct {
 }
 
 type configEndpointOutput struct {
-	Name           string `json:"name"`
-	BaseURL        string `json:"base_url"`
-	Model          string `json:"model"`
-	APIType        string `json:"api_type,omitempty"`
-	SendSearchFlag bool   `json:"send_search_flag"`
-	KeyStatus      string `json:"key_status"`
+	Name           string   `json:"name"`
+	BaseURL        string   `json:"base_url"`
+	Model          string   `json:"model"`
+	APIType        string   `json:"api_type,omitempty"`
+	SendSearchFlag bool     `json:"send_search_flag"`
+	ResponseTools  []string `json:"response_tools,omitempty"`
+	KeyStatus      string   `json:"key_status"`
 }
 
 type configNamedKeyOutput struct {
@@ -214,7 +216,10 @@ func runConfigList(args []string) int {
 		fmt.Printf("      Base URL: %s\n", ep.BaseURL)
 		fmt.Printf("      Model: %s\n", ep.Model)
 		fmt.Printf("      API type: %s\n", apiType)
-		fmt.Printf("      Send search flag: %v\n", ep.SendSearchFlag)
+		fmt.Printf("      Send search flag/tools: %v\n", ep.SendSearchFlag)
+		if len(ep.ResponseTools) > 0 {
+			fmt.Printf("      Response tools: %s\n", strings.Join(ep.ResponseTools, ", "))
+		}
 		fmt.Printf("      API key: %s\n", ep.KeyStatus)
 	}
 	fmt.Printf("\nReasoning endpoints: %d\n", len(out.ReasoningEndpoints))
@@ -294,12 +299,17 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 	}
 
 	for _, ep := range cfg.GrokEndpoints {
+		responseTools := ep.ResponseTools
+		if ep.APIType == "responses" && ep.SendSearchFlag {
+			responseTools = engine.EffectiveResponseTools(ep.ResponseTools)
+		}
 		out.GrokEndpoints = append(out.GrokEndpoints, configEndpointOutput{
 			Name:           ep.Name,
 			BaseURL:        ep.BaseURL,
 			Model:          ep.Model,
 			APIType:        ep.APIType,
 			SendSearchFlag: ep.SendSearchFlag,
+			ResponseTools:  responseTools,
 			KeyStatus:      keyStatus(ep.APIKey),
 		})
 	}

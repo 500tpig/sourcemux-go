@@ -7,6 +7,28 @@
 
 This keeps current-source collection separate from final reasoning.
 
+For native xAI Responses API endpoints, the evidence phase can opt into both
+web and X search:
+
+```json
+{
+  "grokEndpoints": [
+    {
+      "name": "xai-search",
+      "baseURL": "https://api.x.ai/v1",
+      "apiKey": "sk-your-xai-key",
+      "model": "grok-4.20-fast",
+      "apiType": "responses",
+      "sendSearchFlag": true,
+      "responseTools": ["web_search", "x_search"]
+    }
+  ]
+}
+```
+
+`responseTools` is only for the search endpoint. The final synthesis model still
+belongs in `reasoningEndpoints[]`.
+
 ## Why `reasoningEndpoints` are separate
 
 `grokEndpoints[]` are search-capable endpoints used by `web_search` and `research_run`. A synthesis-only model such as DeepSeek Flash/Pro should not go there, because a successful response would short-circuit the source-first search fallback route.

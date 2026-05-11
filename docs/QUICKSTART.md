@@ -22,6 +22,19 @@ The recommended path is the setup command:
   --json
 ```
 
+For a native xAI Responses API endpoint with both web and X search tools:
+
+```bash
+./grok-search cli setup --non-interactive \
+  --api-url "https://api.x.ai/v1" \
+  --api-key "sk-your-xai-key" \
+  --model "grok-4.20-fast" \
+  --api-type responses \
+  --send-search-flag \
+  --response-tools web_search,x_search \
+  --json
+```
+
 Or start from an example:
 
 ```bash

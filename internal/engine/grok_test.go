@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -266,6 +267,24 @@ func TestExtractSourceURLs_Dedup(t *testing.T) {
 	}
 }
 
+func TestNormalizeResponseTools(t *testing.T) {
+	got, err := NormalizeResponseTools([]string{" web_search ", "x_search", "web_search"})
+	if err != nil {
+		t.Fatalf("NormalizeResponseTools failed: %v", err)
+	}
+	want := []string{ResponseToolWebSearch, ResponseToolXSearch}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools = %v, want %v", got, want)
+	}
+
+	if _, err := NormalizeResponseTools([]string{""}); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("expected empty tool error, got %v", err)
+	}
+	if _, err := NormalizeResponseTools([]string{"bad"}); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported tool error, got %v", err)
+	}
+}
+
 func TestListModels_RetriesOn429ThenSucceeds(t *testing.T) {
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -464,11 +483,48 @@ func TestSearch_ResponsesAPI_SendsSearchTool(t *testing.T) {
 	if !strings.Contains(receivedBody, `"web_search"`) {
 		t.Fatalf("expected web_search tool in body; got %s", receivedBody)
 	}
+	if strings.Contains(receivedBody, `"x_search"`) {
+		t.Fatalf("x_search should not be sent by default; got %s", receivedBody)
+	}
 	if strings.Contains(receivedBody, `"search":true`) {
 		t.Fatalf("chat-completions search flag should not appear in responses API body; got %s", receivedBody)
 	}
 	if !strings.Contains(receivedBody, `"store":false`) {
 		t.Fatalf("store:false should be set; got %s", receivedBody)
+	}
+}
+
+func TestSearch_ResponsesAPI_SendsConfiguredResponseTools(t *testing.T) {
+	var received struct {
+		Tools []struct {
+			Type string `json:"type"`
+		} `json:"tools"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"x"}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewGrokClient(srv.URL, "k", "m")
+	c.APIType = "responses"
+	c.SendSearchFlag = true
+	c.ResponseTools = []string{ResponseToolWebSearch, ResponseToolXSearch}
+	if _, err := c.Search(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+
+	got := make([]string, 0, len(received.Tools))
+	for _, tool := range received.Tools {
+		got = append(got, tool.Type)
+	}
+	want := []string{ResponseToolWebSearch, ResponseToolXSearch}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools = %v, want %v", got, want)
 	}
 }
 

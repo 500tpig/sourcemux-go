@@ -59,6 +59,7 @@ type setupOptions struct {
 	Model          string
 	APIType        string
 	SendSearchFlag bool
+	ResponseTools  string
 
 	TavilyKey     string
 	ExaKey        string
@@ -80,6 +81,7 @@ func runSetup(args []string) int {
 	fs.StringVar(&opts.Model, "model", "grok-4.20-fast", "Default model")
 	fs.StringVar(&opts.APIType, "api-type", "chat", `API protocol: "chat" or "responses"`)
 	fs.BoolVar(&opts.SendSearchFlag, "send-search-flag", false, "Enable provider-specific web-search flag/tools")
+	fs.StringVar(&opts.ResponseTools, "response-tools", "", "Comma-separated Responses API tools, e.g. web_search,x_search")
 	fs.StringVar(&opts.TavilyKey, "tavily-key", "", "Optional Tavily API key")
 	fs.StringVar(&opts.ExaKey, "exa-key", "", "Optional Exa API key")
 	fs.StringVar(&opts.JinaKey, "jina-key", "", "Optional Jina API key")
@@ -176,6 +178,10 @@ func promptSetupOptions(opts *setupOptions, in io.Reader, out io.Writer) error {
 		return err
 	}
 	opts.SendSearchFlag, err = promptBool(reader, out, "Send search flag/tools", opts.SendSearchFlag)
+	if err != nil {
+		return err
+	}
+	opts.ResponseTools, err = promptString(reader, out, "Responses API tools (comma-separated, blank for web_search default)", opts.ResponseTools, false)
 	return err
 }
 
@@ -239,13 +245,21 @@ func validateSetupOptions(opts setupOptions) error {
 	}
 	switch strings.TrimSpace(opts.APIType) {
 	case "", "chat", "responses":
-		return nil
 	default:
 		return fmt.Errorf("--api-type must be chat or responses, got %q", opts.APIType)
 	}
+	responseTools, err := engine.NormalizeResponseTools(setupSplitCSV(opts.ResponseTools))
+	if err != nil {
+		return fmt.Errorf("--response-tools: %w", err)
+	}
+	if len(responseTools) > 0 && strings.TrimSpace(opts.APIType) != "responses" {
+		return errors.New("--response-tools requires --api-type responses")
+	}
+	return nil
 }
 
 func buildSetupConfig(opts setupOptions) setupConfigFile {
+	responseTools, _ := engine.NormalizeResponseTools(setupSplitCSV(opts.ResponseTools))
 	endpoint := engine.GrokEndpoint{
 		Name:           strings.TrimSpace(opts.Name),
 		BaseURL:        strings.TrimSpace(opts.APIURL),
@@ -253,6 +267,7 @@ func buildSetupConfig(opts setupOptions) setupConfigFile {
 		Model:          strings.TrimSpace(opts.Model),
 		APIType:        strings.TrimSpace(opts.APIType),
 		SendSearchFlag: opts.SendSearchFlag,
+		ResponseTools:  responseTools,
 	}
 	if endpoint.Name == "" {
 		endpoint.Name = "primary"
@@ -332,6 +347,7 @@ func buildSetupOutput(path string, cfg setupConfigFile) setupOutput {
 			Model:          ep.Model,
 			APIType:        ep.APIType,
 			SendSearchFlag: ep.SendSearchFlag,
+			ResponseTools:  ep.ResponseTools,
 			KeyStatus:      keyStatus(ep.APIKey),
 		}
 	}
