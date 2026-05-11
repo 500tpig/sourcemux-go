@@ -1,169 +1,66 @@
-# Grok Search Go 交接说明
+# Handoff and operations
 
-本文面向后续维护、服务器部署和 MCP 客户端接入。不要把真实 API key 写入本文或 Git。
+This document is for maintainers deploying the binary or connecting MCP clients. Do not put real API keys, private endpoints, or production config files in Git.
 
-## 当前状态
+## Runtime modes
 
-- MCP server：stdio transport
-- 主入口：`main.go`
-- 配置入口：`internal/config/config.go`
-- MCP 注册：`internal/server/server.go`
-- 工具：
-  - `web_search`：Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search 兜底
-  - `get_sources`：按 `session_id` 取上次搜索来源
-  - `web_fetch`：Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract 兜底
-  - `web_map`：Tavily Map，只发现 URL
-  - `web_crawl`：Tavily Crawl，站点遍历 + 内容抽取
-  - `search_planning`：复杂研究前生成分阶段搜索计划
-  - `research_run`：组合式 research workflow，串联计划、搜索、来源读取、抓取和打包
-  - `get_config_info`：配置诊断和 endpoint `/models` 探活
-- 已支持：
-  - 多 Grok-compatible endpoint
-  - 单文件配置 `./grok-search.json` 或显式 `--config /path/to/grok-search.json`
-  - baseURL 自动补 `/v1`
-  - `text/event-stream` / SSE chat completion 响应解析
-  - 429 / 5xx / 网络错误重试
-  - 可选 Grok pool 总超时
-  - 项目级 Codex skill：`.codex/skills/grok-search-mcp/SKILL.md`
+- CLI mode: `grok-search cli <command>`
+- MCP server mode: `grok-search` over stdio
 
-## 本地快速验证
+Both modes use the same engine code and the same single config file.
 
-```bash
-cd /Users/johnsmith/Project/Study/grok-search-go
-go test ./...
-go vet ./...
-go build -o grok-search .
-```
+## Important paths
 
-本地推荐配置文件：
+Local development:
 
 ```text
+./grok-search
 ./grok-search.json
 ```
 
-建议权限：
-
-```bash
-chmod 600 grok-search.json
-```
-
-推荐配置：
-
-```json
-{
-  "grokEndpoints": [
-    {
-      "name": "primary",
-      "baseURL": "https://your-endpoint.example/v1",
-      "apiKey": "sk-...",
-      "model": "grok-4.20-fast",
-      "sendSearchFlag": false
-    }
-  ],
-  "tavily": {
-    "apiKey": "tvly-...",
-    "apiURL": "https://api.tavily.com",
-    "enabled": true
-  },
-  "exa": {
-    "apiKey": "exa-...",
-    "apiURL": "https://api.exa.ai",
-    "enabled": true
-  },
-  "jina": {
-    "apiKey": "jina_...",
-    "apiURL": "https://r.jina.ai"
-  },
-  "grokPoolTimeoutSec": 45,
-  "logLevel": "INFO"
-}
-```
-
-## 推荐配置
-
-### 本地开发
-
-```json
-{
-  "grokEndpoints": [
-    {
-      "name": "primary",
-      "baseURL": "https://your-primary-endpoint.example/v1",
-      "apiKey": "sk-...",
-      "model": "grok-4.20-fast",
-      "sendSearchFlag": false
-    },
-    {
-      "name": "backup",
-      "baseURL": "https://your-backup-endpoint.example/v1",
-      "apiKey": "sk-...",
-      "model": "grok-4.20-fast",
-      "sendSearchFlag": false
-    }
-  ],
-  "tavily": {
-    "apiKey": "tvly-...",
-    "enabled": true
-  },
-  "exa": {
-    "apiKey": "exa-...",
-    "enabled": true
-  },
-  "jina": {
-    "apiKey": "jina_..."
-  },
-  "grokPoolTimeoutSec": 45
-}
-```
-
-运行时不读取环境变量配置链；Tavily / Exa / Jina / TinyFish key 都放在同一个 `grok-search.json`。
-
-### 服务器部署
-
-推荐目录：
+Server deployment example:
 
 ```text
 /usr/local/bin/grok-search
 /etc/grok-search/grok-search.json
 ```
 
-`/etc/grok-search/grok-search.json`：
+Use an explicit `--config` path whenever the process working directory is uncertain.
 
-```json
-{
-  "grokEndpoints": [
-    {
-      "name": "primary",
-      "baseURL": "https://your-primary-endpoint.example/v1",
-      "apiKey": "sk-...",
-      "model": "grok-4.20-fast",
-      "sendSearchFlag": false
-    },
-    {
-      "name": "backup",
-      "baseURL": "https://your-backup-endpoint.example/v1",
-      "apiKey": "sk-...",
-      "model": "grok-4.20-fast",
-      "sendSearchFlag": false
-    }
-  ],
-  "tavily": {
-    "apiKey": "tvly-...",
-    "enabled": true
-  },
-  "exa": {
-    "apiKey": "exa-...",
-    "enabled": true
-  },
-  "jina": {
-    "apiKey": "jina_..."
-  },
-  "grokPoolTimeoutSec": 45,
-  "logLevel": "INFO"
-}
+## Build and verify
+
+```bash
+go test ./...
+go vet ./...
+go build -o grok-search .
 ```
 
-权限：
+## Config
+
+The application reads one JSON file only:
+
+- Default: `./grok-search.json`
+- Explicit: `--config /path/to/grok-search.json`
+
+It does not read environment-variable config chains, hidden home-directory config, or legacy `endpoints.json` files.
+
+Start from one of the safe examples:
+
+```bash
+cp configs/grok-search.example.json grok-search.json
+chmod 600 grok-search.json
+```
+
+For `smart_answer`, use:
+
+```bash
+cp configs/grok-search.reasoning.example.json grok-search.json
+chmod 600 grok-search.json
+```
+
+Then replace placeholder endpoints and keys.
+
+## Recommended production permissions
 
 ```bash
 sudo chown root:root /etc/grok-search/grok-search.json
@@ -171,115 +68,103 @@ sudo chmod 600 /etc/grok-search/grok-search.json
 sudo chmod 755 /usr/local/bin/grok-search
 ```
 
-如果使用 `/etc/grok-search/grok-search.json`，启动 MCP 进程时显式传 `--config /etc/grok-search/grok-search.json`。
+## MCP registration
 
-## Codex 接入
+Generic stdio server entry:
 
-构建二进制：
-
-```bash
-go build -o grok-search .
-```
-
-注册 MCP：
-
-```bash
-codex mcp add-json grok-search '{
+```json
+{
   "type": "stdio",
-  "command": "/Users/johnsmith/Project/Study/grok-search-go/grok-search",
-  "args": ["--config", "/Users/johnsmith/Project/Study/grok-search-go/grok-search.json"]
-}'
+  "command": "/absolute/path/to/grok-search",
+  "args": ["--config", "/absolute/path/to/grok-search.json"]
+}
 ```
 
-如果部署在服务器，需要把 Codex/客户端里的 command 改成服务器上的二进制路径。
-
-项目级 skill 位于：
-
-```text
-.codex/skills/grok-search-mcp/SKILL.md
-```
-
-它只定义 Codex 什么时候使用此 MCP；真正的联网搜索/抓取仍由 MCP server 提供。
-
-## Claude Code / Cherry Studio 接入
-
-显式传配置文件路径：
+Claude Code example:
 
 ```bash
 claude mcp add-json grok-search '{
   "type": "stdio",
-  "command": "/path/to/grok-search",
-  "args": ["--config", "/etc/grok-search/grok-search.json"]
+  "command": "/absolute/path/to/grok-search",
+  "args": ["--config", "/absolute/path/to/grok-search.json"]
 }'
 ```
 
-## 上线验收
+## Acceptance checks
 
-在 MCP 客户端里依次调用：
+CLI:
 
-1. `get_config_info`
-   - 期望：endpoint `Probe: OK`
-   - key 只应显示 mask
-2. `web_search`
-   - 示例 query：`今天是几号？请用一句中文回答。`
-   - 期望：返回 `engine: <name> (<model>)` 和答案
-   - 可选：传 `model` 临时覆盖本次 Grok 模型，不会修改配置文件
-3. `web_fetch`
-   - 示例 URL：`https://example.com`
-   - 期望：返回 `Source: Jina Reader`
-4. `web_map`
-   - 仅在配置 `tavily.apiKey` 后测试
-5. `web_crawl`
-   - 仅在配置 `tavily.apiKey` 后测试
-   - 示例 URL：`https://example.com`
-   - 期望：返回 `Source: Tavily Crawl`、`base_url` 和抓取页面内容摘要
-6. `search_planning`
-   - 示例 query：`评估某个开源项目的最新状态`
-   - 期望：返回分阶段搜索计划
-7. `research_run`
-   - 示例 query：`评估某个开源项目的最新状态`
-   - 期望：返回 compact research pack，包含 executed searches、source summary、fetched pages summary、confirmed facts、likely inferences 和 open questions
+```bash
+./grok-search cli --config /path/to/grok-search.json config list --json
+./grok-search cli --config /path/to/grok-search.json doctor --json
+./grok-search cli --config /path/to/grok-search.json search "What is today's date?" --json
+./grok-search cli --config /path/to/grok-search.json fetch "https://example.com" --json
+```
 
-## 常见问题
+MCP:
+
+1. Call `get_config_info`.
+2. Call `web_search` with a simple current-information query.
+3. Call `get_sources` with the returned `session_id`.
+4. Call `web_fetch` on one returned URL or `https://example.com`.
+5. If Tavily is configured, call `web_map` and `web_crawl`.
+6. Call `research_run` for a bounded research pack.
+7. If `reasoningEndpoints[]` is configured, call `smart_answer`.
+
+Expected behavior:
+
+- Secrets are masked in config output.
+- Search responses include an engine label.
+- Fetch responses include a source label.
+- Research output includes executed searches, source summary, fetched page summary, high-signal sources, confirmed facts, likely inferences, and open questions.
+- `smart_answer` includes endpoint/model metadata and high-signal URLs.
+
+## Troubleshooting
+
+### `config file not found`
+
+Check the active path:
+
+```bash
+./grok-search cli --config /path/to/grok-search.json config path
+```
+
+Create the file with `setup` or copy an example config.
 
 ### `no Grok endpoints configured`
 
-没有配置任何 endpoint。检查当前启动命令是否指向正确的单文件配置：
+The active config has no search-capable endpoint. Check:
 
 ```bash
 ./grok-search cli --config /path/to/grok-search.json config list --json
 ```
 
-### `/models` 返回 HTML
+Provider-only configs can still support some direct provider commands, but `web_search` needs a configured search route or fallback provider keys.
 
-通常是 `baseURL` 配成了站点首页而不是 OpenAI-compatible API 根路径。当前代码会自动补 `/v1`，但如果该服务路径不是 `/v1`，需要在配置里写真实 API base URL。
+### `no reasoningEndpoints configured`
 
-### `/chat/completions` 返回 `text/event-stream`
+`smart_answer` needs `reasoningEndpoints[]`. Add a reasoning endpoint to the active config. Do not put synthesis-only models in `grokEndpoints[]`.
 
-已支持 SSE 解析。如果遇到 decode 错误，检查返回是否是非标准 SSE 或错误页。
+### `/models` returns HTML
 
-### `web_map` / `web_crawl` 不可用
+The configured `baseURL` likely points to a web page instead of an OpenAI-compatible API root. Use the provider's API base URL. The loader appends `/v1` if omitted.
 
-需要在 `grok-search.json` 的 `tavily.apiKey` 中配置 Tavily key。未配置 Tavily 时，`web_search` 仍可用 Grok/Exa/TinyFish，`web_fetch` 仍可用 Jina。
+### `web_map` or `web_crawl` unavailable
 
-### Exa 不生效
+Set `tavily.apiKey` and keep `tavily.enabled` true.
 
-检查 `grok-search.json` 的 `exa.apiKey`。`exa.enabled:false` 会关闭 Exa。Exa 当前只作为 Grok 后、Tavily 前的 fallback，不会主动并行打多家搜索。
+### Exa is not used
 
-### 速度慢或多个 endpoint 叠加等待
+Set `exa.apiKey` and keep `exa.enabled` true. Exa is a fallback behind Grok and TinyFish in the default search route.
 
-在 `grok-search.json` 设置 `grokPoolTimeoutSec: 45`。该值限制整个 Grok endpoint pool 的总 wall-clock 预算。
+### Slow endpoint pool
 
-## 维护建议
+Set `grokPoolTimeoutSec`, for example:
 
-- 默认模型：`grok-4.20-fast`
-- 复杂分析可用：`grok-4.20-reasoning`
-- 多 endpoint 按稳定性排序，把最稳定的放第一位
-- 不要提交真实 key
-- 每次改动后至少运行：
-
-```bash
-go test ./...
-go vet ./...
-go build -o /tmp/grok-search-check .
+```json
+{
+  "grokPoolTimeoutSec": 45
+}
 ```
+
+This bounds the total wall-clock time spent across the Grok endpoint pool.

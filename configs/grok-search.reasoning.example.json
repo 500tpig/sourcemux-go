@@ -1,0 +1,41 @@
+{
+  "grokEndpoints": [
+    {
+      "name": "grok-search",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-grok-key",
+      "model": "grok-4.20-fast",
+      "sendSearchFlag": false
+    }
+  ],
+  "reasoningEndpoints": [
+    {
+      "name": "deepseek-flash",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-your-deepseek-key",
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "name": "deepseek-pro",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-your-deepseek-key",
+      "model": "deepseek-v4-pro"
+    }
+  ],
+  "tavily": {
+    "apiURL": "https://api.tavily.com",
+    "apiKey": "tvly-your-key",
+    "enabled": true
+  },
+  "exa": {
+    "apiURL": "https://api.exa.ai",
+    "apiKey": "exa-your-key",
+    "enabled": true
+  },
+  "jina": {
+    "apiURL": "https://r.jina.ai",
+    "apiKey": ""
+  },
+  "grokPoolTimeoutSec": 45,
+  "logLevel": "INFO"
+}
