@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	cfgpkg "github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
 	"github.com/bettas/grok-search-go/internal/tools"
 )
@@ -36,6 +37,18 @@ func TestRunUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestRunDoctorHelp(t *testing.T) {
+	if got := Run([]string{"doctor", "--help"}); got != 0 {
+		t.Fatalf("Run(doctor --help) = %d, want 0", got)
+	}
+}
+
+func TestRunSetupHelp(t *testing.T) {
+	if got := Run([]string{"setup", "--help"}); got != 0 {
+		t.Fatalf("Run(setup --help) = %d, want 0", got)
+	}
+}
+
 func TestKeyStatusMasking(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -48,6 +61,251 @@ func TestKeyStatusMasking(t *testing.T) {
 		if got := keyStatus(c.in); got != c.want {
 			t.Errorf("keyStatus(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestConfigPathOutputJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom.grok-search.json")
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "path", "--json"}); got != 0 {
+			t.Fatalf("Run(config path --json) = %d, want 0", got)
+		}
+	})
+
+	var parsed configPathOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.ConfigFile != path {
+		t.Fatalf("config_file = %q, want %q", parsed.ConfigFile, path)
+	}
+	if parsed.AbsConfigFile == "" || !filepath.IsAbs(parsed.AbsConfigFile) {
+		t.Fatalf("abs_config_file = %q, want absolute path", parsed.AbsConfigFile)
+	}
+	if parsed.Exists {
+		t.Fatalf("exists = true, want false for missing temp path")
+	}
+}
+
+func TestRunBlankConfigPathIsUsageError(t *testing.T) {
+	cases := [][]string{
+		{"--config", "", "config", "path"},
+		{"--config=", "config", "path"},
+		{"-c", "  ", "config", "path"},
+	}
+	for _, args := range cases {
+		if got := Run(args); got != 2 {
+			t.Fatalf("Run(%#v) = %d, want 2", args, got)
+		}
+	}
+}
+
+func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
+	path := writeCLIConfig(t, `{"grokEndpoints":[{"name":"a","baseURL":"https://a/v1","apiKey":"sk-a"}]}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "files", "--json"}); got != 0 {
+			t.Fatalf("Run(config files --json) = %d, want 0", got)
+		}
+	})
+	if strings.Contains(out, "sk-a") {
+		t.Fatalf("config files leaked secret in %s", out)
+	}
+	var parsed configFilesOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.ConfigFile.Path != path || !parsed.ConfigFile.Exists {
+		t.Fatalf("config file status = %+v", parsed.ConfigFile)
+	}
+	if len(parsed.Notes) == 0 || !strings.Contains(strings.Join(parsed.Notes, "\n"), "Only this file is loaded") {
+		t.Fatalf("notes = %+v", parsed.Notes)
+	}
+	notes := strings.Join(parsed.Notes, "\n")
+	if !strings.Contains(notes, "grok-search cli --config") || !strings.Contains(notes, path) {
+		t.Fatalf("custom-path setup note missing: %+v", parsed.Notes)
+	}
+}
+
+func TestConfigListMasksSecrets(t *testing.T) {
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test"}],
+	  "tavily": {"apiKey": "tvly-secret"},
+	  "exa": {"apiKey": "exa-secret"},
+	  "jina": {"apiKey": "jina-secret"},
+	  "tinyfish": {"keys": [{"name":"a","apiKey":"tf-secret-a"},{"name":"b","apiKey":"tf-secret-b"}]}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "list", "--json"}); got != 0 {
+			t.Fatalf("Run(config list --json) = %d, want 0", got)
+		}
+	})
+	for _, secret := range []string{"sk-super-secret", "tvly-secret", "exa-secret", "jina-secret", "tf-secret-a", "tf-secret-b"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("config list leaked secret %q in %s", secret, out)
+		}
+	}
+
+	var parsed configListOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.GrokEndpoints) != 1 || parsed.GrokEndpoints[0].KeyStatus == "" {
+		t.Fatalf("grok endpoint key status missing: %+v", parsed.GrokEndpoints)
+	}
+	if parsed.TavilyKey == "(not set)" || len(parsed.TinyFishKeys) != 2 {
+		t.Fatalf("masked provider keys missing: %+v", parsed)
+	}
+}
+
+func TestConfigListAllowsProviderOnlyConfig(t *testing.T) {
+	path := writeCLIConfig(t, `{"exa":{"apiKey":"exa-only-secret"}}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "list", "--json"}); got != 0 {
+			t.Fatalf("Run(config list provider-only --json) = %d, want 0", got)
+		}
+	})
+	if strings.Contains(out, "exa-only-secret") {
+		t.Fatalf("config list leaked provider-only secret in %s", out)
+	}
+
+	var parsed configListOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.GrokEndpoints) != 0 {
+		t.Fatalf("grok_endpoints len = %d, want 0", len(parsed.GrokEndpoints))
+	}
+	if parsed.ExaKey == "(not set)" {
+		t.Fatalf("exa key status was not reported: %+v", parsed)
+	}
+}
+
+func TestConfigListMissingConfigReportsNextSteps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "list", "--json"}); got != 1 {
+			t.Fatalf("Run(config list --json) = %d, want 1", got)
+		}
+	})
+	for _, want := range []string{`"error"`, `"next_steps"`, "config file not found", "grok-search cli --config", path, "setup"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
+		}
+	}
+}
+
+func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grok-search.json")
+	out := captureStdout(t, func() {
+		got := Run([]string{
+			"--config", path,
+			"setup",
+			"--non-interactive",
+			"--api-url", "https://setup.example/v1",
+			"--api-key", "sk-setup-secret",
+			"--model", "grok-setup",
+			"--tavily-key", "tvly-setup-secret",
+			"--tinyfish-keys", "tf-setup-a,tf-setup-b",
+			"--tinyfish-key-names", "a,b",
+			"--json",
+		})
+		if got != 0 {
+			t.Fatalf("Run(setup) = %d, want 0", got)
+		}
+	})
+	for _, secret := range []string{"sk-setup-secret", "tvly-setup-secret", "tf-setup-a", "tf-setup-b"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("setup output leaked secret %q in %s", secret, out)
+		}
+	}
+
+	var parsed setupOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.ConfigFile != path {
+		t.Fatalf("config_file = %q, want %q", parsed.ConfigFile, path)
+	}
+	if _, err := os.Stat(parsed.ConfigFile); err != nil {
+		t.Fatalf("config file not written: %v", err)
+	}
+
+	cfg, err := cfgpkg.LoadFile(path)
+	if err != nil {
+		t.Fatalf("Load after setup failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].BaseURL != "https://setup.example/v1" {
+		t.Fatalf("loaded endpoints = %+v", cfg.GrokEndpoints)
+	}
+	if cfg.GrokEndpoints[0].APIKey != "sk-setup-secret" {
+		t.Fatalf("setup did not write endpoint key")
+	}
+	if cfg.TavilyAPIKey != "tvly-setup-secret" || len(cfg.TinyFishKeys) != 2 {
+		t.Fatalf("provider keys not loaded: tavily=%q tinyfish=%+v", cfg.TavilyAPIKey, cfg.TinyFishKeys)
+	}
+}
+
+func TestSetupRefusesExistingConfigWithoutForce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grok-search.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"grokEndpoints":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		got := Run([]string{
+			"--config", path,
+			"setup",
+			"--non-interactive",
+			"--api-url", "https://setup.example/v1",
+			"--api-key", "sk-setup-secret",
+			"--json",
+		})
+		if got != 1 {
+			t.Fatalf("Run(setup existing) = %d, want 1", got)
+		}
+	})
+	if !strings.Contains(out, "already exists") || strings.Contains(out, "sk-setup-secret") {
+		t.Fatalf("unexpected setup existing output: %s", out)
+	}
+}
+
+func TestSetupForceOverwritesExistingConfig(t *testing.T) {
+	path := writeCLIConfig(t, `{"grokEndpoints":[{"name":"old","baseURL":"https://old.example/v1","apiKey":"sk-old"}]}`)
+
+	out := captureStdout(t, func() {
+		got := Run([]string{
+			"--config", path,
+			"setup",
+			"--non-interactive",
+			"--api-url", "https://new.example/v1",
+			"--api-key", "sk-new-secret",
+			"--force",
+			"--json",
+		})
+		if got != 0 {
+			t.Fatalf("Run(setup --force) = %d, want 0", got)
+		}
+	})
+	if strings.Contains(out, "sk-new-secret") {
+		t.Fatalf("setup --force output leaked secret in %s", out)
+	}
+
+	cfg, err := cfgpkg.LoadFile(path)
+	if err != nil {
+		t.Fatalf("Load after force setup failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 1 {
+		t.Fatalf("endpoint len = %d, want 1", len(cfg.GrokEndpoints))
+	}
+	ep := cfg.GrokEndpoints[0]
+	if ep.BaseURL != "https://new.example/v1" || ep.APIKey != "sk-new-secret" {
+		t.Fatalf("force setup endpoint = %+v", ep)
 	}
 }
 
@@ -248,14 +506,12 @@ func TestRunCrawlJSONUsesTavilyConfig(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
-	t.Setenv("TAVILY_API_URL", ts.URL)
-	t.Setenv("TAVILY_API_KEY", "tvly-test")
-	t.Setenv("TAVILY_ENABLED", "true")
+	path := writeCLIConfig(t, `{
+	  "tavily": {"apiURL": "`+ts.URL+`", "apiKey": "tvly-test", "enabled": true}
+	}`)
 
 	out := captureStdout(t, func() {
-		if got := Run([]string{"crawl", "https://example.com", "--instructions", "Find docs", "--limit", "1", "--json"}); got != 0 {
+		if got := Run([]string{"--config", path, "crawl", "https://example.com", "--instructions", "Find docs", "--limit", "1", "--json"}); got != 0 {
 			t.Fatalf("Run(crawl) = %d, want 0", got)
 		}
 	})
@@ -298,14 +554,13 @@ func TestRunExaSearchJSONUsesConfig(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
-	t.Setenv("EXA_API_URL", ts.URL)
-	t.Setenv("EXA_API_KEY", "exa-test")
-	t.Setenv("EXA_ENABLED", "true")
+	path := writeCLIConfig(t, `{
+	  "exa": {"apiURL": "`+ts.URL+`", "apiKey": "exa-test", "enabled": true}
+	}`)
 
 	out := captureStdout(t, func() {
 		if got := Run([]string{
+			"--config", path,
 			"exa-search", "hello world",
 			"--type", "deep",
 			"--num-results", "6",
@@ -351,14 +606,13 @@ func TestRunExaContentsJSONUsesConfig(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("GROK_ENDPOINTS_JSON", `[{"name":"test","baseURL":"https://grok.invalid/v1","apiKey":"sk-test","model":"grok-test"}]`)
-	t.Setenv("EXA_API_URL", ts.URL)
-	t.Setenv("EXA_API_KEY", "exa-test")
-	t.Setenv("EXA_ENABLED", "true")
+	path := writeCLIConfig(t, `{
+	  "exa": {"apiURL": "`+ts.URL+`", "apiKey": "exa-test", "enabled": true}
+	}`)
 
 	out := captureStdout(t, func() {
 		if got := Run([]string{
+			"--config", path,
 			"exa-contents", "https://example.com/root",
 			"--subpages", "2",
 			"--subpage-target", "api",
@@ -475,6 +729,15 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func writeCLIConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "grok-search.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return path
 }
 
 func TestParsePositionalInterleaved(t *testing.T) {

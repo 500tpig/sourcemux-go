@@ -63,7 +63,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	}
 
 	if runner == nil {
-		cfg, err := config.Load()
+		cfg, err := loadConfig()
 		if err != nil {
 			return reportResearchErr(*jsonOut, query, *depth, fmt.Sprintf("config: %v", err))
 		}

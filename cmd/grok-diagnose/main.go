@@ -24,6 +24,7 @@ type modelCheck struct {
 }
 
 func main() {
+	configPath := flag.String("config", config.DefaultConfigPath(), "single JSON config file")
 	mode := flag.String("mode", "candidates", "models to test: current, candidates, all")
 	timeout := flag.Duration("timeout", 25*time.Second, "per-model request timeout")
 	listTimeout := flag.Duration("list-timeout", 15*time.Second, "per-endpoint /models timeout")
@@ -31,7 +32,7 @@ func main() {
 	query := flag.String("query", "请用一句中文回答今天是哪一天，并尽量附带一个来源URL。", "test query")
 	flag.Parse()
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadFile(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
 		os.Exit(1)

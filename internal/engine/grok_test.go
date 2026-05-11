@@ -523,4 +523,3 @@ func TestSearch_ResponsesAPI_SSEReturnsError(t *testing.T) {
 		t.Fatalf("error should mention streaming, got %v", err)
 	}
 }
-

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
 )
 
@@ -39,16 +38,23 @@ type probeOutput struct {
 }
 
 func runProbe(args []string) int {
-	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
+	return runProbeNamed("probe", args)
+}
+
+func runProbeNamed(name string, args []string) int {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	timeout := fs.Duration("list-timeout", 15*time.Second, "Per-endpoint /models timeout")
 	previewMax := fs.Int("preview", 8, "Max models listed per endpoint")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
 		return 2
 	}
 
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		if *jsonOut {
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"error": fmt.Sprintf("config: %v", err)})

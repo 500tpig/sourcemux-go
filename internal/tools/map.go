@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/bettas/grok-search-go/internal/engine"
-	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterMap registers the web_map tool for site structure discovery.

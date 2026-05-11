@@ -23,4 +23,5 @@ Thumbs.db
 
 # Config (may contain keys)
 .env
+grok-search.json
 config.local.json

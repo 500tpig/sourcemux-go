@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// GrokEndpoint is one entry in a Grok endpoint pool. Matches the JSON shape
-// accepted by GROK_ENDPOINTS_JSON / GROK_ENDPOINTS_FILE.
+// GrokEndpoint is one entry in the ordered endpoint pool stored in
+// grok-search.json.
 type GrokEndpoint struct {
 	Name           string `json:"name"`
 	BaseURL        string `json:"baseURL"`

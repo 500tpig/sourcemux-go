@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
 )
 
@@ -54,7 +53,7 @@ func runExaSearch(args []string) int {
 		return reportCLIError(*jsonOut, map[string]any{"query": query}, fmt.Sprintf("output-schema-json: %v", err))
 	}
 
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return reportCLIError(*jsonOut, map[string]any{"query": query}, fmt.Sprintf("config: %v", err))
 	}

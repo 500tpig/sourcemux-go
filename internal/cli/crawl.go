@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
 )
 
@@ -45,7 +44,7 @@ func runCrawl(args []string) int {
 	}
 	url := positional[0]
 
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return reportCrawlErr(*jsonOut, url, fmt.Sprintf("config: %v", err))
 	}

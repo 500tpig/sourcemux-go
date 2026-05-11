@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bettas/grok-search-go/internal/config"
 	"github.com/bettas/grok-search-go/internal/engine"
 )
 
@@ -48,7 +47,7 @@ func runSearch(args []string) int {
 		query = fmt.Sprintf("[Focus: %s] %s", *platform, query)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return reportSearchErr(*jsonOut, query, fmt.Sprintf("config: %v", err))
 	}

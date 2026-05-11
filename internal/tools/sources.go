@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 // SourceGetter is implemented by server.App to retrieve cached sources.
