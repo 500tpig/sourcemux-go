@@ -19,7 +19,7 @@
   - `get_config_info`：配置诊断和 endpoint `/models` 探活
 - 已支持：
   - 多 Grok-compatible endpoint
-  - 统一配置文件 `~/.config/grok-search/config.json`
+  - 单文件配置 `./grok-search.json` 或显式 `--config /path/to/grok-search.json`
   - baseURL 自动补 `/v1`
   - `text/event-stream` / SSE chat completion 响应解析
   - 429 / 5xx / 网络错误重试
@@ -38,13 +38,13 @@ go build -o grok-search .
 本地推荐配置文件：
 
 ```text
-~/.config/grok-search/config.json
+./grok-search.json
 ```
 
 建议权限：
 
 ```bash
-chmod 600 ~/.config/grok-search/config.json
+chmod 600 grok-search.json
 ```
 
 推荐配置：
@@ -116,14 +116,7 @@ chmod 600 ~/.config/grok-search/config.json
 }
 ```
 
-可选环境变量：
-
-```bash
-export TAVILY_API_KEY="tvly-..."
-export EXA_API_KEY="exa-..."
-export JINA_API_KEY="jina_..."
-export GROK_POOL_TIMEOUT_SEC="45"
-```
+运行时不读取环境变量配置链；Tavily / Exa / Jina / TinyFish key 都放在同一个 `grok-search.json`。
 
 ### 服务器部署
 
@@ -131,10 +124,10 @@ export GROK_POOL_TIMEOUT_SEC="45"
 
 ```text
 /usr/local/bin/grok-search
-/etc/grok-search/config.json
+/etc/grok-search/grok-search.json
 ```
 
-`/etc/grok-search/config.json`：
+`/etc/grok-search/grok-search.json`：
 
 ```json
 {
@@ -173,12 +166,12 @@ export GROK_POOL_TIMEOUT_SEC="45"
 权限：
 
 ```bash
-sudo chown root:root /etc/grok-search/config.json
-sudo chmod 600 /etc/grok-search/config.json
+sudo chown root:root /etc/grok-search/grok-search.json
+sudo chmod 600 /etc/grok-search/grok-search.json
 sudo chmod 755 /usr/local/bin/grok-search
 ```
 
-如果使用 `/etc/grok-search/config.json`，启动 MCP 进程时需要设置 `XDG_CONFIG_HOME=/etc`，或继续使用 `GROK_ENDPOINTS_FILE` / env 方式注入配置。
+如果使用 `/etc/grok-search/grok-search.json`，启动 MCP 进程时显式传 `--config /etc/grok-search/grok-search.json`。
 
 ## Codex 接入
 
@@ -191,7 +184,11 @@ go build -o grok-search .
 注册 MCP：
 
 ```bash
-codex mcp add grok-search /Users/johnsmith/Project/Study/grok-search-go/grok-search
+codex mcp add-json grok-search '{
+  "type": "stdio",
+  "command": "/Users/johnsmith/Project/Study/grok-search-go/grok-search",
+  "args": ["--config", "/Users/johnsmith/Project/Study/grok-search-go/grok-search.json"]
+}'
 ```
 
 如果部署在服务器，需要把 Codex/客户端里的 command 改成服务器上的二进制路径。
@@ -206,21 +203,13 @@ codex mcp add grok-search /Users/johnsmith/Project/Study/grok-search-go/grok-sea
 
 ## Claude Code / Cherry Studio 接入
 
-如果使用默认配置文件或 `GROK_ENDPOINTS_FILE`，客户端只需要 command：
-
-```bash
-claude mcp add grok-search /path/to/grok-search
-```
-
-如果希望客户端直接注入 env：
+显式传配置文件路径：
 
 ```bash
 claude mcp add-json grok-search '{
   "type": "stdio",
   "command": "/path/to/grok-search",
-  "env": {
-    "XDG_CONFIG_HOME": "/etc"
-  }
+  "args": ["--config", "/etc/grok-search/grok-search.json"]
 }'
 ```
 
@@ -239,9 +228,9 @@ claude mcp add-json grok-search '{
    - 示例 URL：`https://example.com`
    - 期望：返回 `Source: Jina Reader`
 4. `web_map`
-   - 仅在配置 `TAVILY_API_KEY` 后测试
+   - 仅在配置 `tavily.apiKey` 后测试
 5. `web_crawl`
-   - 仅在配置 `TAVILY_API_KEY` 后测试
+   - 仅在配置 `tavily.apiKey` 后测试
    - 示例 URL：`https://example.com`
    - 期望：返回 `Source: Tavily Crawl`、`base_url` 和抓取页面内容摘要
 6. `search_planning`
@@ -255,13 +244,11 @@ claude mcp add-json grok-search '{
 
 ### `no Grok endpoints configured`
 
-没有配置任何 endpoint。按优先级检查：
+没有配置任何 endpoint。检查当前启动命令是否指向正确的单文件配置：
 
-1. `GROK_ENDPOINTS_JSON`
-2. `GROK_ENDPOINTS_FILE`
-3. `GROK_API_URL` + `GROK_API_KEY`
-4. `~/.config/grok-search/config.json`
-5. `~/.config/grok-search/endpoints.json`
+```bash
+./grok-search cli --config /path/to/grok-search.json config list --json
+```
 
 ### `/models` 返回 HTML
 
@@ -273,21 +260,15 @@ claude mcp add-json grok-search '{
 
 ### `web_map` / `web_crawl` 不可用
 
-需要在 `config.json` 的 `tavily.apiKey` 或环境变量 `TAVILY_API_KEY` 中配置 Tavily key。未配置 Tavily 时，`web_search` 仍可用 Grok，`web_fetch` 仍可用 Jina。
+需要在 `grok-search.json` 的 `tavily.apiKey` 中配置 Tavily key。未配置 Tavily 时，`web_search` 仍可用 Grok/Exa/TinyFish，`web_fetch` 仍可用 Jina。
 
 ### Exa 不生效
 
-检查 `config.json` 的 `exa.apiKey` 或环境变量 `EXA_API_KEY`。`EXA_ENABLED=false` 会关闭 Exa。Exa 当前只作为 Grok 后、Tavily 前的 fallback，不会主动并行打多家搜索。
+检查 `grok-search.json` 的 `exa.apiKey`。`exa.enabled:false` 会关闭 Exa。Exa 当前只作为 Grok 后、Tavily 前的 fallback，不会主动并行打多家搜索。
 
 ### 速度慢或多个 endpoint 叠加等待
 
-设置：
-
-```bash
-GROK_POOL_TIMEOUT_SEC=45
-```
-
-该值限制整个 Grok endpoint pool 的总 wall-clock 预算。
+在 `grok-search.json` 设置 `grokPoolTimeoutSec: 45`。该值限制整个 Grok endpoint pool 的总 wall-clock 预算。
 
 ## 维护建议
 
