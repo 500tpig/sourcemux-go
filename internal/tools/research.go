@@ -21,6 +21,13 @@ const (
 	researchHumanExcerptRunes = 700
 	researchMaxFetches        = 12
 	researchPerCallTimeout    = 25 * time.Second
+	mcpResearchPlanLimit      = 4
+	mcpResearchSearchLimit    = 4
+	mcpResearchSourceLimit    = 6
+	mcpResearchPageLimit      = 4
+	mcpResearchListLimit      = 4
+	mcpResearchSnippetRunes   = 180
+	mcpResearchExcerptRunes   = 260
 )
 
 func researchConcurrency(depth string) int {
@@ -253,7 +260,7 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("research_run failed: %v", err)), nil
 		}
-		return mcp.NewToolResultText(FormatResearchPack(pack)), nil
+		return mcp.NewToolResultText(FormatResearchPackMCP(pack)), nil
 	})
 }
 
@@ -1229,19 +1236,108 @@ func FormatResearchPack(pack ResearchPack) string {
 	return strings.TrimSpace(sb.String())
 }
 
-func writeStringList(sb *strings.Builder, title string, items []string) {
-	fmt.Fprintf(sb, "%s:\n", title)
-	for _, item := range items {
-		fmt.Fprintf(sb, "- %s\n", item)
+// FormatResearchPackMCP renders a thin MCP summary while keeping CLI/full
+// formatting available via FormatResearchPack and JSON output.
+func FormatResearchPackMCP(pack ResearchPack) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "research_pack\nquery: %s\ndepth: %s\n", pack.Query, pack.EffectiveDepth)
+	if pack.Platform != "" {
+		fmt.Fprintf(&sb, "platform: %s\n", pack.Platform)
 	}
-}
+	if len(pack.Domains) > 0 {
+		fmt.Fprintf(&sb, "domains: %s\n", strings.Join(pack.Domains, ", "))
+	}
+	fmt.Fprintf(&sb, "max_fetches: %d\n", pack.MaxFetches)
+	fmt.Fprintf(&sb, "search_rounds: %d\n", len(pack.ExecutedSearches))
+	fmt.Fprintf(&sb, "fetched_pages: %d\n", len(pack.FetchedPagesSummary))
+	fmt.Fprintf(&sb, "unique_sources: %d\n", pack.SourceSummary.UniqueURLs)
 
-func indentContinuation(text, prefix string) string {
-	lines := strings.Split(text, "\n")
-	for i := 1; i < len(lines); i++ {
-		lines[i] = prefix + lines[i]
+	sb.WriteString("\nplan_queries:\n")
+	writeLimitedBulletLines(&sb, pack.PlanQueries, mcpResearchPlanLimit)
+
+	sb.WriteString("\nexecuted_searches:\n")
+	if len(pack.ExecutedSearches) > 0 {
+		limit := mcpResearchSearchLimit
+		if limit > len(pack.ExecutedSearches) {
+			limit = len(pack.ExecutedSearches)
+		}
+		for _, search := range pack.ExecutedSearches[:limit] {
+			fmt.Fprintf(&sb, "- query: %s\n", search.Query)
+			if search.Engine != "" {
+				fmt.Fprintf(&sb, "  engine: %s\n", search.Engine)
+			}
+			if search.SessionID != "" {
+				fmt.Fprintf(&sb, "  session_id: %s\n", search.SessionID)
+				if search.SourcesCount > 0 {
+					sb.WriteString("  sources: call get_sources(session_id) for URLs\n")
+				}
+			}
+			fmt.Fprintf(&sb, "  sources_count: %d\n", search.SourcesCount)
+			if search.Error != "" {
+				fmt.Fprintf(&sb, "  error: %s\n", search.Error)
+			}
+			if search.Snippet != "" {
+				fmt.Fprintf(&sb, "  snippet: %s\n", clipOneLine(search.Snippet, mcpResearchSnippetRunes))
+			}
+		}
+		if remaining := len(pack.ExecutedSearches) - limit; remaining > 0 {
+			fmt.Fprintf(&sb, "- ... (%d more search rounds)\n", remaining)
+		}
 	}
-	return strings.Join(lines, "\n")
+
+	fmt.Fprintf(&sb, "\nsource_summary:\n- total_urls: %d\n- unique_urls: %d\n- selected_for_fetch: %d\n",
+		pack.SourceSummary.TotalURLs, pack.SourceSummary.UniqueURLs, pack.SourceSummary.SelectedForFetch)
+	if pack.SourceSummary.FilteredOutByDomain > 0 {
+		fmt.Fprintf(&sb, "- filtered_out_by_domain: %d\n", pack.SourceSummary.FilteredOutByDomain)
+	}
+	sb.WriteString("\nhigh_signal_sources:\n")
+	if len(pack.HighSignalSources) > 0 {
+		limit := mcpResearchSourceLimit
+		if limit > len(pack.HighSignalSources) {
+			limit = len(pack.HighSignalSources)
+		}
+		for _, source := range pack.HighSignalSources[:limit] {
+			fmt.Fprintf(&sb, "- %s (score=%.2f, occurrences=%d)\n", source.URL, source.Score, source.Occurrences)
+		}
+		if remaining := len(pack.HighSignalSources) - limit; remaining > 0 {
+			fmt.Fprintf(&sb, "- ... (%d more sources)\n", remaining)
+		}
+	}
+
+	sb.WriteString("\nfetched_pages_summary:\n")
+	if len(pack.FetchedPagesSummary) > 0 {
+		limit := mcpResearchPageLimit
+		if limit > len(pack.FetchedPagesSummary) {
+			limit = len(pack.FetchedPagesSummary)
+		}
+		for _, page := range pack.FetchedPagesSummary[:limit] {
+			fmt.Fprintf(&sb, "- %s\n", page.URL)
+			if page.Source != "" {
+				fmt.Fprintf(&sb, "  source: %s\n", page.Source)
+			}
+			fmt.Fprintf(&sb, "  success: %t\n", page.Success)
+			if page.Error != "" {
+				fmt.Fprintf(&sb, "  error: %s\n", page.Error)
+			}
+			if page.ContentChars > 0 {
+				fmt.Fprintf(&sb, "  content_chars: %d\n", page.ContentChars)
+			}
+			if page.Excerpt != "" {
+				fmt.Fprintf(&sb, "  excerpt: %s\n", indentContinuation(clipRunes(page.Excerpt, mcpResearchExcerptRunes), "    "))
+			}
+		}
+		if remaining := len(pack.FetchedPagesSummary) - limit; remaining > 0 {
+			fmt.Fprintf(&sb, "- ... (%d more fetched pages)\n", remaining)
+		}
+	}
+
+	writeLimitedStringList(&sb, "\nconfirmed_facts", pack.ConfirmedFacts, mcpResearchListLimit)
+	writeLimitedStringList(&sb, "\nlikely_inferences", pack.LikelyInferences, mcpResearchListLimit)
+	writeLimitedStringList(&sb, "\nopen_questions", pack.OpenQuestions, mcpResearchListLimit)
+	if pack.Error != "" {
+		fmt.Fprintf(&sb, "\nerror: %s\n", pack.Error)
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func stringSliceArg(args map[string]any, key string) []string {
@@ -1315,22 +1411,6 @@ func uniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
-}
-
-func clipOneLine(text string, maxRunes int) string {
-	text = strings.Join(strings.Fields(text), " ")
-	return clipRunes(text, maxRunes)
-}
-
-func clipRunes(text string, maxRunes int) string {
-	if maxRunes <= 0 {
-		return text
-	}
-	runes := []rune(text)
-	if len(runes) <= maxRunes {
-		return text
-	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }
 
 func maxInt(a, b int) int {

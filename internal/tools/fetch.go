@@ -3,11 +3,14 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bettas/grok-search-go/internal/engine"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
+
+const mcpFetchExcerptRunes = 1800
 
 // WebFetchClients groups the production fetch providers in fallback order.
 type WebFetchClients struct {
@@ -111,5 +114,15 @@ func FormatWebFetchResult(result *WebFetchResult) string {
 	if result == nil {
 		return ""
 	}
-	return fmt.Sprintf("Source: %s\nURL: %s\n\n%s", result.Source, result.URL, result.Content)
+	content := strings.TrimSpace(result.Content)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Source: %s\nURL: %s\n", result.Source, result.URL)
+	if content == "" {
+		return strings.TrimSpace(sb.String())
+	}
+	fmt.Fprintf(&sb, "content_chars: %d\n\nexcerpt:\n%s",
+		len([]rune(content)),
+		indentContinuation(clipRunes(content, mcpFetchExcerptRunes), "  "),
+	)
+	return sb.String()
 }

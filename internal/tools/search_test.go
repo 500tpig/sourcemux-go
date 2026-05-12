@@ -40,3 +40,29 @@ func TestFormatTinyFishResponseCachesSources(t *testing.T) {
 		t.Fatalf("cached urls = %v", cache.urls)
 	}
 }
+
+func TestFormatWebSearchResultIsCompactForMCP(t *testing.T) {
+	content := strings.Repeat("A", mcpSearchExcerptRunes) + "TAIL"
+	body := FormatWebSearchResult(&WebSearchResult{
+		Engine:       "grok-prod",
+		Model:        "grok-4.20-fast",
+		SessionID:    "session-123",
+		Content:      content,
+		SourcesCount: 2,
+	})
+
+	for _, want := range []string{
+		"engine: grok-prod (grok-4.20-fast)",
+		"session_id: session-123",
+		"sources: call get_sources(session_id) for URLs",
+		"content_chars:",
+		"summary:",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "TAIL") {
+		t.Fatalf("expected clipped MCP output, got tail in:\n%s", body)
+	}
+}

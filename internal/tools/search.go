@@ -12,6 +12,8 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
+const mcpSearchExcerptRunes = 1400
+
 // SourceCacher is implemented by server.App to cache sources.
 type SourceCacher interface {
 	CacheSources(sessionID string, urls []string)
@@ -224,8 +226,9 @@ func webSearchTavilyResult(query string, res *engine.TavilySearchResult, grokErr
 	return out
 }
 
-// FormatWebSearchResult renders the shared search result in the MCP text
-// envelope expected by existing clients.
+// FormatWebSearchResult renders a thin MCP envelope. Full search content stays
+// on the CLI/JSON surfaces; MCP should remain compact and defer URL inspection
+// to get_sources(session_id).
 func FormatWebSearchResult(res *WebSearchResult) string {
 	if res == nil {
 		return ""
@@ -244,7 +247,18 @@ func FormatWebSearchResult(res *WebSearchResult) string {
 	if res.SessionID != "" {
 		fmt.Fprintf(&sb, "session_id: %s\n", res.SessionID)
 	}
-	fmt.Fprintf(&sb, "sources_count: %d\n\n%s", res.SourcesCount, res.Content)
+	fmt.Fprintf(&sb, "sources_count: %d\n", res.SourcesCount)
+	if res.SessionID != "" && res.SourcesCount > 0 {
+		sb.WriteString("sources: call get_sources(session_id) for URLs\n")
+	}
+	content := strings.TrimSpace(res.Content)
+	if content == "" {
+		return strings.TrimSpace(sb.String())
+	}
+	fmt.Fprintf(&sb, "content_chars: %d\n\nsummary:\n%s",
+		len([]rune(content)),
+		indentContinuation(clipRunes(content, mcpSearchExcerptRunes), "  "),
+	)
 	return sb.String()
 }
 

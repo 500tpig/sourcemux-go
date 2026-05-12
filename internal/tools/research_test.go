@@ -178,6 +178,104 @@ func TestResearchExecutorNoSourcesUsesStableEmptyArrays(t *testing.T) {
 	}
 }
 
+func TestFormatResearchPackMCPStaysThinWhileFullPackRemainsDetailed(t *testing.T) {
+	pack := ResearchPack{
+		Query:          "Grok Search MCP",
+		EffectiveDepth: "deep",
+		MaxFetches:     6,
+		PlanQueries: []string{
+			"plan-1", "plan-2", "plan-3", "plan-4", "plan-5-only",
+		},
+		ExecutedSearches: []ResearchSearchSummary{
+			{Query: "search-1", Engine: "grok-a", SessionID: "s1", SourcesCount: 2, Snippet: "snippet-1"},
+			{Query: "search-2", Engine: "grok-b", SessionID: "s2", SourcesCount: 2, Snippet: "snippet-2"},
+			{Query: "search-3", Engine: "grok-c", SessionID: "s3", SourcesCount: 2, Snippet: "snippet-3"},
+			{Query: "search-4", Engine: "grok-d", SessionID: "s4", SourcesCount: 2, Snippet: "snippet-4"},
+			{Query: "search-5-only", Engine: "grok-e", SessionID: "s5", SourcesCount: 2, Snippet: "snippet-5"},
+		},
+		SourceSummary: ResearchSourceSummary{
+			TotalURLs:        12,
+			UniqueURLs:       8,
+			SelectedForFetch: 6,
+		},
+		HighSignalSources: []ResearchSource{
+			{URL: "https://example.com/source-1", Score: 10, Occurrences: 3},
+			{URL: "https://example.com/source-2", Score: 9, Occurrences: 2},
+			{URL: "https://example.com/source-3", Score: 8, Occurrences: 2},
+			{URL: "https://example.com/source-4", Score: 7, Occurrences: 1},
+			{URL: "https://example.com/source-5", Score: 6, Occurrences: 1},
+			{URL: "https://example.com/source-6", Score: 5, Occurrences: 1},
+			{URL: "https://example.com/source-7-only", Score: 4, Occurrences: 1},
+		},
+		FetchedPagesSummary: []ResearchFetchedPage{
+			{URL: "https://example.com/page-1", Source: "Jina", Success: true, ContentChars: 100, Excerpt: "page-1 excerpt"},
+			{URL: "https://example.com/page-2", Source: "Jina", Success: true, ContentChars: 100, Excerpt: "page-2 excerpt"},
+			{URL: "https://example.com/page-3", Source: "Jina", Success: true, ContentChars: 100, Excerpt: "page-3 excerpt"},
+			{URL: "https://example.com/page-4", Source: "Jina", Success: true, ContentChars: 100, Excerpt: "page-4 excerpt"},
+			{URL: "https://example.com/page-5-only", Source: "Jina", Success: true, ContentChars: 100, Excerpt: "page-5 excerpt"},
+		},
+		ConfirmedFacts: []string{
+			"fact-1", "fact-2", "fact-3", "fact-4", "fact-5-only",
+		},
+		LikelyInferences: []string{
+			"inference-1", "inference-2", "inference-3", "inference-4", "inference-5-only",
+		},
+		OpenQuestions: []string{
+			"question-1", "question-2", "question-3", "question-4", "question-5-only",
+		},
+	}
+
+	full := FormatResearchPack(pack)
+	thin := FormatResearchPackMCP(pack)
+
+	for _, want := range []string{"plan-5-only", "search-5-only", "https://example.com/source-7-only", "https://example.com/page-5-only", "fact-5-only"} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full output should keep detailed item %q:\n%s", want, full)
+		}
+		if strings.Contains(thin, want) {
+			t.Fatalf("thin MCP output should omit overflow item %q:\n%s", want, thin)
+		}
+	}
+	for _, want := range []string{
+		"search_rounds: 5",
+		"fetched_pages: 5",
+		"unique_sources: 8",
+		"sources: call get_sources(session_id) for URLs",
+		"- ... (1 more search rounds)",
+		"- ... (1 more sources)",
+		"- ... (1 more fetched pages)",
+		"- ... (1 more)",
+	} {
+		if !strings.Contains(thin, want) {
+			t.Fatalf("thin output missing %q:\n%s", want, thin)
+		}
+	}
+}
+
+func TestFormatResearchPackMCPKeepsStableCoreSectionsWhenEmpty(t *testing.T) {
+	thin := FormatResearchPackMCP(ResearchPack{
+		Query:          "No sources",
+		EffectiveDepth: "quick",
+		MaxFetches:     2,
+		SourceSummary:  ResearchSourceSummary{},
+	})
+
+	for _, want := range []string{
+		"plan_queries:",
+		"executed_searches:",
+		"source_summary:",
+		"high_signal_sources:",
+		"fetched_pages_summary:",
+		"confirmed_facts:",
+		"likely_inferences:",
+		"open_questions:",
+	} {
+		if !strings.Contains(thin, want) {
+			t.Fatalf("thin output missing stable section %q:\n%s", want, thin)
+		}
+	}
+}
+
 func TestExtractConfirmedFactsFiltersBoilerplate(t *testing.T) {
 	pages := []ResearchFetchedPage{
 		{
