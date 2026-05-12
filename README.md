@@ -12,6 +12,7 @@ The default routing is:
 ## Features
 
 - Single Go binary for CLI and stdio MCP server modes.
+- MCP text responses stay compact; CLI text/JSON remain the canonical full-output surfaces.
 - Single explicit JSON config file: `./grok-search.json` by default, or `--config /path/to/grok-search.json`.
 - Grok/OpenAI-compatible endpoint pool with priority fallback.
 - Optional TinyFish, Exa, Tavily, and Jina integrations.
@@ -58,6 +59,7 @@ go build -o grok-search .
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
+AI agent integration guidance is in [`docs/AI_USAGE.md`](docs/AI_USAGE.md).
 
 ## Configuration
 
@@ -175,15 +177,15 @@ MCP tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `web_search` | AI search with source extraction and provider fallback. |
+| `web_search` | Compact MCP search summary with source extraction and provider fallback. |
 | `get_sources` | Return URLs from a previous `web_search` session. |
-| `web_fetch` | Fetch page content. |
+| `web_fetch` | Compact MCP fetch excerpt with provider fallback. |
 | `exa_search_advanced` | Direct Exa Search advanced options. |
 | `exa_contents_advanced` | Direct Exa Contents advanced options. |
 | `web_map` | Discover site URLs with Tavily Map. |
 | `web_crawl` | Crawl a site and extract page content with Tavily Crawl. |
 | `search_planning` | Build a staged search plan before research. |
-| `research_run` | Run the bounded research workflow. |
+| `research_run` | Run the bounded research workflow and return a compact MCP pack. |
 | `smart_answer` | Research first, then synthesize with `reasoningEndpoints`. |
 | `get_config_info` | Diagnostic config output and Grok `/models` probing. |
 

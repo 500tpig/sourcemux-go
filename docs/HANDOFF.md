@@ -119,9 +119,9 @@ MCP:
 Expected behavior:
 
 - Secrets are masked in config output.
-- Search responses include an engine label.
-- Fetch responses include a source label.
-- Research output includes executed searches, source summary, fetched page summary, high-signal sources, confirmed facts, likely inferences, and open questions.
+- MCP search responses include an engine label plus a compact summary; use CLI `search --json` for full output.
+- MCP fetch responses include a source label plus a compact excerpt; use CLI `fetch --json` for full output.
+- MCP research output stays compact while still surfacing executed searches, source summary, fetched page summary, high-signal sources, confirmed facts, likely inferences, and open questions; use CLI `research --json` for the full pack.
 - `smart_answer` includes endpoint/model metadata and high-signal URLs.
 
 ## Troubleshooting
