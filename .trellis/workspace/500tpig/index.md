@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-05-12
+- **Total Sessions**: 9
+- **Last Active**: 2026-05-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~279 | Active |
+| `journal-1.md` | ~314 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-05-13 | Capability routing refactor and release README cleanup | `e2f4be1`, `c998431`, `e9b0dc9` | `main` |
 | 8 | 2026-05-12 | Compact MCP outputs and AI routing docs | `8fff854`, `c10d615` | `main` |
 | 7 | 2026-05-12 | Add configurable Grok response tools | `bc30eb7` | `main` |
 | 6 | 2026-05-11 | Open-source release polish | `422e729`, `1bab28e`, `d276cca`, `4dc23fa` | `main` |

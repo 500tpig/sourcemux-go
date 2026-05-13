@@ -277,3 +277,38 @@ Made MCP search/fetch/research outputs compact, kept CLI as the full-output surf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Capability routing refactor and release README cleanup
+
+**Date**: 2026-05-13
+**Task**: Capability routing refactor and release README cleanup
+**Branch**: `main`
+
+### Summary
+
+Implemented capability-typed routing with v2 config migration, route trace output, local-only doctor and mock smoke checks; aligned MCP-first diagnostics docs and added Chinese README/release hygiene updates after tracked-file secret audit.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e2f4be1` | (see git log) |
+| `c998431` | (see git log) |
+| `e9b0dc9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
