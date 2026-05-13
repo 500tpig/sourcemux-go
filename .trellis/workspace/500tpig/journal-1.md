@@ -349,3 +349,38 @@ Completed Context7 docs_search provider and direct CLI surfaces, added GoRelease
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Product rename to SourceMux
+
+**Date**: 2026-05-14
+**Task**: Product rename to SourceMux
+**Branch**: `main`
+
+### Summary
+
+Renamed the project identity to SourceMux, updated module/import paths and primary sourcemux command, kept grok-search compatibility packaging, renamed config examples/default docs to sourcemux.json, and documented GitHub/release/config migration steps.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `92bf84e` | (see git log) |
+| `acb1638` | (see git log) |
+| `30e7a95` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
