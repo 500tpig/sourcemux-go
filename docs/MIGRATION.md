@@ -1,10 +1,52 @@
-# Configuration migration
+# Migration
+
+## Product rename: grok-search -> SourceMux
+
+SourceMux is the new public project name. The intended GitHub repository is:
+
+```text
+https://github.com/500tpig/sourcemux-go
+```
+
+After renaming the GitHub repository, update existing local clones:
+
+```bash
+git remote set-url origin https://github.com/500tpig/sourcemux-go.git
+```
+
+New installs should use:
+
+```bash
+go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
+```
+
+The old `cmd/grok-search` entrypoint remains in the repository for one
+migration window, but docs and release packaging treat `sourcemux` as the
+primary command.
+
+Default config is now `./sourcemux.json`. Existing local configs can be renamed:
+
+```bash
+mv grok-search.json sourcemux.json
+```
+
+Or kept in place by passing it explicitly:
+
+```bash
+sourcemux --config ./grok-search.json
+sourcemux cli --config ./grok-search.json config list --json
+```
+
+The runtime still reads one explicit config file only; it does not auto-scan
+legacy names or hidden config directories.
+
+## Configuration migration
 
 This document describes the v1 to v2 configuration transition.
 
 ## v1 compatibility
 
-Existing `grok-search.json` files with top-level fields such as
+Existing `sourcemux.json` files with top-level fields such as
 `grokEndpoints`, `reasoningEndpoints`, `exa`, `jina`, `tavily`, and `tinyfish`
 continue to load. They are treated as legacy v1 configs and are mapped into the
 runtime provider view in memory.
@@ -81,7 +123,7 @@ itself; keep Exa configured for the required `docs_search` provider.
 Run:
 
 ```bash
-grok-search cli config migrate --json
+sourcemux cli config migrate --json
 ```
 
 The command:
@@ -93,6 +135,6 @@ The command:
 - sets migrated configs to `minimum_profile: "off"` to preserve existing
   behavior.
 
-Use `grok-search cli doctor --json` after migration for local-only structural
+Use `sourcemux cli doctor --json` after migration for local-only structural
 validation. `doctor` does not contact providers unless `--probe` is explicitly
 passed.

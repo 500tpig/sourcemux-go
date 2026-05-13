@@ -39,7 +39,7 @@ Use `reasoningEndpoints[]` for final-answer models:
 {
   "grokEndpoints": [
     {
-      "name": "grok-search",
+      "name": "sourcemux",
       "baseURL": "https://your-grok-compatible-endpoint.example/v1",
       "apiKey": "sk-your-grok-key",
       "model": "grok-4.20-fast",
@@ -66,7 +66,7 @@ Use `reasoningEndpoints[]` for final-answer models:
 ## CLI
 
 ```bash
-./grok-search cli smart-answer "Should I adopt this library?" \
+./sourcemux cli smart-answer "Should I adopt this library?" \
   --depth standard \
   --reasoning-endpoint deepseek-flash
 ```
@@ -74,7 +74,7 @@ Use `reasoningEndpoints[]` for final-answer models:
 Use Pro for more complex synthesis without changing the config:
 
 ```bash
-./grok-search cli smart-answer "Compare these architecture options" \
+./sourcemux cli smart-answer "Compare these architecture options" \
   --depth deep \
   --reasoning-model deepseek-v4-pro \
   --json
@@ -106,10 +106,10 @@ If you see:
 no reasoningEndpoints configured
 ```
 
-add at least one `reasoningEndpoints[]` entry to the active `grok-search.json`, then verify:
+add at least one `reasoningEndpoints[]` entry to the active `sourcemux.json`, then verify:
 
 ```bash
-./grok-search cli config list --json
+./sourcemux cli config list --json
 ```
 
 Do not fix this by adding DeepSeek to `grokEndpoints[]`; that changes search routing semantics.

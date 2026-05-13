@@ -9,13 +9,21 @@ Create the satellite repositories used by GoReleaser:
 * `500tpig/homebrew-tap`
 * `500tpig/scoop-bucket`
 
-Then add repository secrets to `500tpig/grok-search-go`:
+Then add repository secrets to `500tpig/sourcemux-go`:
 
 * `HOMEBREW_TAP_TOKEN` with contents write access to `500tpig/homebrew-tap`
 * `SCOOP_BUCKET_TOKEN` with contents write access to `500tpig/scoop-bucket`
 
 The default `GITHUB_TOKEN` publishes the GitHub Release in this repository, but
 it cannot push to the separate tap/bucket repositories.
+
+If this is the first release after the product rename, rename the GitHub
+repository from `500tpig/grok-search-go` to `500tpig/sourcemux-go` before
+tagging. Existing local clones should then run:
+
+```bash
+git remote set-url origin https://github.com/500tpig/sourcemux-go.git
+```
 
 ## Release flow
 
@@ -30,6 +38,9 @@ GoReleaser builds:
 * macOS amd64 / arm64
 * Linux amd64 / arm64
 * Windows amd64
+
+The archives include the primary `sourcemux` binary and the legacy
+`grok-search` compatibility binary for one migration window.
 
 It also publishes:
 

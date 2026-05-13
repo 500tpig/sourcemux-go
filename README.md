@@ -1,18 +1,18 @@
-# Grok Search Go
+# SourceMux
 
-[![CI](https://github.com/500tpig/grok-search-go/actions/workflows/ci.yml/badge.svg)](https://github.com/500tpig/grok-search-go/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/500tpig/grok-search-go)](go.mod)
+[![CI](https://github.com/500tpig/sourcemux-go/actions/workflows/ci.yml/badge.svg)](https://github.com/500tpig/sourcemux-go/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/500tpig/sourcemux-go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Grok Search Go is an MCP-native search, fetch, docs, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
+SourceMux is an MCP-native search, fetch, docs, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
 
 ## 中文简介
 
-Grok Search Go 是一个面向 AI Agent 和 MCP 客户端的搜索、网页抓取与轻量研究工具。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力封装成统一的 fallback route：优先走 Grok 搜索，失败后自动降级到其他搜索/抓取服务。
+SourceMux 是一个面向 AI Agent 和 MCP 客户端的搜索、网页抓取与轻量研究工具。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力封装成统一的 fallback route：优先走 Grok 搜索，失败后自动降级到其他搜索/抓取服务。
 
 同一个 Go 二进制可以直接当 CLI 使用，也可以作为 stdio MCP server 接入 Codex、Claude Code、Cherry Studio 等客户端。适合需要在 Agent 工作流里做实时网页搜索、网页内容提取、URL 发现、站点抓取、研究包生成和最终答案综合的场景。
 
-隐私上，真实 API key 只应该放在本地的 `grok-search.json` 或显式指定的本地配置文件里；该文件默认被 Git 忽略。仓库里的示例配置只使用占位符，不应提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
+隐私上，真实 API key 只应该放在本地的 `sourcemux.json` 或显式指定的本地配置文件里；该文件默认被 Git 忽略。仓库里的示例配置只使用占位符，不应提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
 The default routing is:
 
@@ -26,7 +26,7 @@ The default routing is:
 
 - Single Go binary for CLI and stdio MCP server modes.
 - MCP text responses stay compact; CLI text/JSON remain the canonical full-output surfaces.
-- Single explicit JSON config file: `./grok-search.json` by default, or `--config /path/to/grok-search.json`.
+- Single explicit JSON config file: `./sourcemux.json` by default, or `--config /path/to/sourcemux.json`.
 - Grok/OpenAI-compatible endpoint pool with priority fallback.
 - Optional TinyFish, Exa, Tavily, Jina, and Context7 integrations.
 - Source caching via `get_sources` for MCP workflows.
@@ -39,17 +39,21 @@ Choose one:
 
 ```bash
 brew tap 500tpig/tap
-brew install --cask grok-search
+brew install --cask sourcemux
 ```
 
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
-scoop install 500tpig/grok-search
+scoop install 500tpig/sourcemux
 ```
 
 ```bash
-go install github.com/500tpig/grok-search-go/cmd/grok-search@latest
+go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
+
+Compatibility note: the repository still keeps `cmd/grok-search` as a legacy
+command entrypoint for one migration window. New installs and docs should use
+`sourcemux`.
 
 Make sure Go's bin directory is in your `PATH`:
 
@@ -60,26 +64,26 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 Verify the command:
 
 ```bash
-grok-search version
-grok-search cli config path
+sourcemux version
+sourcemux cli config path
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/500tpig/grok-search-go.git
-cd grok-search-go
-go build -o grok-search .
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
 ```
 
 ## Quick start
 
-The examples below assume `grok-search` is installed on your `PATH`. If you built from source, use `./grok-search` instead.
+The examples below assume `sourcemux` is installed on your `PATH`. If you built from source, use `./sourcemux` instead.
 
 1. Create a local config. The generated file may contain secrets and is ignored by Git.
 
 ```bash
-grok-search cli setup --non-interactive \
+sourcemux cli setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -90,13 +94,13 @@ grok-search cli setup --non-interactive \
 2. Inspect the active config without printing secrets.
 
 ```bash
-grok-search cli config list --json
+sourcemux cli config list --json
 ```
 
 3. Run a search.
 
 ```bash
-grok-search cli search "What changed in the latest Go release?" --json
+sourcemux cli search "What changed in the latest Go release?" --json
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
@@ -107,10 +111,11 @@ Release automation notes are in [`docs/RELEASE.md`](docs/RELEASE.md).
 
 The runtime reads exactly one config file:
 
-- Default: `./grok-search.json`
-- Explicit: `grok-search --config /path/to/grok-search.json` or `grok-search cli --config /path/to/grok-search.json ...`
+- Default: `./sourcemux.json`
+- Explicit: `sourcemux --config /path/to/sourcemux.json` or `sourcemux cli --config /path/to/sourcemux.json ...`
 
-It does not read environment-variable config chains, `~/.config/grok-search/*`, or legacy `endpoints.json` files.
+It does not read environment-variable config chains, `~/.config/sourcemux/*`, or legacy `endpoints.json` files.
+If you already have `grok-search.json`, rename it to `sourcemux.json` or pass it explicitly with `--config`.
 
 Minimal config:
 
@@ -153,23 +158,23 @@ Config fields:
 
 See:
 
-- [`configs/grok-search.example.json`](configs/grok-search.example.json)
-- [`configs/grok-search.reasoning.example.json`](configs/grok-search.reasoning.example.json)
+- [`configs/sourcemux.example.json`](configs/sourcemux.example.json)
+- [`configs/sourcemux.reasoning.example.json`](configs/sourcemux.reasoning.example.json)
 
 ## CLI usage
 
 ```bash
-./grok-search cli config path
-./grok-search cli config files --json
-./grok-search cli config list --json
-./grok-search cli doctor --json
+./sourcemux cli config path
+./sourcemux cli config files --json
+./sourcemux cli config list --json
+./sourcemux cli doctor --json
 
-./grok-search cli search "latest Go release notes" --json
-./grok-search cli fetch "https://example.com" --json
-./grok-search cli plan "Evaluate a new open-source project" --depth deep
-./grok-search cli research "Evaluate a new open-source project" \
+./sourcemux cli search "latest Go release notes" --json
+./sourcemux cli fetch "https://example.com" --json
+./sourcemux cli plan "Evaluate a new open-source project" --depth deep
+./sourcemux cli research "Evaluate a new open-source project" \
   --depth deep --domain github.com --max-fetches 6 --json
-./grok-search cli smart-answer "Should I use project X?" \
+./sourcemux cli smart-answer "Should I use project X?" \
   --depth standard --reasoning-endpoint deepseek-flash --json
 ```
 
@@ -196,25 +201,25 @@ Main subcommands:
 
 ## MCP usage
 
-Run the same binary in stdio mode. Pass `--config` unless the MCP client starts the process in the directory that contains `grok-search.json`.
+Run the same binary in stdio mode. Pass `--config` unless the MCP client starts the process in the directory that contains `sourcemux.json`.
 
 Generic MCP server entry:
 
 ```json
 {
   "type": "stdio",
-  "command": "/absolute/path/to/grok-search",
-  "args": ["--config", "/absolute/path/to/grok-search.json"]
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }
 ```
 
 Claude Code example:
 
 ```bash
-claude mcp add-json grok-search '{
+claude mcp add-json sourcemux '{
   "type": "stdio",
-  "command": "/absolute/path/to/grok-search",
-  "args": ["--config", "/absolute/path/to/grok-search.json"]
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }'
 ```
 
@@ -270,7 +275,7 @@ Example:
 {
   "grokEndpoints": [
     {
-      "name": "grok-search",
+      "name": "sourcemux",
       "baseURL": "https://your-grok-compatible-endpoint.example/v1",
       "apiKey": "sk-your-grok-key",
       "model": "grok-4.20-fast",
@@ -308,9 +313,9 @@ The CI workflow runs the same baseline checks on pushes and pull requests to `ma
 
 ## Security
 
-Do not commit `grok-search.json`, API keys, provider dashboard exports, or local credential files. See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and secret-handling guidance.
+Do not commit `sourcemux.json`, API keys, provider dashboard exports, or local credential files. See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and secret-handling guidance.
 
-中文提醒：发布前请确认 `git status --ignored --short grok-search.json` 显示为 ignored，且 `git ls-files --error-unmatch grok-search.json` 没有输出。`config list` 会遮蔽密钥；`doctor` 默认只做本地结构检查，`doctor --probe` / `probe` 才会访问配置的 provider，请只在可信配置下运行。
+中文提醒：发布前请确认 `git status --ignored --short sourcemux.json` 显示为 ignored，且 `git ls-files --error-unmatch sourcemux.json` 没有输出。`config list` 会遮蔽密钥；`doctor` 默认只做本地结构检查，`doctor --probe` / `probe` 才会访问配置的 provider，请只在可信配置下运行。
 
 ## License
 

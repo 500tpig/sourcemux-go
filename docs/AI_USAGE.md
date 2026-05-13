@@ -1,10 +1,10 @@
 # AI Usage Guide
 
-This document defines the recommended integration model for `grok-search-go` across AI coding agents.
+This document defines the recommended integration model for `sourcemux-go` across AI coding agents.
 
 ## Positioning
 
-`grok-search-go` should be treated as:
+`sourcemux-go` should be treated as:
 
 * **MCP-native** for compact interactive lookups inside an agent host
 * **CLI-peer** for heavy, reproducible, or file-oriented workflows
@@ -20,7 +20,7 @@ In practice, this means MCP text responses should stay intentionally thin: enoug
 
 These should be considered the canonical, reusable layer:
 
-* the `grok-search` binary
+* the `sourcemux` binary
 * CLI command shapes
 * JSON output contracts
 * routing policy
@@ -65,16 +65,16 @@ Use CLI when the workflow should be reproducible or the result may be large:
 * full JSON is required
 * results should be written to files
 * downstream shell/script processing is expected
-* the host does not expose grok-search MCP
+* the host does not expose sourcemux MCP
 * the result would otherwise flood the model context
 
 Typical commands:
 
 ```bash
-grok-search cli search "query" --json
-grok-search cli fetch "https://example.com" --json
-grok-search cli research "topic" --depth standard --json
-grok-search cli smart-answer "question" --depth standard --json
+sourcemux cli search "query" --json
+sourcemux cli fetch "https://example.com" --json
+sourcemux cli research "topic" --depth standard --json
+sourcemux cli smart-answer "question" --depth standard --json
 ```
 
 ## Recommended host setup
@@ -84,7 +84,7 @@ grok-search cli smart-answer "question" --depth standard --json
 Use both:
 
 * a concise global `AGENTS.md`
-* a Codex-specific skill for grok-search routing
+* a Codex-specific skill for sourcemux routing
 
 The prompt should keep only the high-level routing rules. The skill can carry the more detailed usage logic.
 
@@ -93,7 +93,7 @@ The prompt should keep only the high-level routing rules. The skill can carry th
 Use:
 
 * a global `CLAUDE.md`
-* grok-search MCP wiring
+* sourcemux MCP wiring
 * explicit CLI path examples for heavy workflows
 
 Claude Code does not natively consume Codex skill packages, so keep its routing rules in `CLAUDE.md`.

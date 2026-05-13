@@ -4,8 +4,8 @@ This document is for maintainers deploying the binary or connecting MCP clients.
 
 ## Runtime modes
 
-- CLI mode: `grok-search cli <command>`
-- MCP server mode: `grok-search` over stdio
+- CLI mode: `sourcemux cli <command>`
+- MCP server mode: `sourcemux` over stdio
 
 Both modes use the same engine code and the same single config file.
 
@@ -14,15 +14,15 @@ Both modes use the same engine code and the same single config file.
 Local development:
 
 ```text
-./grok-search
-./grok-search.json
+./sourcemux
+./sourcemux.json
 ```
 
 Server deployment example:
 
 ```text
-/usr/local/bin/grok-search
-/etc/grok-search/grok-search.json
+/usr/local/bin/sourcemux
+/etc/sourcemux/sourcemux.json
 ```
 
 Use an explicit `--config` path whenever the process working directory is uncertain.
@@ -32,30 +32,30 @@ Use an explicit `--config` path whenever the process working directory is uncert
 ```bash
 go test ./...
 go vet ./...
-go build -o grok-search .
+go build -o sourcemux .
 ```
 
 ## Config
 
 The application reads one JSON file only:
 
-- Default: `./grok-search.json`
-- Explicit: `--config /path/to/grok-search.json`
+- Default: `./sourcemux.json`
+- Explicit: `--config /path/to/sourcemux.json`
 
 It does not read environment-variable config chains, hidden home-directory config, or legacy `endpoints.json` files.
 
 Start from one of the safe examples:
 
 ```bash
-cp configs/grok-search.example.json grok-search.json
-chmod 600 grok-search.json
+cp configs/sourcemux.example.json sourcemux.json
+chmod 600 sourcemux.json
 ```
 
 For `smart_answer`, use:
 
 ```bash
-cp configs/grok-search.reasoning.example.json grok-search.json
-chmod 600 grok-search.json
+cp configs/sourcemux.reasoning.example.json sourcemux.json
+chmod 600 sourcemux.json
 ```
 
 Then replace placeholder endpoints and keys.
@@ -68,9 +68,9 @@ into built-in tools such as `web_search` and `x_search` when
 ## Recommended production permissions
 
 ```bash
-sudo chown root:root /etc/grok-search/grok-search.json
-sudo chmod 600 /etc/grok-search/grok-search.json
-sudo chmod 755 /usr/local/bin/grok-search
+sudo chown root:root /etc/sourcemux/sourcemux.json
+sudo chmod 600 /etc/sourcemux/sourcemux.json
+sudo chmod 755 /usr/local/bin/sourcemux
 ```
 
 ## MCP registration
@@ -80,18 +80,18 @@ Generic stdio server entry:
 ```json
 {
   "type": "stdio",
-  "command": "/absolute/path/to/grok-search",
-  "args": ["--config", "/absolute/path/to/grok-search.json"]
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }
 ```
 
 Claude Code example:
 
 ```bash
-claude mcp add-json grok-search '{
+claude mcp add-json sourcemux '{
   "type": "stdio",
-  "command": "/absolute/path/to/grok-search",
-  "args": ["--config", "/absolute/path/to/grok-search.json"]
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }'
 ```
 
@@ -100,10 +100,10 @@ claude mcp add-json grok-search '{
 CLI:
 
 ```bash
-./grok-search cli --config /path/to/grok-search.json config list --json
-./grok-search cli --config /path/to/grok-search.json doctor --json
-./grok-search cli --config /path/to/grok-search.json search "What is today's date?" --json
-./grok-search cli --config /path/to/grok-search.json fetch "https://example.com" --json
+./sourcemux cli --config /path/to/sourcemux.json config list --json
+./sourcemux cli --config /path/to/sourcemux.json doctor --json
+./sourcemux cli --config /path/to/sourcemux.json search "What is today's date?" --json
+./sourcemux cli --config /path/to/sourcemux.json fetch "https://example.com" --json
 ```
 
 MCP:
@@ -131,7 +131,7 @@ Expected behavior:
 Check the active path:
 
 ```bash
-./grok-search cli --config /path/to/grok-search.json config path
+./sourcemux cli --config /path/to/sourcemux.json config path
 ```
 
 Create the file with `setup` or copy an example config.
@@ -141,7 +141,7 @@ Create the file with `setup` or copy an example config.
 The active config has no search-capable endpoint. Check:
 
 ```bash
-./grok-search cli --config /path/to/grok-search.json config list --json
+./sourcemux cli --config /path/to/sourcemux.json config list --json
 ```
 
 Provider-only configs can still support some direct provider commands, but `web_search` needs a configured search route or fallback provider keys.

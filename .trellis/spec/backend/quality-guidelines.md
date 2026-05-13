@@ -50,7 +50,7 @@ Questions to answer:
 #### 2. Signatures
 
 - CLI command pattern:
-  - `grok-search cli <provider>-bench --cases <path> --json`
+  - `sourcemux cli <provider>-bench --cases <path> --json`
   - Optional local credential input: `--keys-file <path>`
   - Optional surface selection: `--surfaces <comma-separated-list>`
 - Provider clients belong under `internal/engine/` when they are pure REST clients reusable by CLI or future tools.
@@ -83,7 +83,7 @@ Questions to answer:
 
 #### 5. Good/Base/Bad Cases
 
-- Good: `grok-search cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json` with keys supplied via env/local file.
+- Good: `sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json` with keys supplied via env/local file.
 - Base: run a single surface with `--surfaces fetch` to isolate one provider capability.
 - Bad: committing a JSON file containing real API keys, or routing benchmark traffic through MCP `web_search`/`web_fetch` without an explicit production integration task.
 
@@ -124,7 +124,7 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 #### 2. Signatures
 
 - Config file shape:
-  - `./grok-search.json` by default, or one explicit path supplied with `--config`.
+  - `./sourcemux.json` by default, or one explicit path supplied with `--config`.
   - Provider block pattern: `{ "enabled": true, "keys": [{"name": "...", "apiKey": "..."}], "<surface>URL": "..." }`
 - Runtime config must not add environment-variable fallbacks or hidden user config files.
 - Runtime placement:
@@ -223,7 +223,7 @@ result, err := pool.Fetch(ctx, request)
   - CLI command orchestration belongs under `internal/cli/`.
   - MCP registration is wired in `internal/server/server.go`.
 - CLI command pattern:
-  - `grok-search cli <capability> <url> --json`
+  - `sourcemux cli <capability> <url> --json`
   - Capability-specific flags should mirror MCP parameter names using CLI hyphen style, for example `max_depth` -> `--max-depth`.
 - MCP tool pattern:
   - Tool name should be stable snake_case, for example `web_crawl`.
@@ -257,7 +257,7 @@ result, err := pool.Fetch(ctx, request)
 
 #### 5. Good/Base/Bad Cases
 
-- Good: `grok-search cli crawl https://example.com/docs --instructions "Find API pages" --limit 10 --json` calls a configured Tavily test server in tests and returns typed crawl results.
+- Good: `sourcemux cli crawl https://example.com/docs --instructions "Find API pages" --limit 10 --json` calls a configured Tavily test server in tests and returns typed crawl results.
 - Base: the MCP tool returns a concise text envelope with source, base URL, result count, and page snippets.
 - Bad: adding a CLI command that calls a live API in unit tests, or exposing a new MCP tool without documenting the matching CLI and config requirements.
 
@@ -309,7 +309,7 @@ result, err := t.Crawl(ctx, engine.TavilyCrawlRequest{URL: url, Limit: limit})
   - Name: `research_run`
   - Inputs: `query` (required), `depth` (`quick` / `standard` / `deep`), `platform` (optional), `domains` (optional array), `max_fetches` (optional number).
 - CLI command:
-  - `grok-search cli research <query> --depth <quick|standard|deep> --platform <focus> --domain <domain> --max-fetches <n> --json`
+  - `sourcemux cli research <query> --depth <quick|standard|deep> --platform <focus> --domain <domain> --max-fetches <n> --json`
   - CLI hyphen names mirror MCP snake_case fields, for example `max_fetches` -> `--max-fetches`.
 - Runtime placement:
   - Pure orchestration helpers and MCP registration live under `internal/tools/`.
@@ -348,7 +348,7 @@ result, err := t.Crawl(ctx, engine.TavilyCrawlRequest{URL: url, Limit: limit})
 
 #### 5. Good/Base/Bad Cases
 
-- Good: `grok-search cli research "Grok Search MCP" --depth deep --domain github.com --max-fetches 6 --json` returns a bounded research pack with stable sections.
+- Good: `sourcemux cli research "SourceMux MCP" --depth deep --domain github.com --max-fetches 6 --json` returns a bounded research pack with stable sections.
 - Base: MCP `research_run` with only `query` produces planned searches, ranked sources, fetched page summaries, and heuristic facts/inferences.
 - Bad: adding a separate crawler implementation for research, changing `web_search` fallback order only for research, or returning unbounded full page bodies.
 
@@ -405,7 +405,7 @@ fmt.Println(tools.FormatResearchPack(pack))
 - MCP tool:
   - `smart_answer(query, depth?, platform?, domains?, max_fetches?, reasoning_endpoint?, reasoning_model?)`.
 - CLI command:
-  - `grok-search cli smart-answer <query> --depth <quick|standard|deep> --domain <domain> --max-fetches <n> --reasoning-endpoint <name> --reasoning-model <model> --json`.
+  - `sourcemux cli smart-answer <query> --depth <quick|standard|deep> --domain <domain> --max-fetches <n> --reasoning-endpoint <name> --reasoning-model <model> --json`.
 - Runtime placement:
   - Generic reasoning client/pool: `internal/engine/`.
   - Composition/MCP registration: `internal/tools/`.
@@ -507,7 +507,7 @@ Correct:
   - `"web_search"`
   - `"x_search"`
 - CLI setup:
-  - `grok-search cli setup ... --api-type responses --send-search-flag --response-tools web_search,x_search`
+  - `sourcemux cli setup ... --api-type responses --send-search-flag --response-tools web_search,x_search`
 - Runtime placement:
   - Tool constants, validation, and request body construction belong in `internal/engine/`.
   - Config normalization belongs in `internal/config/`.
@@ -609,27 +609,27 @@ Correct:
 #### 2. Signatures
 
 - Config inspection:
-  - `grok-search cli config path [--json]`
-  - `grok-search cli config files [--json]`
-  - `grok-search cli config list [--json]`
+  - `sourcemux cli config path [--json]`
+  - `sourcemux cli config files [--json]`
+  - `sourcemux cli config list [--json]`
 - Global config selection:
-  - `grok-search --config <path>` for MCP/server mode.
-  - `grok-search cli --config <path> <command>` for CLI mode.
+  - `sourcemux --config <path>` for MCP/server mode.
+  - `sourcemux cli --config <path> <command>` for CLI mode.
 - Setup:
-  - `grok-search cli setup [--non-interactive] --api-url <url> --api-key <key> [--model <model>] [--api-type chat|responses] [--send-search-flag] [--response-tools <csv>] [--tavily-key <key>] [--exa-key <key>] [--jina-key <key>] [--tinyfish-keys <csv>] [--tinyfish-key-names <csv>] [--force] [--json]`
+  - `sourcemux cli setup [--non-interactive] --api-url <url> --api-key <key> [--model <model>] [--api-type chat|responses] [--send-search-flag] [--response-tools <csv>] [--tavily-key <key>] [--exa-key <key>] [--jina-key <key>] [--tinyfish-keys <csv>] [--tinyfish-key-names <csv>] [--force] [--json]`
 - Diagnostics:
-  - `grok-search cli doctor [--json]` performs local-only structural checks and must not call provider APIs.
-  - `grok-search cli doctor --probe [--json]` opts into live provider probes.
-  - `grok-search cli probe ...` remains an explicit live-probe command.
+  - `sourcemux cli doctor [--json]` performs local-only structural checks and must not call provider APIs.
+  - `sourcemux cli doctor --probe [--json]` opts into live provider probes.
+  - `sourcemux cli probe ...` remains an explicit live-probe command.
 - Migration:
-  - `grok-search cli config migrate [--backup <path>] [--json]`
+  - `sourcemux cli config migrate [--backup <path>] [--json]`
 
 #### 3. Contracts
 
 - Config path:
-  - Default config is `config.DefaultConfigPath()` (`./grok-search.json`).
+  - Default config is `config.DefaultConfigPath()` (`./sourcemux.json`).
   - `--config` selects exactly one explicit JSON file.
-  - No environment variables, `~/.config/grok-search/*`, or legacy `endpoints.json` files are loaded.
+  - No environment variables, `~/.config/sourcemux/*`, or legacy `endpoints.json` files are loaded.
 - Config list:
   - Must call the same config loader used by MCP/CLI runtime.
   - Must mask all secrets with `keyStatus`; never print full API keys.
@@ -647,7 +647,7 @@ Correct:
   - Must not read or print secret values.
   - Must explain that hidden home config and legacy endpoint files are ignored.
 - Setup:
-  - Must write the active `grok-search.json` shape, including `grokEndpoints`, optional provider blocks, and `logLevel`.
+  - Must write the active `sourcemux.json` shape, including `grokEndpoints`, optional provider blocks, and `logLevel`.
   - Must create the config file's parent directory automatically with user-only permissions when possible.
   - Must write the file with `0600` permissions when possible.
   - Must refuse to overwrite an existing config unless `--force` is passed.
@@ -675,9 +675,9 @@ Correct:
 
 #### 5. Good/Base/Bad Cases
 
-- Good: `grok-search cli setup --non-interactive --api-url https://example.com/v1 --api-key sk-... --json` writes `./grok-search.json` and returns masked next steps.
-- Base: `grok-search cli config list --json` shows endpoint/provider status with masked key values and no live network calls.
-- Bad: adding a second CLI-only config file, reading `~/.config/grok-search`, requiring env vars for runtime config, asking users to hand-edit JSON as the only setup path, or printing raw keys in errors/tests/docs.
+- Good: `sourcemux cli setup --non-interactive --api-url https://example.com/v1 --api-key sk-... --json` writes `./sourcemux.json` and returns masked next steps.
+- Base: `sourcemux cli config list --json` shows endpoint/provider status with masked key values and no live network calls.
+- Bad: adding a second CLI-only config file, reading `~/.config/sourcemux`, requiring env vars for runtime config, asking users to hand-edit JSON as the only setup path, or printing raw keys in errors/tests/docs.
 
 #### 6. Tests Required
 
@@ -704,8 +704,8 @@ Wrong:
 
 ```go
 fmt.Printf("wrote apiKey=%s\n", opts.APIKey)
-_ = os.WriteFile("grok-search-cli.json", data, 0o644)
-_ = os.ReadFile(filepath.Join(os.Getenv("HOME"), ".config/grok-search/config.json"))
+_ = os.WriteFile("sourcemux-cli.json", data, 0o644)
+_ = os.ReadFile(filepath.Join(os.Getenv("HOME"), ".config/sourcemux/config.json"))
 ```
 
 Correct:
@@ -772,7 +772,7 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 #### 5. Good/Base/Bad Cases
 
 - Good: `.gitignore` marks `.trellis/`, `.agents/`, `.codex/`, and `.claude/` as local AI workflow state, while `docs/QUICKSTART.md` contains generic MCP setup instructions.
-- Base: `configs/grok-search.example.json` and `configs/grok-search.reasoning.example.json` parse with `python3 -m json.tool` and use placeholders such as `sk-your-key`.
+- Base: `configs/sourcemux.example.json` and `configs/sourcemux.reasoning.example.json` parse with `python3 -m json.tool` and use placeholders such as `sk-your-key`.
 - Bad: committing `.trellis/tasks/archive/...`, `.codex/config.toml`, `.claude/settings.json`, or docs that tell users to run binaries from `/Users/johnsmith/...`.
 
 #### 6. Tests Required
@@ -799,6 +799,68 @@ Correct:
 
 ```bash
 git rm -r --cached .trellis .agents .codex .claude
+```
+
+---
+
+### Scenario: Product/repository rename
+
+#### 1. Scope / Trigger
+
+- Trigger: renaming the public product, binary, GitHub repository, Go module, or release package names.
+- Scope: rename work must update code, release automation, docs, examples, and compatibility guidance together.
+
+#### 2. Signatures
+
+- Product name: `SourceMux`.
+- Primary command: `sourcemux`.
+- Compatibility command: `grok-search` may remain as a legacy entrypoint for a documented migration window.
+- Go module: `github.com/500tpig/sourcemux-go`.
+- Default local config: `./sourcemux.json`.
+
+#### 3. Contracts
+
+- Go imports must match the module path in `go.mod`.
+- Release config must build the primary binary and, when promised, the legacy compatibility binary.
+- Public docs should use the primary command and repository path.
+- Migration docs must explain how to update local remotes and old config filenames.
+- The runtime must still read one explicit config file only; do not add hidden home-directory or multi-file auto-scan fallbacks to soften a rename.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Old module path remains in Go imports | Fix imports before quality gate |
+| Public docs still install the old command as primary | Update to `sourcemux` and keep old command only in migration notes |
+| Default config name changes | Update setup, config errors, examples, tests, `.gitignore`, and docs together |
+| GitHub repository changes | Document `git remote set-url origin <new-url>` for existing clones |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: README installs `sourcemux`, migration docs mention `grok-search`, and GoReleaser archives include the compatibility binary.
+- Base: `sourcemux cli config path` reports `sourcemux.json` by default.
+- Bad: changing `go.mod` without updating internal imports, or adding automatic config scanning across `sourcemux.json`, `grok-search.json`, and home directories.
+
+#### 6. Tests Required
+
+- `go test ./...`, `go vet ./...`, and `go build ./...`.
+- Search public code/docs for the old module path and unintended primary old-command examples.
+- Verify safe example config filenames match docs and `.gitignore`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```bash
+module github.com/500tpig/sourcemux-go
+# but internal imports still point at github.com/500tpig/grok-search-go
+```
+
+Correct:
+
+```bash
+module github.com/500tpig/sourcemux-go
+# all project imports use github.com/500tpig/sourcemux-go/...
 ```
 
 ---
