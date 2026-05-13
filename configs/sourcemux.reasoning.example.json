@@ -1,7 +1,7 @@
 {
   "grokEndpoints": [
     {
-      "name": "grok-search",
+      "name": "sourcemux",
       "baseURL": "https://your-grok-compatible-endpoint.example/v1",
       "apiKey": "sk-your-grok-key",
       "model": "grok-4.20-fast",

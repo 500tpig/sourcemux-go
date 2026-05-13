@@ -1,12 +1,32 @@
 version: 2
 
-project_name: grok-search
+project_name: sourcemux
 
 before:
   hooks:
     - go mod tidy
 
 builds:
+  - id: sourcemux
+    main: ./cmd/sourcemux
+    binary: sourcemux
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
   - id: grok-search
     main: ./cmd/grok-search
     binary: grok-search
@@ -31,6 +51,7 @@ builds:
 archives:
   - id: default
     ids:
+      - sourcemux
       - grok-search
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
@@ -56,35 +77,37 @@ changelog:
 release:
   github:
     owner: 500tpig
-    name: grok-search-go
+    name: sourcemux-go
 
 homebrew_casks:
-  - name: grok-search
+  - name: sourcemux
     ids:
       - default
     binaries:
+      - sourcemux
       - grok-search
     repository:
       owner: 500tpig
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/500tpig/grok-search-go"
-    description: "MCP-native Grok search server and CLI with provider fallback routing"
+    homepage: "https://github.com/500tpig/sourcemux-go"
+    description: "MCP-native source search, fetch, docs, and research router"
     license: MIT
     hooks:
       post:
         install: |
           if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sourcemux"]
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/grok-search"]
           end
 
 scoops:
-  - name: grok-search
+  - name: sourcemux
     repository:
       owner: 500tpig
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-    homepage: "https://github.com/500tpig/grok-search-go"
-    description: "MCP-native Grok search server and CLI with provider fallback routing"
+    homepage: "https://github.com/500tpig/sourcemux-go"
+    description: "MCP-native source search, fetch, docs, and research router"
     license: MIT
     commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"

@@ -1,6 +1,7 @@
 # Binaries
+/sourcemux
 /grok-search
-/grok-search-go
+/sourcemux-go
 *.exe
 *.dll
 *.so
@@ -23,6 +24,7 @@ Thumbs.db
 
 # Config (may contain keys)
 .env
+sourcemux.json
 grok-search.json
 config.local.json
 
