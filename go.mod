@@ -1,4 +1,4 @@
-module github.com/bettas/grok-search-go
+module github.com/500tpig/grok-search-go
 
 go 1.23
 

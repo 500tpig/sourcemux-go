@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bettas/grok-search-go/internal/engine"
+	"github.com/500tpig/grok-search-go/internal/engine"
 )
 
 type exaSearchOutput struct {

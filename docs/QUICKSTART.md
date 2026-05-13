@@ -5,7 +5,7 @@ This guide starts from a fresh clone and avoids any local-only paths.
 ## 1. Build
 
 ```bash
-git clone https://github.com/bettas/grok-search-go.git
+git clone https://github.com/500tpig/grok-search-go.git
 cd grok-search-go
 go build -o grok-search .
 ```

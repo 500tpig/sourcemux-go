@@ -23,13 +23,13 @@ The default routing is:
 ## Install
 
 ```bash
-go install github.com/bettas/grok-search-go@latest
+go install github.com/500tpig/grok-search-go@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/bettas/grok-search-go.git
+git clone https://github.com/500tpig/grok-search-go.git
 cd grok-search-go
 go build -o grok-search .
 ```

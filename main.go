@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bettas/grok-search-go/internal/cli"
-	"github.com/bettas/grok-search-go/internal/config"
-	"github.com/bettas/grok-search-go/internal/server"
+	"github.com/500tpig/grok-search-go/internal/cli"
+	"github.com/500tpig/grok-search-go/internal/config"
+	"github.com/500tpig/grok-search-go/internal/server"
 )
 
 // main routes between two execution modes:

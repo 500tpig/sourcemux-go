@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bettas/grok-search-go/internal/tools"
+	"github.com/500tpig/grok-search-go/internal/tools"
 )
 
 func runPlan(args []string) int {

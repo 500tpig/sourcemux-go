@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bettas/grok-search-go/internal/engine"
+	"github.com/500tpig/grok-search-go/internal/engine"
 )
 
 func TestSmartAnswererRun(t *testing.T) {

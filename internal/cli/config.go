@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	cfgpkg "github.com/bettas/grok-search-go/internal/config"
-	"github.com/bettas/grok-search-go/internal/engine"
+	cfgpkg "github.com/500tpig/grok-search-go/internal/config"
+	"github.com/500tpig/grok-search-go/internal/engine"
 )
 
 const configUsage = `Usage: grok-search cli config <command> [flags]

@@ -5,7 +5,7 @@ Thanks for improving Grok Search Go.
 ## Development setup
 
 ```bash
-git clone https://github.com/bettas/grok-search-go.git
+git clone https://github.com/500tpig/grok-search-go.git
 cd grok-search-go
 go mod download
 go test ./...

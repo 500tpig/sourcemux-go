@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bettas/grok-search-go/internal/config"
+	"github.com/500tpig/grok-search-go/internal/config"
 )
 
 const usage = `Usage: grok-search cli <command> [flags]
