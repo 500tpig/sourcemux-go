@@ -139,6 +139,9 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
   - Accept production API keys only from the active single config file.
   - Do not commit real keys, generated key files, or provider dashboard exports.
   - Diagnostic tools may show key counts and masked key status only.
+  - Optional v2 providers with blank `apiKey` values must be dropped during
+    config normalization; do not construct runtime clients that can make
+    anonymous provider calls.
 - Routing:
   - Preserve existing behavior when the provider is disabled or has no keys.
   - Insert new fallbacks at an explicit point in the chain and update README routing diagrams.
@@ -155,6 +158,7 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 | --- | --- |
 | Provider disabled | Skip provider without error |
 | Provider enabled but no keys | Skip provider without network calls |
+| v2 optional provider has blank `apiKey` | Drop it during config normalization; no runtime client is constructed |
 | Blank key in config list | Ignore during normalization |
 | Missing optional key name | Fill stable generated name such as `key-N` |
 | Upstream 429 | Try another configured key before falling through to the next provider |
@@ -174,6 +178,7 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 - Config:
   - file config loading
   - blank key normalization and generated names
+  - blank optional v2 provider keys do not create runtime clients
 - Engine:
   - request construction and auth header
   - response parsing
