@@ -1,6 +1,18 @@
 # Grok Search Go
 
-Grok Search Go is a CLI-first search, fetch, and research tool that also exposes the same capabilities as an MCP server for clients such as Codex, Claude Code, and Cherry Studio.
+[![CI](https://github.com/500tpig/grok-search-go/actions/workflows/ci.yml/badge.svg)](https://github.com/500tpig/grok-search-go/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/500tpig/grok-search-go)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Grok Search Go is an MCP-native search, fetch, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
+
+## 中文简介
+
+Grok Search Go 是一个面向 AI Agent 和 MCP 客户端的搜索、网页抓取与轻量研究工具。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力封装成统一的 fallback route：优先走 Grok 搜索，失败后自动降级到其他搜索/抓取服务。
+
+同一个 Go 二进制可以直接当 CLI 使用，也可以作为 stdio MCP server 接入 Codex、Claude Code、Cherry Studio 等客户端。适合需要在 Agent 工作流里做实时网页搜索、网页内容提取、URL 发现、站点抓取、研究包生成和最终答案综合的场景。
+
+隐私上，真实 API key 只应该放在本地的 `grok-search.json` 或显式指定的本地配置文件里；该文件默认被 Git 忽略。仓库里的示例配置只使用占位符，不应提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
 The default routing is:
 
@@ -26,6 +38,18 @@ The default routing is:
 go install github.com/500tpig/grok-search-go/cmd/grok-search@latest
 ```
 
+Make sure Go's bin directory is in your `PATH`:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+Verify the command:
+
+```bash
+grok-search cli config path
+```
+
 Or build from source:
 
 ```bash
@@ -36,10 +60,12 @@ go build -o grok-search .
 
 ## Quick start
 
+The examples below assume `grok-search` is installed on your `PATH`. If you built from source, use `./grok-search` instead.
+
 1. Create a local config. The generated file may contain secrets and is ignored by Git.
 
 ```bash
-./grok-search cli setup --non-interactive \
+grok-search cli setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -49,13 +75,13 @@ go build -o grok-search .
 2. Inspect the active config without printing secrets.
 
 ```bash
-./grok-search cli config list --json
+grok-search cli config list --json
 ```
 
 3. Run a search.
 
 ```bash
-./grok-search cli search "What changed in the latest Go release?" --json
+grok-search cli search "What changed in the latest Go release?" --json
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
@@ -146,7 +172,7 @@ Main subcommands:
 | `smart-answer <query>` | Research pack plus reasoning endpoint synthesis. |
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
-| `doctor` / `probe` | Config overview and `/models` probe. |
+| `doctor` / `probe` | Local config overview; opt-in live provider probes. |
 | `tinyfish-bench` | Local TinyFish Search / Fetch / Agent benchmark. |
 
 ## MCP usage
@@ -263,6 +289,8 @@ The CI workflow runs the same baseline checks on pushes and pull requests to `ma
 ## Security
 
 Do not commit `grok-search.json`, API keys, provider dashboard exports, or local credential files. See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and secret-handling guidance.
+
+中文提醒：发布前请确认 `git status --ignored --short grok-search.json` 显示为 ignored，且 `git ls-files --error-unmatch grok-search.json` 没有输出。`config list` 会遮蔽密钥；`doctor` 默认只做本地结构检查，`doctor --probe` / `probe` 才会访问配置的 provider，请只在可信配置下运行。
 
 ## License
 
