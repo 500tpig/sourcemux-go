@@ -23,7 +23,7 @@ The default routing is:
 ## Install
 
 ```bash
-go install github.com/500tpig/grok-search-go@latest
+go install github.com/500tpig/grok-search-go/cmd/grok-search@latest
 ```
 
 Or build from source:

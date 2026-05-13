@@ -1,4 +1,4 @@
-package main
+package app
 
 import "testing"
 
@@ -9,16 +9,16 @@ func TestSplitGlobalConfigArgRejectsBlankPath(t *testing.T) {
 		{"-c", "  "},
 	}
 	for _, args := range cases {
-		if _, _, err := splitGlobalConfigArg(args); err == nil {
-			t.Fatalf("splitGlobalConfigArg(%v) error = nil, want error", args)
+		if _, _, err := SplitGlobalConfigArg(args); err == nil {
+			t.Fatalf("SplitGlobalConfigArg(%v) error = nil, want error", args)
 		}
 	}
 }
 
 func TestSplitGlobalConfigArgAcceptsExplicitPath(t *testing.T) {
-	path, args, err := splitGlobalConfigArg([]string{"--config", "custom.json", "cli", "config", "path"})
+	path, args, err := SplitGlobalConfigArg([]string{"--config", "custom.json", "cli", "config", "path"})
 	if err != nil {
-		t.Fatalf("splitGlobalConfigArg failed: %v", err)
+		t.Fatalf("SplitGlobalConfigArg failed: %v", err)
 	}
 	if path != "custom.json" {
 		t.Fatalf("path = %q, want custom.json", path)

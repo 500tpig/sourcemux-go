@@ -1,6 +1,6 @@
 # Binaries
-grok-search
-grok-search-go
+/grok-search
+/grok-search-go
 *.exe
 *.dll
 *.so

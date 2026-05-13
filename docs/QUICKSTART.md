@@ -10,6 +10,12 @@ cd grok-search-go
 go build -o grok-search .
 ```
 
+Or install the `grok-search` command directly:
+
+```bash
+go install github.com/500tpig/grok-search-go/cmd/grok-search@latest
+```
+
 ## 2. Create config
 
 The recommended path is the setup command:
