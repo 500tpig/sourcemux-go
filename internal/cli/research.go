@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/engine"
 	"github.com/500tpig/grok-search-go/internal/tools"
 )
 
@@ -104,40 +103,15 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 
 func buildResearchRunner(cfg *config.Config) researchRunner {
 	cache := tools.NewMemorySourceCache()
-	pool := engine.NewGrokPool(cfg.GrokEndpoints)
-	pool.OverallTimeout = cfg.GrokPoolTimeout
-
-	var tavily *engine.TavilyClient
-	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
-		tavily = engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
-	}
-	var exa *engine.ExaClient
-	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
-		exa = engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
-	}
-	var tinyfish *engine.TinyFishPool
-	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
-		tinyfish = engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
-	}
-	jina := engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
+	search := buildWebSearchClients(cfg, cache)
+	fetch := buildWebFetchClients(cfg)
 
 	return tools.NewResearchExecutor(tools.ResearchExecutorDeps{
-		Search: tools.WebSearchClients{
-			Pool:     pool,
-			TinyFish: tinyfish,
-			Exa:      exa,
-			Tavily:   tavily,
-			Cache:    cache,
-		},
-		Fetch: tools.WebFetchClients{
-			Jina:     jina,
-			TinyFish: tinyfish,
-			Exa:      exa,
-			Tavily:   tavily,
-		},
+		Search:  search,
+		Fetch:   fetch,
 		Sources: cache,
-		Mapper:  tavily,
-		Crawler: tavily,
+		Mapper:  search.Tavily,
+		Crawler: search.Tavily,
 	})
 }
 

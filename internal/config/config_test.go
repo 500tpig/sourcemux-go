@@ -273,6 +273,75 @@ func TestLoadFile_PoolTimeoutZeroDisables(t *testing.T) {
 	}
 }
 
+func TestLoadFile_V2CapabilitiesDeriveFlatView(t *testing.T) {
+	path := writeConfig(t, `{
+	  "version": 2,
+	  "minimum_profile": "standard",
+	  "capabilities": {
+	    "main_search": {
+	      "providers": [
+	        {"type": "openai-compatible", "name": "primary", "baseURL": "https://grok.example", "apiKey": "sk-primary", "model": "grok-test"}
+	      ]
+	    },
+	    "docs_search": {
+	      "providers": [
+	        {"type": "exa", "name": "exa-main", "apiURL": "https://exa.test", "apiKey": "exa-test"}
+	      ]
+	    },
+	    "web_fetch": {
+	      "providers": [
+	        {"type": "jina", "apiURL": "https://jina.test"},
+	        {"type": "tinyfish", "keys": [{"name": "tf-a", "apiKey": "tf-key"}], "searchURL": "https://tf-search.test", "fetchURL": "https://tf-fetch.test"},
+	        {"type": "tavily", "apiURL": "https://tavily.test", "apiKey": "tvly-test"}
+	      ]
+	    }
+	  },
+	  "reasoning_endpoints": [{"name":"deepseek","baseURL":"https://reason.example","apiKey":"sk-reason"}]
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if cfg.Version != 2 || cfg.MinimumProfile != "standard" {
+		t.Fatalf("version/profile = %d/%q", cfg.Version, cfg.MinimumProfile)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].BaseURL != "https://grok.example/v1" {
+		t.Fatalf("grok endpoints = %+v", cfg.GrokEndpoints)
+	}
+	if cfg.ExaAPIURL != "https://exa.test" || cfg.ExaAPIKey != "exa-test" {
+		t.Fatalf("exa = %q %q", cfg.ExaAPIURL, cfg.ExaAPIKey)
+	}
+	if cfg.JinaAPIURL != "https://jina.test" {
+		t.Fatalf("jina = %q", cfg.JinaAPIURL)
+	}
+	if len(cfg.TinyFishKeys) != 1 || cfg.TinyFishKeys[0].Name != "tf-a" || cfg.TinyFishFetchURL != "https://tf-fetch.test" {
+		t.Fatalf("tinyfish = keys=%+v fetch=%q", cfg.TinyFishKeys, cfg.TinyFishFetchURL)
+	}
+	if cfg.TavilyAPIURL != "https://tavily.test" || cfg.TavilyAPIKey != "tvly-test" {
+		t.Fatalf("tavily = %q %q", cfg.TavilyAPIURL, cfg.TavilyAPIKey)
+	}
+	if len(cfg.ReasoningEndpoints) != 1 || cfg.ReasoningEndpoints[0].BaseURL != "https://reason.example/v1" {
+		t.Fatalf("reasoning = %+v", cfg.ReasoningEndpoints)
+	}
+}
+
+func TestLoadFile_V2RejectsMixedLegacyFields(t *testing.T) {
+	path := writeConfig(t, `{
+	  "version": 2,
+	  "capabilities": {"main_search": {"providers": []}},
+	  "grokEndpoints": [{"baseURL":"https://legacy","apiKey":"sk"}]
+	}`)
+
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected mixed config error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mixes v2 capabilities with legacy") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "grok-search.json")

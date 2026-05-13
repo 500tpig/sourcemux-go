@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/500tpig/grok-search-go/internal/capability"
 	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/grok-search-go/internal/router"
+	"github.com/500tpig/grok-search-go/internal/router/adapters"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
@@ -22,9 +25,10 @@ type WebFetchClients struct {
 
 // WebFetchResult is the shared fetch envelope used by MCP, CLI, and research.
 type WebFetchResult struct {
-	Source  string `json:"source"`
-	URL     string `json:"url"`
-	Content string `json:"content"`
+	Source     string            `json:"source"`
+	URL        string            `json:"url"`
+	Content    string            `json:"content"`
+	RouteTrace router.RouteTrace `json:"route_trace,omitempty"`
 }
 
 // RegisterFetch registers the web_fetch tool.
@@ -38,10 +42,12 @@ func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tinyfish *en
 	tool := mcp.NewTool("web_fetch",
 		mcp.WithDescription("Fetch and extract web page content as Markdown. Uses Jina Reader (primary), then TinyFish Fetch, Exa Contents, and Tavily Extract fallback."),
 		mcp.WithString("url", mcp.Required(), mcp.Description("Target URL to fetch")),
+		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
 	)
 
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		url, _ := req.Params.Arguments["url"].(string)
+		includeTrace := boolArgOr(req.Params.Arguments, "include_trace", false)
 		result, err := RunWebFetch(ctx, WebFetchClients{
 			Jina:     jina,
 			TinyFish: tinyfish,
@@ -51,7 +57,13 @@ func RegisterFetch(s *mcpserver.MCPServer, jina *engine.JinaClient, tinyfish *en
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(FormatWebFetchResult(result)), nil
+		out := mcp.NewToolResultText(FormatWebFetchResult(result))
+		if includeTrace {
+			out.Meta = map[string]any{"route_trace": result.RouteTrace}
+		} else {
+			out.Meta = map[string]any{"route_trace": result.RouteTrace.Compact()}
+		}
+		return out, nil
 	})
 }
 
@@ -61,53 +73,24 @@ func RunWebFetch(ctx context.Context, clients WebFetchClients, url string) (*Web
 		return nil, fmt.Errorf("url is required")
 	}
 
-	// Try Jina Reader first.
-	if clients.Jina != nil {
-		result, err := clients.Jina.Fetch(ctx, url)
-		if err == nil && result.Content != "" {
-			return &WebFetchResult{Source: "Jina Reader", URL: url, Content: result.Content}, nil
+	r := router.New(fetchProviders(clients)...)
+	res, trace := r.Run(ctx, capability.WebFetch, capability.Request{URL: url})
+	if strings.TrimSpace(res.Content) == "" {
+		if detail := firstFailureDetail(trace); detail != "" {
+			return nil, fmt.Errorf("web_fetch failed: %s", detail)
 		}
+		return nil, fmt.Errorf("Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured")
 	}
-
-	// Fallback to TinyFish Fetch.
-	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
-		result, err := clients.TinyFish.Fetch(ctx, engine.TinyFishFetchRequest{
-			URLs:   []string{url},
-			Format: "markdown",
-		})
-		if err == nil {
-			content := engine.TinyFishFetchContent(result.TinyFishFetchResponse)
-			if content != "" {
-				resultURL := url
-				if len(result.Results) > 0 {
-					if result.Results[0].FinalURL != "" {
-						resultURL = result.Results[0].FinalURL
-					} else if result.Results[0].URL != "" {
-						resultURL = result.Results[0].URL
-					}
-				}
-				return &WebFetchResult{Source: "TinyFish Fetch (" + result.KeyName + ")", URL: resultURL, Content: content}, nil
-			}
-		}
+	resultURL := metadataString(res.Metadata, "url", url)
+	if resultURL == "" && len(res.Sources) > 0 {
+		resultURL = res.Sources[0].URL
 	}
-
-	// Fallback to Exa Contents.
-	if clients.Exa != nil {
-		result, err := clients.Exa.Extract(ctx, url)
-		if err == nil && result.Content != "" {
-			return &WebFetchResult{Source: "Exa Contents", URL: result.URL, Content: result.Content}, nil
-		}
-	}
-
-	// Final fallback to Tavily Extract.
-	if clients.Tavily != nil {
-		result, err := clients.Tavily.Extract(ctx, url)
-		if err == nil && result.Content != "" {
-			return &WebFetchResult{Source: "Tavily Extract", URL: url, Content: result.Content}, nil
-		}
-	}
-
-	return nil, fmt.Errorf("Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured")
+	return &WebFetchResult{
+		Source:     metadataString(res.Metadata, "engine", trace.FinalProvider),
+		URL:        resultURL,
+		Content:    res.Content,
+		RouteTrace: trace,
+	}, nil
 }
 
 func FormatWebFetchResult(result *WebFetchResult) string {
@@ -117,6 +100,10 @@ func FormatWebFetchResult(result *WebFetchResult) string {
 	content := strings.TrimSpace(result.Content)
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Source: %s\nURL: %s\n", result.Source, result.URL)
+	if result.RouteTrace.AttemptsCount > 0 {
+		fmt.Fprintf(&sb, "route: final_provider=%s fallback_triggered=%v attempts_count=%d\n",
+			result.RouteTrace.FinalProvider, result.RouteTrace.FallbackTriggered, result.RouteTrace.AttemptsCount)
+	}
 	if content == "" {
 		return strings.TrimSpace(sb.String())
 	}
@@ -125,4 +112,21 @@ func FormatWebFetchResult(result *WebFetchResult) string {
 		indentContinuation(clipRunes(content, mcpFetchExcerptRunes), "  "),
 	)
 	return sb.String()
+}
+
+func fetchProviders(clients WebFetchClients) []capability.Provider {
+	var providers []capability.Provider
+	if clients.Jina != nil {
+		providers = append(providers, adapters.NewJinaFetch(clients.Jina))
+	}
+	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
+		providers = append(providers, adapters.NewTinyFishFetch(clients.TinyFish))
+	}
+	if clients.Exa != nil {
+		providers = append(providers, adapters.NewExaContents(clients.Exa))
+	}
+	if clients.Tavily != nil {
+		providers = append(providers, adapters.NewTavilyExtract(clients.Tavily))
+	}
+	return providers
 }

@@ -335,7 +335,7 @@ func buildSetupOutput(path string, cfg setupConfigFile) setupOutput {
 		ConfigFile: path,
 		NextSteps: []string{
 			fmt.Sprintf("Run `grok-search cli%s config list --json` to inspect masked effective config.", configFlag),
-			fmt.Sprintf("Run `grok-search cli%s doctor --json` to verify endpoint connectivity.", configFlag),
+			fmt.Sprintf("Run `grok-search cli%s doctor --json` to verify local config structure without provider requests.", configFlag),
 			fmt.Sprintf("Run `grok-search cli%s search \"test query\" --json` to test search.", configFlag),
 		},
 	}

@@ -37,6 +37,26 @@ type RetryConfig struct {
 	sleep func(ctx context.Context, d time.Duration) error
 }
 
+// HTTPStatusError preserves an upstream HTTP status for callers that need to
+// classify permanent vs transient failures without string parsing.
+type HTTPStatusError struct {
+	Provider   string
+	StatusCode int
+	Body       string
+}
+
+func (e HTTPStatusError) Error() string {
+	provider := strings.TrimSpace(e.Provider)
+	if provider == "" {
+		provider = "upstream"
+	}
+	body := strings.TrimSpace(e.Body)
+	if body == "" {
+		return fmt.Sprintf("%s API %d", provider, e.StatusCode)
+	}
+	return fmt.Sprintf("%s API %d: %s", provider, e.StatusCode, body)
+}
+
 // DefaultRetryConfig returns the default policy: 3 total attempts (initial + 2
 // retries), 500ms base, 30s max delay, jitter on.
 func DefaultRetryConfig() RetryConfig {

@@ -9,21 +9,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/grok-search-go/internal/router"
+	"github.com/500tpig/grok-search-go/internal/tools"
 )
 
 // searchOutput is the JSON envelope for `cli search`. Keep the fields stable
 // so external scripts can rely on the shape.
 type searchOutput struct {
-	Engine       string   `json:"engine"`
-	EndpointName string   `json:"endpoint_name,omitempty"`
-	Model        string   `json:"model,omitempty"`
-	Query        string   `json:"query"`
-	Content      string   `json:"content"`
-	SourceURLs   []string `json:"source_urls"`
-	SourcesCount int      `json:"sources_count"`
-	Fallback     string   `json:"fallback,omitempty"`
-	GrokError    string   `json:"grok_error,omitempty"`
+	Engine        string                 `json:"engine"`
+	EndpointName  string                 `json:"endpoint_name,omitempty"`
+	Model         string                 `json:"model,omitempty"`
+	Query         string                 `json:"query"`
+	Content       string                 `json:"content"`
+	SourceURLs    []string               `json:"source_urls"`
+	SourcesCount  int                    `json:"sources_count"`
+	Fallback      string                 `json:"fallback,omitempty"`
+	GrokError     string                 `json:"grok_error,omitempty"`
+	RouteDecision []router.RouteDecision `json:"route_decision,omitempty"`
 }
 
 func runSearch(args []string) int {
@@ -51,80 +53,29 @@ func runSearch(args []string) int {
 	if err != nil {
 		return reportSearchErr(*jsonOut, query, fmt.Sprintf("config: %v", err))
 	}
-
-	pool := engine.NewGrokPool(cfg.GrokEndpoints)
-	pool.OverallTimeout = cfg.GrokPoolTimeout
+	if msg := minimumProfileError(cfg); msg != "" {
+		return reportSearchErrCode(*jsonOut, query, msg, 3)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	out := searchOutput{Query: query}
-
-	res, gErr := pool.SearchWithModel(ctx, query, *model)
-	if gErr == nil && res != nil && res.Content != "" {
-		out.Engine = res.EndpointName
-		out.EndpointName = res.EndpointName
-		out.Model = res.EndpointModel
-		out.Content = res.Content
-		out.SourceURLs = res.SourceURLs
-		out.SourcesCount = res.SourcesCount
-		return emitSearch(*jsonOut, out)
+	res, err := tools.RunWebSearch(ctx, buildWebSearchClients(cfg, tools.NewMemorySourceCache()), query, "", *model)
+	if err != nil {
+		return reportSearchErr(*jsonOut, query, err.Error())
 	}
-	if gErr != nil {
-		out.GrokError = gErr.Error()
-	}
-
-	// TinyFish Search fallback.
-	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
-		tf := engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
-		if tres, terr := tf.Search(ctx, engine.TinyFishSearchRequest{Query: query}); terr == nil && tres != nil {
-			out.Engine = "tinyfish"
-			out.EndpointName = tres.KeyName
-			out.Fallback = "tinyfish"
-			out.Content = engine.FormatTinyFishSearchContent(tres.TinyFishSearchResponse)
-			out.SourceURLs = engine.TinyFishSearchSourceURLs(tres.TinyFishSearchResponse)
-			out.SourcesCount = len(out.SourceURLs)
-			return emitSearch(*jsonOut, out)
-		}
-	}
-
-	// Exa Search fallback.
-	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
-		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
-		if eres, eerr := e.Search(ctx, query); eerr == nil && eres != nil {
-			out.Engine = "exa"
-			out.Fallback = "exa"
-			out.Content = engine.FormatExaSearchContent(eres)
-			out.SourceURLs = engine.ExaSearchSourceURLs(eres)
-			out.SourcesCount = len(out.SourceURLs)
-			return emitSearch(*jsonOut, out)
-		}
-	}
-
-	// Tavily Search final fallback.
-	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
-		t := engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
-		if tres, terr := t.Search(ctx, query); terr == nil && tres != nil {
-			out.Engine = "tavily"
-			out.Fallback = "tavily"
-			out.Content = tres.Answer
-			urls := make([]string, 0, len(tres.Results))
-			for _, r := range tres.Results {
-				if r.URL != "" {
-					urls = append(urls, r.URL)
-				}
-			}
-			out.SourceURLs = urls
-			out.SourcesCount = len(urls)
-			return emitSearch(*jsonOut, out)
-		}
-	}
-
-	msg := "search failed: no engine returned content"
-	if out.GrokError != "" {
-		msg = "search failed: " + out.GrokError
-	}
-	return reportSearchErr(*jsonOut, query, msg)
+	return emitSearch(*jsonOut, searchOutput{
+		Engine:        res.Engine,
+		EndpointName:  res.EndpointName,
+		Model:         res.Model,
+		Query:         res.Query,
+		Content:       res.Content,
+		SourceURLs:    res.SourceURLs,
+		SourcesCount:  res.SourcesCount,
+		Fallback:      res.Fallback,
+		GrokError:     res.GrokError,
+		RouteDecision: res.RouteTrace.Decisions,
+	})
 }
 
 func emitSearch(asJSON bool, out searchOutput) int {
@@ -140,6 +91,9 @@ func emitSearch(asJSON bool, out searchOutput) int {
 		fmt.Printf("engine: %s (%s)\n", out.Engine, out.Model)
 	}
 	fmt.Printf("sources_count: %d\n\n", out.SourcesCount)
+	if len(out.RouteDecision) > 0 {
+		fmt.Printf("route_attempts: %d\n\n", len(out.RouteDecision))
+	}
 	fmt.Println(out.Content)
 	if len(out.SourceURLs) > 0 {
 		fmt.Println("\nSources:")
@@ -151,10 +105,14 @@ func emitSearch(asJSON bool, out searchOutput) int {
 }
 
 func reportSearchErr(asJSON bool, query, msg string) int {
+	return reportSearchErrCode(asJSON, query, msg, 1)
+}
+
+func reportSearchErrCode(asJSON bool, query, msg string, code int) int {
 	if asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(searchOutput{Query: query, GrokError: msg})
 	} else {
 		fmt.Fprintln(os.Stderr, msg)
 	}
-	return 1
+	return code
 }

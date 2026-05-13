@@ -12,7 +12,7 @@
 //     single source of behavior.
 //   - Every subcommand supports --json so callers can parse output reliably.
 //   - Run never panics; it returns a Unix-style exit code (0=ok, 1=runtime
-//     failure, 2=usage error) and lets main.go translate to os.Exit.
+//     failure, 2=usage error, 3=config gate) and lets main.go translate to os.Exit.
 package cli
 
 import (
@@ -32,7 +32,7 @@ Commands:
   exa-contents <url>  Run Exa Contents directly with advanced Exa-only options.
   map    <url>        Discover URLs on a site (Tavily Map; needs tavily.apiKey).
   crawl  <url>        Crawl a site and extract content (Tavily Crawl; needs tavily.apiKey).
-  doctor              Check config and probe each Grok endpoint (/models).
+  doctor              Check config locally; use --probe for live provider probes.
   probe               Show config and probe each Grok endpoint (/models).
   config <command>    Inspect the single active config file or masked effective config.
   setup               Write grok-search.json without hand-editing JSON.
@@ -107,13 +107,15 @@ func RunWithConfig(args []string, configPath string) int {
 	case "crawl":
 		return runCrawl(rest)
 	case "doctor":
-		return runProbeNamed("doctor", rest)
+		return runDoctor(rest)
 	case "probe":
 		return runProbe(rest)
 	case "config":
 		return runConfig(rest)
 	case "setup":
 		return runSetup(rest)
+	case "smoke":
+		return runSmoke(rest)
 	case "plan":
 		return runPlan(rest)
 	case "research":

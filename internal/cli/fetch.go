@@ -8,14 +8,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/grok-search-go/internal/router"
+	"github.com/500tpig/grok-search-go/internal/tools"
 )
 
 type fetchOutput struct {
-	Source  string `json:"source"`
-	URL     string `json:"url"`
-	Content string `json:"content"`
-	Error   string `json:"error,omitempty"`
+	Source        string                 `json:"source"`
+	URL           string                 `json:"url"`
+	Content       string                 `json:"content"`
+	RouteDecision []router.RouteDecision `json:"route_decision,omitempty"`
+	Error         string                 `json:"error,omitempty"`
 }
 
 func runFetch(args []string) int {
@@ -38,52 +40,23 @@ func runFetch(args []string) int {
 	if err != nil {
 		return reportFetchErr(*jsonOut, url, fmt.Sprintf("config: %v", err))
 	}
+	if msg := minimumProfileError(cfg); msg != "" {
+		return reportFetchErrCode(*jsonOut, url, msg, 3)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	// Jina Reader (primary).
-	jina := engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
-	if r, err := jina.Fetch(ctx, url); err == nil && r.Content != "" {
-		return emitFetch(*jsonOut, fetchOutput{Source: "jina", URL: url, Content: r.Content})
+	res, err := tools.RunWebFetch(ctx, buildWebFetchClients(cfg), url)
+	if err != nil {
+		return reportFetchErr(*jsonOut, url, err.Error())
 	}
-
-	// TinyFish Fetch (browser-rendered fallback).
-	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
-		tf := engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
-		if r, err := tf.Fetch(ctx, engine.TinyFishFetchRequest{URLs: []string{url}, Format: "markdown"}); err == nil && r != nil {
-			content := engine.TinyFishFetchContent(r.TinyFishFetchResponse)
-			if content != "" {
-				resultURL := url
-				if len(r.Results) > 0 {
-					if r.Results[0].FinalURL != "" {
-						resultURL = r.Results[0].FinalURL
-					} else if r.Results[0].URL != "" {
-						resultURL = r.Results[0].URL
-					}
-				}
-				return emitFetch(*jsonOut, fetchOutput{Source: "tinyfish:" + r.KeyName, URL: resultURL, Content: content})
-			}
-		}
-	}
-
-	// Exa Contents (fallback).
-	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
-		e := engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
-		if r, err := e.Extract(ctx, url); err == nil && r.Content != "" {
-			return emitFetch(*jsonOut, fetchOutput{Source: "exa", URL: r.URL, Content: r.Content})
-		}
-	}
-
-	// Tavily Extract (final fallback).
-	if cfg.TavilyEnabled && cfg.TavilyAPIKey != "" {
-		t := engine.NewTavilyClient(cfg.TavilyAPIURL, cfg.TavilyAPIKey)
-		if r, err := t.Extract(ctx, url); err == nil && r.Content != "" {
-			return emitFetch(*jsonOut, fetchOutput{Source: "tavily", URL: url, Content: r.Content})
-		}
-	}
-
-	return reportFetchErr(*jsonOut, url, "Jina Reader, TinyFish Fetch, Exa Contents, and Tavily Extract all failed or are not configured")
+	return emitFetch(*jsonOut, fetchOutput{
+		Source:        res.Source,
+		URL:           res.URL,
+		Content:       res.Content,
+		RouteDecision: res.RouteTrace.Decisions,
+	})
 }
 
 func emitFetch(asJSON bool, out fetchOutput) int {
@@ -94,14 +67,21 @@ func emitFetch(asJSON bool, out fetchOutput) int {
 		return 0
 	}
 	fmt.Printf("Source: %s\nURL: %s\n\n%s\n", out.Source, out.URL, out.Content)
+	if len(out.RouteDecision) > 0 {
+		fmt.Printf("\nroute_attempts: %d\n", len(out.RouteDecision))
+	}
 	return 0
 }
 
 func reportFetchErr(asJSON bool, url, msg string) int {
+	return reportFetchErrCode(asJSON, url, msg, 1)
+}
+
+func reportFetchErrCode(asJSON bool, url, msg string, code int) int {
 	if asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(fetchOutput{URL: url, Error: msg})
 	} else {
 		fmt.Fprintln(os.Stderr, msg)
 	}
-	return 1
+	return code
 }

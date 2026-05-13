@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	cfgpkg "github.com/500tpig/grok-search-go/internal/config"
@@ -43,9 +44,92 @@ func TestRunDoctorHelp(t *testing.T) {
 	}
 }
 
+func TestRunDoctorDoesNotProbeEndpoints(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [{"name":"local","baseURL":"`+srv.URL+`/v1","apiKey":"sk-local"}],
+	  "exa": {"apiKey": "exa-test"}
+	}`)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "doctor", "--json"}); got != 0 {
+			t.Fatalf("Run(doctor --json) = %d, want 0", got)
+		}
+	})
+	if atomic.LoadInt32(&calls) != 0 {
+		t.Fatalf("doctor made %d live request(s), want 0", calls)
+	}
+	if strings.Contains(out, "sk-local") || strings.Contains(out, "exa-test") {
+		t.Fatalf("doctor leaked secret in %s", out)
+	}
+	var parsed doctorOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.OK {
+		t.Fatalf("doctor ok = false: %+v", parsed)
+	}
+}
+
+func TestMinimumProfileStandardFailsSearchAndFetchWithExit3(t *testing.T) {
+	path := writeCLIConfig(t, `{
+	  "version": 2,
+	  "minimum_profile": "standard",
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {"providers": []},
+	    "web_enhance": {"providers": []}
+	  }
+	}`)
+
+	searchOut := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "hello", "--json"}); got != 3 {
+			t.Fatalf("Run(search --json) = %d, want 3", got)
+		}
+	})
+	for _, want := range []string{"minimum_profile=standard", "main_search", "docs_search", "web_fetch"} {
+		if !strings.Contains(searchOut, want) {
+			t.Fatalf("search output missing %q in %s", want, searchOut)
+		}
+	}
+
+	fetchOut := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com", "--json"}); got != 3 {
+			t.Fatalf("Run(fetch --json) = %d, want 3", got)
+		}
+	})
+	for _, want := range []string{"minimum_profile=standard", "main_search", "docs_search", "web_fetch"} {
+		if !strings.Contains(fetchOut, want) {
+			t.Fatalf("fetch output missing %q in %s", want, fetchOut)
+		}
+	}
+}
+
 func TestRunSetupHelp(t *testing.T) {
 	if got := Run([]string{"setup", "--help"}); got != 0 {
 		t.Fatalf("Run(setup --help) = %d, want 0", got)
+	}
+}
+
+func TestRunSmokeMock(t *testing.T) {
+	out := captureStdout(t, func() {
+		if got := Run([]string{"smoke", "--mock", "--json"}); got != 0 {
+			t.Fatalf("Run(smoke --mock --json) = %d, want 0", got)
+		}
+	})
+	var parsed smokeOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.OK || parsed.RouteTrace.FinalProvider != "mock-ok" || !parsed.RouteTrace.FallbackTriggered {
+		t.Fatalf("smoke output = %+v", parsed)
 	}
 }
 
@@ -187,6 +271,47 @@ func TestConfigListAllowsProviderOnlyConfig(t *testing.T) {
 	}
 	if parsed.ExaKey == "(not set)" {
 		t.Fatalf("exa key status was not reported: %+v", parsed)
+	}
+}
+
+func TestConfigMigrateWritesV2WithBackupAndMaskedOutput(t *testing.T) {
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-migrate-secret","model":"grok-test"}],
+	  "exa": {"apiKey": "exa-migrate-secret"}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "migrate", "--json"}); got != 0 {
+			t.Fatalf("Run(config migrate --json) = %d, want 0", got)
+		}
+	})
+	for _, secret := range []string{"sk-migrate-secret", "exa-migrate-secret"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("config migrate output leaked secret %q in %s", secret, out)
+		}
+	}
+	var parsed configMigrateOutput
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.Changed || parsed.BackupFile == "" {
+		t.Fatalf("migrate output = %+v", parsed)
+	}
+	if _, err := os.Stat(parsed.BackupFile); err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+	cfg, err := cfgpkg.LoadFile(path)
+	if err != nil {
+		t.Fatalf("Load migrated config failed: %v", err)
+	}
+	if cfg.Version != 2 || cfg.MinimumProfile != "off" {
+		t.Fatalf("version/profile = %d/%q", cfg.Version, cfg.MinimumProfile)
+	}
+	if len(cfg.GrokEndpoints) != 1 || cfg.GrokEndpoints[0].APIKey != "sk-migrate-secret" {
+		t.Fatalf("migrated endpoints = %+v", cfg.GrokEndpoints)
+	}
+	if cfg.ExaAPIKey != "exa-migrate-secret" {
+		t.Fatalf("migrated exa key = %q", cfg.ExaAPIKey)
 	}
 }
 

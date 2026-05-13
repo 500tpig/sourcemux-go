@@ -16,6 +16,13 @@ const DefaultConfigFilename = "grok-search.json"
 
 // Config holds all runtime configuration, resolved from one explicit JSON file.
 type Config struct {
+	Version        int
+	MinimumProfile string
+
+	MainSearchConfigured bool
+	DocsSearchConfigured bool
+	WebFetchConfigured   bool
+
 	GrokEndpoints      []engine.GrokEndpoint
 	ReasoningEndpoints []engine.ReasoningEndpoint
 
@@ -42,8 +49,13 @@ type Config struct {
 }
 
 type fileConfig struct {
-	GrokEndpoints      []engine.GrokEndpoint      `json:"grokEndpoints"`
-	ReasoningEndpoints []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
+	Version        *int                    `json:"version"`
+	MinimumProfile string                  `json:"minimum_profile"`
+	Capabilities   *capabilitiesFileConfig `json:"capabilities"`
+
+	GrokEndpoints        []engine.GrokEndpoint      `json:"grokEndpoints"`
+	ReasoningEndpoints   []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
+	ReasoningEndpointsV2 []engine.ReasoningEndpoint `json:"reasoning_endpoints"`
 
 	Tavily serviceFileConfig `json:"tavily"`
 	Exa    serviceFileConfig `json:"exa"`
@@ -54,6 +66,37 @@ type fileConfig struct {
 	Debug              *bool  `json:"debug"`
 	LogLevel           string `json:"logLevel"`
 	GrokPoolTimeoutSec *int   `json:"grokPoolTimeoutSec"`
+}
+
+type capabilitiesFileConfig struct {
+	MainSearch capabilityFileConfig `json:"main_search"`
+	DocsSearch capabilityFileConfig `json:"docs_search"`
+	WebFetch   capabilityFileConfig `json:"web_fetch"`
+	WebEnhance capabilityFileConfig `json:"web_enhance"`
+}
+
+type capabilityFileConfig struct {
+	Providers []providerFileConfig `json:"providers"`
+}
+
+type providerFileConfig struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+
+	APIURL  string `json:"apiURL"`
+	APIKey  string `json:"apiKey"`
+	Enabled *bool  `json:"enabled"`
+
+	BaseURL        string                `json:"baseURL"`
+	Model          string                `json:"model"`
+	APIType        string                `json:"apiType"`
+	SendSearchFlag bool                  `json:"sendSearchFlag"`
+	ResponseTools  []string              `json:"responseTools,omitempty"`
+	Endpoints      []engine.GrokEndpoint `json:"endpoints,omitempty"`
+
+	Keys      []engine.TinyFishKey `json:"keys,omitempty"`
+	SearchURL string               `json:"searchURL"`
+	FetchURL  string               `json:"fetchURL"`
 }
 
 type serviceFileConfig struct {
@@ -91,10 +134,19 @@ func LoadFile(path string) (*Config, error) {
 	if err := json.Unmarshal(data, &fileCfg); err != nil {
 		return nil, fmt.Errorf("parse config file %s: %w", path, err)
 	}
-	return buildConfig(fileCfg, path)
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+	return buildConfig(fileCfg, raw, path)
 }
 
-func buildConfig(fileCfg fileConfig, path string) (*Config, error) {
+func buildConfig(fileCfg fileConfig, raw map[string]json.RawMessage, path string) (*Config, error) {
+	if fileCfg.Capabilities != nil {
+		return buildConfigV2(fileCfg, raw, path)
+	}
+	return buildConfigV1(fileCfg, path)
+}
+
+func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 	endpoints, err := normalizeEndpoints(fileCfg.GrokEndpoints)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s grokEndpoints: %w", path, err)
@@ -105,8 +157,13 @@ func buildConfig(fileCfg fileConfig, path string) (*Config, error) {
 	}
 
 	return &Config{
-		GrokEndpoints:      endpoints,
-		ReasoningEndpoints: reasoningEndpoints,
+		Version:              1,
+		MinimumProfile:       "off",
+		MainSearchConfigured: len(endpoints) > 0,
+		DocsSearchConfigured: boolPtrOr(fileCfg.Exa.Enabled, true) && strings.TrimSpace(fileCfg.Exa.APIKey) != "",
+		WebFetchConfigured:   stringOr(fileCfg.Jina.APIURL, "https://r.jina.ai") != "",
+		GrokEndpoints:        endpoints,
+		ReasoningEndpoints:   reasoningEndpoints,
 
 		TavilyAPIURL:  stringOr(fileCfg.Tavily.APIURL, "https://api.tavily.com"),
 		TavilyAPIKey:  strings.TrimSpace(fileCfg.Tavily.APIKey),
@@ -128,6 +185,178 @@ func buildConfig(fileCfg fileConfig, path string) (*Config, error) {
 		LogLevel:        stringOr(fileCfg.LogLevel, "INFO"),
 		GrokPoolTimeout: secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
 	}, nil
+}
+
+func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path string) (*Config, error) {
+	if err := rejectMixedV1V2(raw); err != nil {
+		return nil, err
+	}
+	if fileCfg.Version != nil && *fileCfg.Version != 2 {
+		return nil, fmt.Errorf("config version %d is not supported with capabilities; expected version 2", *fileCfg.Version)
+	}
+
+	out := &Config{
+		Version:           2,
+		MinimumProfile:    normalizeMinimumProfile(fileCfg.MinimumProfile),
+		TavilyAPIURL:      "https://api.tavily.com",
+		TavilyEnabled:     true,
+		ExaAPIURL:         "https://api.exa.ai",
+		ExaEnabled:        true,
+		JinaAPIURL:        "https://r.jina.ai",
+		TinyFishEnabled:   true,
+		TinyFishSearchURL: engine.DefaultTinyFishSearchURL,
+		TinyFishFetchURL:  engine.DefaultTinyFishFetchURL,
+		Debug:             boolPtrOr(fileCfg.Debug, false),
+		LogLevel:          stringOr(fileCfg.LogLevel, "INFO"),
+		GrokPoolTimeout:   secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+	}
+
+	reasoning, err := normalizeReasoningEndpoints(fileCfg.ReasoningEndpointsV2)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s reasoning_endpoints: %w", path, err)
+	}
+	out.ReasoningEndpoints = reasoning
+
+	for _, capCfg := range []capabilityFileConfig{
+		fileCfg.Capabilities.MainSearch,
+		fileCfg.Capabilities.DocsSearch,
+		fileCfg.Capabilities.WebFetch,
+		fileCfg.Capabilities.WebEnhance,
+	} {
+		if err := applyV2Providers(out, capCfg.Providers, path); err != nil {
+			return nil, err
+		}
+	}
+	endpoints, err := normalizeEndpoints(out.GrokEndpoints)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s capabilities grok providers: %w", path, err)
+	}
+	out.GrokEndpoints = endpoints
+	out.TinyFishKeys = normalizeTinyFishKeys(out.TinyFishKeys)
+	out.MainSearchConfigured = v2HasMainSearch(fileCfg.Capabilities.MainSearch.Providers)
+	out.DocsSearchConfigured = v2HasDocsSearch(fileCfg.Capabilities.DocsSearch.Providers)
+	out.WebFetchConfigured = v2HasWebFetch(fileCfg.Capabilities.WebFetch.Providers)
+	return out, nil
+}
+
+func rejectMixedV1V2(raw map[string]json.RawMessage) error {
+	for _, key := range []string{"grokEndpoints", "reasoningEndpoints", "tavily", "exa", "jina", "tinyfish"} {
+		if _, ok := raw[key]; ok {
+			return fmt.Errorf("config mixes v2 capabilities with legacy %q; use either v1 fields or v2 capabilities, not both", key)
+		}
+	}
+	return nil
+}
+
+func applyV2Providers(out *Config, providers []providerFileConfig, path string) error {
+	for i, p := range providers {
+		switch strings.TrimSpace(p.Type) {
+		case "", "disabled":
+			continue
+		case "grok-pool":
+			out.GrokEndpoints = append(out.GrokEndpoints, p.Endpoints...)
+			if len(p.Endpoints) == 0 && strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(p.APIKey) != "" {
+				out.GrokEndpoints = append(out.GrokEndpoints, grokEndpointFromProvider(p))
+			}
+		case "openai-compatible":
+			out.GrokEndpoints = append(out.GrokEndpoints, grokEndpointFromProvider(p))
+		case "exa":
+			out.ExaAPIURL = stringOr(p.APIURL, out.ExaAPIURL)
+			out.ExaAPIKey = strings.TrimSpace(p.APIKey)
+			out.ExaEnabled = boolPtrOr(p.Enabled, true)
+		case "jina":
+			out.JinaAPIURL = stringOr(p.APIURL, out.JinaAPIURL)
+			out.JinaAPIKey = strings.TrimSpace(p.APIKey)
+		case "tinyfish":
+			out.TinyFishEnabled = boolPtrOr(p.Enabled, true)
+			out.TinyFishKeys = append(out.TinyFishKeys, p.Keys...)
+			out.TinyFishSearchURL = stringOr(p.SearchURL, out.TinyFishSearchURL)
+			out.TinyFishFetchURL = stringOr(p.FetchURL, out.TinyFishFetchURL)
+		case "tavily":
+			out.TavilyAPIURL = stringOr(p.APIURL, out.TavilyAPIURL)
+			out.TavilyAPIKey = strings.TrimSpace(p.APIKey)
+			out.TavilyEnabled = boolPtrOr(p.Enabled, true)
+		default:
+			return fmt.Errorf("parse %s capabilities provider #%d: unsupported type %q", path, i, p.Type)
+		}
+	}
+	return nil
+}
+
+func grokEndpointFromProvider(p providerFileConfig) engine.GrokEndpoint {
+	return engine.GrokEndpoint{
+		Name:           strings.TrimSpace(p.Name),
+		BaseURL:        strings.TrimSpace(p.BaseURL),
+		APIKey:         strings.TrimSpace(p.APIKey),
+		Model:          strings.TrimSpace(p.Model),
+		APIType:        strings.TrimSpace(p.APIType),
+		SendSearchFlag: p.SendSearchFlag,
+		ResponseTools:  append([]string(nil), p.ResponseTools...),
+	}
+}
+
+func v2HasMainSearch(providers []providerFileConfig) bool {
+	for _, p := range providers {
+		if !providerEnabled(p) {
+			continue
+		}
+		switch strings.TrimSpace(p.Type) {
+		case "grok-pool":
+			if len(p.Endpoints) > 0 || (strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(p.APIKey) != "") {
+				return true
+			}
+		case "openai-compatible":
+			if strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(p.APIKey) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func v2HasDocsSearch(providers []providerFileConfig) bool {
+	for _, p := range providers {
+		if providerEnabled(p) && strings.TrimSpace(p.Type) == "exa" && strings.TrimSpace(p.APIKey) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func v2HasWebFetch(providers []providerFileConfig) bool {
+	for _, p := range providers {
+		if !providerEnabled(p) {
+			continue
+		}
+		switch strings.TrimSpace(p.Type) {
+		case "jina":
+			return true
+		case "tinyfish":
+			return len(p.Keys) > 0
+		case "exa", "tavily":
+			return strings.TrimSpace(p.APIKey) != ""
+		}
+	}
+	return false
+}
+
+func providerEnabled(p providerFileConfig) bool {
+	t := strings.TrimSpace(p.Type)
+	if t == "" || t == "disabled" {
+		return false
+	}
+	return boolPtrOr(p.Enabled, true)
+}
+
+func normalizeMinimumProfile(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "standard":
+		return "standard"
+	case "off":
+		return "off"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
 }
 
 func DefaultConfigPath() string {
