@@ -55,6 +55,7 @@ func runDoctor(args []string) int {
 		doctorCheck{Name: "config_load", Status: "ok", Detail: "config parsed"},
 		doctorCheck{Name: "main_search", Status: configuredStatus(cfg.MainSearchConfigured), Detail: fmt.Sprintf("%d Grok endpoint(s)", len(cfg.GrokEndpoints))},
 		doctorCheck{Name: "docs_search", Status: configuredStatus(cfg.DocsSearchConfigured), Detail: "Exa is the standard docs_search provider; Context7 does not count toward minimum_profile"},
+		doctorCheck{Name: "context7", Status: configuredStatus(len(cfg.Context7Endpoints) > 0), Detail: fmt.Sprintf("%d optional endpoint(s)", len(cfg.Context7Endpoints))},
 		doctorCheck{Name: "web_fetch", Status: configuredStatus(cfg.WebFetchConfigured), Detail: "Jina Reader is configured by URL and can run without a key"},
 		doctorCheck{Name: "tinyfish", Status: configuredStatus(cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0), Detail: fmt.Sprintf("%d key(s)", len(cfg.TinyFishKeys))},
 		doctorCheck{Name: "tavily", Status: configuredStatus(cfg.TavilyEnabled && cfg.TavilyAPIKey != ""), Detail: "optional fallback provider"},

@@ -34,6 +34,8 @@ type Config struct {
 	ExaAPIKey  string
 	ExaEnabled bool
 
+	Context7Endpoints []engine.Context7Endpoint
+
 	JinaAPIURL string
 	JinaAPIKey string
 
@@ -57,9 +59,10 @@ type fileConfig struct {
 	ReasoningEndpoints   []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
 	ReasoningEndpointsV2 []engine.ReasoningEndpoint `json:"reasoning_endpoints"`
 
-	Tavily serviceFileConfig `json:"tavily"`
-	Exa    serviceFileConfig `json:"exa"`
-	Jina   serviceFileConfig `json:"jina"`
+	Tavily   serviceFileConfig  `json:"tavily"`
+	Exa      serviceFileConfig  `json:"exa"`
+	Context7 context7FileConfig `json:"context7"`
+	Jina     serviceFileConfig  `json:"jina"`
 
 	TinyFish tinyFishFileConfig `json:"tinyfish"`
 
@@ -97,12 +100,24 @@ type providerFileConfig struct {
 	Keys      []engine.TinyFishKey `json:"keys,omitempty"`
 	SearchURL string               `json:"searchURL"`
 	FetchURL  string               `json:"fetchURL"`
+
+	Priority        int      `json:"priority,omitempty"`
+	LibraryScopes   []string `json:"library_scopes,omitempty"`
+	MonthlyBudget   int      `json:"monthly_budget,omitempty"`
+	CooldownSeconds int      `json:"cooldown_on_rate_limit_seconds,omitempty"`
 }
 
 type serviceFileConfig struct {
 	APIURL  string `json:"apiURL"`
 	APIKey  string `json:"apiKey"`
 	Enabled *bool  `json:"enabled"`
+}
+
+type context7FileConfig struct {
+	APIURL    string                    `json:"apiURL"`
+	APIKey    string                    `json:"apiKey"`
+	Enabled   *bool                     `json:"enabled"`
+	Providers []engine.Context7Endpoint `json:"providers,omitempty"`
 }
 
 type tinyFishFileConfig struct {
@@ -173,6 +188,8 @@ func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 		ExaAPIKey:  strings.TrimSpace(fileCfg.Exa.APIKey),
 		ExaEnabled: boolPtrOr(fileCfg.Exa.Enabled, true),
 
+		Context7Endpoints: normalizeContext7Endpoints(fileCfg.Context7),
+
 		JinaAPIURL: stringOr(fileCfg.Jina.APIURL, "https://r.jina.ai"),
 		JinaAPIKey: strings.TrimSpace(fileCfg.Jina.APIKey),
 
@@ -233,6 +250,7 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 	}
 	out.GrokEndpoints = endpoints
 	out.TinyFishKeys = normalizeTinyFishKeys(out.TinyFishKeys)
+	out.Context7Endpoints = engine.SortContext7Endpoints(out.Context7Endpoints)
 	out.MainSearchConfigured = v2HasMainSearch(fileCfg.Capabilities.MainSearch.Providers)
 	out.DocsSearchConfigured = v2HasDocsSearch(fileCfg.Capabilities.DocsSearch.Providers)
 	out.WebFetchConfigured = v2HasWebFetch(fileCfg.Capabilities.WebFetch.Providers)
@@ -240,7 +258,7 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 }
 
 func rejectMixedV1V2(raw map[string]json.RawMessage) error {
-	for _, key := range []string{"grokEndpoints", "reasoningEndpoints", "tavily", "exa", "jina", "tinyfish"} {
+	for _, key := range []string{"grokEndpoints", "reasoningEndpoints", "tavily", "exa", "context7", "jina", "tinyfish"} {
 		if _, ok := raw[key]; ok {
 			return fmt.Errorf("config mixes v2 capabilities with legacy %q; use either v1 fields or v2 capabilities, not both", key)
 		}
@@ -264,6 +282,18 @@ func applyV2Providers(out *Config, providers []providerFileConfig, path string) 
 			out.ExaAPIURL = stringOr(p.APIURL, out.ExaAPIURL)
 			out.ExaAPIKey = strings.TrimSpace(p.APIKey)
 			out.ExaEnabled = boolPtrOr(p.Enabled, true)
+		case "context7":
+			if providerEnabled(p) && strings.TrimSpace(p.APIKey) != "" {
+				out.Context7Endpoints = append(out.Context7Endpoints, engine.Context7Endpoint{
+					Name:            strings.TrimSpace(p.Name),
+					APIURL:          stringOr(p.APIURL, engine.DefaultContext7APIURL),
+					APIKey:          strings.TrimSpace(p.APIKey),
+					Priority:        p.Priority,
+					LibraryScopes:   append([]string(nil), p.LibraryScopes...),
+					MonthlyBudget:   p.MonthlyBudget,
+					CooldownSeconds: p.CooldownSeconds,
+				})
+			}
 		case "jina":
 			out.JinaAPIURL = stringOr(p.APIURL, out.JinaAPIURL)
 			out.JinaAPIKey = strings.TrimSpace(p.APIKey)
@@ -321,6 +351,33 @@ func v2HasDocsSearch(providers []providerFileConfig) bool {
 		}
 	}
 	return false
+}
+
+func normalizeContext7Endpoints(cfg context7FileConfig) []engine.Context7Endpoint {
+	if !boolPtrOr(cfg.Enabled, true) {
+		return nil
+	}
+	var out []engine.Context7Endpoint
+	for _, ep := range cfg.Providers {
+		ep.Name = strings.TrimSpace(ep.Name)
+		ep.APIURL = stringOr(ep.APIURL, engine.DefaultContext7APIURL)
+		ep.APIKey = strings.TrimSpace(ep.APIKey)
+		if ep.APIKey == "" {
+			continue
+		}
+		if ep.Name == "" {
+			ep.Name = fmt.Sprintf("context7-%d", len(out))
+		}
+		out = append(out, ep)
+	}
+	if strings.TrimSpace(cfg.APIKey) != "" {
+		out = append(out, engine.Context7Endpoint{
+			Name:   "context7-main",
+			APIURL: stringOr(cfg.APIURL, engine.DefaultContext7APIURL),
+			APIKey: strings.TrimSpace(cfg.APIKey),
+		})
+	}
+	return engine.SortContext7Endpoints(out)
 }
 
 func v2HasWebFetch(providers []providerFileConfig) bool {

@@ -27,7 +27,12 @@ const usage = `Usage: grok-search cli <command> [flags]
 
 Commands:
   search <query>      Run a web search through Grok/TinyFish/Exa/Tavily fallbacks.
+  docs-search <query> Search docs through Context7 (explicit library) and Exa fallbacks.
   fetch  <url>        Fetch a URL as Markdown (Jina/TinyFish/Exa/Tavily fallbacks).
+  context7-library <name> <query>
+                      Resolve a Context7 library by name and fetch matching docs.
+  context7-docs <id> <query>
+                      Fetch Context7 documentation context for a library ID.
   exa-search <query>  Run Exa Search directly with advanced Exa-only options.
   exa-contents <url>  Run Exa Contents directly with advanced Exa-only options.
   map    <url>        Discover URLs on a site (Tavily Map; needs tavily.apiKey).
@@ -53,6 +58,9 @@ Common flags (subcommand-dependent):
 
 Examples:
   grok-search cli search "X 上 grok 4 的最新评价" --platform Twitter --json
+  grok-search cli docs-search "middleware auth" --library-id /vercel/next.js --json
+  grok-search cli context7-library next.js "middleware auth" --json
+  grok-search cli context7-docs /vercel/next.js "middleware auth" --json
   grok-search cli fetch  "https://example.com/article" --json
   grok-search cli exa-search "latest AI chip launches" --type deep --output-schema-json '{"type":"object"}' --json
   grok-search cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
@@ -96,8 +104,14 @@ func RunWithConfig(args []string, configPath string) int {
 	switch cmd {
 	case "search":
 		return runSearch(rest)
+	case "docs-search":
+		return runDocsSearch(rest)
 	case "fetch":
 		return runFetch(rest)
+	case "context7-library":
+		return runContext7Library(rest)
+	case "context7-docs":
+		return runContext7Docs(rest)
 	case "exa-search":
 		return runExaSearch(rest)
 	case "exa-contents":

@@ -343,6 +343,7 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 			"--send-search-flag",
 			"--response-tools", "web_search,x_search",
 			"--tavily-key", "tvly-setup-secret",
+			"--context7-key", "ctx7-setup-secret",
 			"--tinyfish-keys", "tf-setup-a,tf-setup-b",
 			"--tinyfish-key-names", "a,b",
 			"--json",
@@ -351,7 +352,7 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 			t.Fatalf("Run(setup) = %d, want 0", got)
 		}
 	})
-	for _, secret := range []string{"sk-setup-secret", "tvly-setup-secret", "tf-setup-a", "tf-setup-b"} {
+	for _, secret := range []string{"sk-setup-secret", "tvly-setup-secret", "ctx7-setup-secret", "tf-setup-a", "tf-setup-b"} {
 		if strings.Contains(out, secret) {
 			t.Fatalf("setup output leaked secret %q in %s", secret, out)
 		}
@@ -386,6 +387,9 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 	}
 	if cfg.TavilyAPIKey != "tvly-setup-secret" || len(cfg.TinyFishKeys) != 2 {
 		t.Fatalf("provider keys not loaded: tavily=%q tinyfish=%+v", cfg.TavilyAPIKey, cfg.TinyFishKeys)
+	}
+	if len(cfg.Context7Endpoints) != 1 || cfg.Context7Endpoints[0].APIKey != "ctx7-setup-secret" {
+		t.Fatalf("context7 endpoints = %+v", cfg.Context7Endpoints)
 	}
 }
 
@@ -806,6 +810,82 @@ func TestRunExaSearchJSONUsesConfig(t *testing.T) {
 	}
 	if decoded.Source != "exa-search-advanced" || decoded.SearchType != "deep" || decoded.ResultCount != 1 {
 		t.Fatalf("decoded output = %+v", decoded)
+	}
+}
+
+func TestRunContext7DocsJSONUsesConfig(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/context" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer ctx7-test" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if r.URL.Query().Get("libraryId") != "/vercel/next.js" {
+			t.Fatalf("libraryId = %q", r.URL.Query().Get("libraryId"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"codeSnippets": [{"codeTitle":"Middleware","codeId":"https://example.com/code","codeList":[{"language":"typescript","code":"export function middleware() {}"}]}],
+			"infoSnippets": [{"pageId":"https://example.com/docs","breadcrumb":"Routing","content":"Middleware docs"}]
+		}`)
+	}))
+	defer ts.Close()
+
+	path := writeCLIConfig(t, `{
+	  "context7": {"apiURL": "`+ts.URL+`", "apiKey": "ctx7-test", "enabled": true}
+	}`)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "context7-docs", "/vercel/next.js", "middleware auth", "--json"}); got != 0 {
+			t.Fatalf("Run(context7-docs) = %d, want 0", got)
+		}
+	})
+	if strings.Contains(out, "ctx7-test") {
+		t.Fatalf("context7 output leaked secret: %s", out)
+	}
+	var decoded context7Output
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.EndpointName != "context7-main" || decoded.LibraryID != "/vercel/next.js" || decoded.SourcesCount != 2 {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+}
+
+func TestRunDocsSearchSkipsContext7WithoutExplicitLibrary(t *testing.T) {
+	var context7Calls int32
+	ctx7 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&context7Calls, 1)
+		t.Fatalf("context7 should not be called")
+	}))
+	defer ctx7.Close()
+	exa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			t.Fatalf("unexpected exa path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"requestId":"req","searchType":"auto","results":[{"title":"Docs","url":"https://example.com/docs","highlights":["docs"]}]}`)
+	}))
+	defer exa.Close()
+
+	path := writeCLIConfig(t, `{
+	  "context7": {"apiURL": "`+ctx7.URL+`", "apiKey": "ctx7-test", "enabled": true},
+	  "exa": {"apiURL": "`+exa.URL+`", "apiKey": "exa-test", "enabled": true}
+	}`)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "docs-search", "general docs", "--json"}); got != 0 {
+			t.Fatalf("Run(docs-search) = %d, want 0", got)
+		}
+	})
+	if atomic.LoadInt32(&context7Calls) != 0 {
+		t.Fatalf("context7 calls = %d, want 0", context7Calls)
+	}
+	var decoded context7Output
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Engine != "Exa Search" || decoded.SourcesCount != 1 {
+		t.Fatalf("decoded = %+v", decoded)
 	}
 }
 

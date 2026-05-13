@@ -95,14 +95,28 @@ func (p *TinyFishSearchProvider) Try(ctx context.Context, req capability.Request
 
 type ExaSearchProvider struct {
 	Client *engine.ExaClient
+	kind   capability.Kind
+	name   string
 }
 
 func NewExaSearch(client *engine.ExaClient) *ExaSearchProvider {
-	return &ExaSearchProvider{Client: client}
+	return &ExaSearchProvider{Client: client, kind: capability.MainSearch, name: "exa-search"}
 }
 
-func (p *ExaSearchProvider) Name() string { return "exa-search" }
+func NewExaDocsSearch(client *engine.ExaClient) *ExaSearchProvider {
+	return &ExaSearchProvider{Client: client, kind: capability.DocsSearch, name: "exa-docs-search"}
+}
+
+func (p *ExaSearchProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "exa-search"
+}
 func (p *ExaSearchProvider) Kind() capability.Kind {
+	if p.kind != "" {
+		return p.kind
+	}
 	return capability.MainSearch
 }
 

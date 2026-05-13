@@ -52,3 +52,23 @@ func buildWebFetchClients(cfg *config.Config) tools.WebFetchClients {
 		Tavily:   tavily,
 	}
 }
+
+func buildContext7Clients(cfg *config.Config) []*engine.Context7Client {
+	clients := make([]*engine.Context7Client, 0, len(cfg.Context7Endpoints))
+	for _, endpoint := range cfg.Context7Endpoints {
+		clients = append(clients, engine.NewContext7Client(endpoint))
+	}
+	return clients
+}
+
+func buildDocsSearchClients(cfg *config.Config, cache tools.SourceCacher) tools.DocsSearchClients {
+	var exa *engine.ExaClient
+	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
+		exa = engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
+	}
+	return tools.DocsSearchClients{
+		Context7: buildContext7Clients(cfg),
+		Exa:      exa,
+		Cache:    cache,
+	}
+}

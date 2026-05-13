@@ -18,6 +18,7 @@ type App struct {
 	ReasoningPool *engine.ReasoningPool
 	Tavily        *engine.TavilyClient
 	Exa           *engine.ExaClient
+	Context7      []*engine.Context7Client
 	Jina          *engine.JinaClient
 	TinyFish      *engine.TinyFishPool
 
@@ -42,6 +43,9 @@ func Run(cfg *config.Config) error {
 	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
 		app.Exa = engine.NewExaClient(cfg.ExaAPIURL, cfg.ExaAPIKey)
 	}
+	for _, endpoint := range cfg.Context7Endpoints {
+		app.Context7 = append(app.Context7, engine.NewContext7Client(endpoint))
+	}
 	// Jina Reader works without a key — always enabled.
 	app.Jina = engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey)
 	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
@@ -55,6 +59,7 @@ func Run(cfg *config.Config) error {
 
 	// Register tools
 	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app)
+	tools.RegisterDocsSearch(s, app.Context7, app.Exa, app)
 	tools.RegisterFetch(s, app.Jina, app.TinyFish, app.Exa, app.Tavily)
 	tools.RegisterExaSearchAdvanced(s, app.Exa)
 	tools.RegisterExaContentsAdvanced(s, app.Exa)
