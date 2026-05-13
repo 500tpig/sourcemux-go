@@ -44,6 +44,13 @@ v2 config files use an explicit `capabilities` envelope:
           "name": "exa-main",
           "apiURL": "https://api.exa.ai",
           "apiKey": "exa-your-key"
+        },
+        {
+          "type": "context7",
+          "name": "context7-main",
+          "apiURL": "https://context7.com",
+          "apiKey": "ctx7sk-your-key",
+          "library_scopes": ["/vercel/*", "/facebook/*"]
         }
       ]
     },
@@ -65,6 +72,9 @@ v2 config files use an explicit `capabilities` envelope:
 
 Do not mix v1 provider fields with the v2 `capabilities` block in the same
 file. Mixed configs fail loudly instead of silently reordering providers.
+
+`Context7` is optional and does not satisfy `minimum_profile=standard` by
+itself; keep Exa configured for the required `docs_search` provider.
 
 ## Explicit migration
 

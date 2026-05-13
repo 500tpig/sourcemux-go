@@ -2,7 +2,21 @@
 
 This guide starts from a fresh clone and avoids any local-only paths.
 
-## 1. Build
+## 1. Install or build
+
+Released binaries are published for Homebrew, Scoop, and GitHub Releases:
+
+```bash
+brew tap 500tpig/tap
+brew install --cask grok-search
+```
+
+```powershell
+scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
+scoop install 500tpig/grok-search
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/500tpig/grok-search-go.git
@@ -25,6 +39,7 @@ The recommended path is the setup command:
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
+  --context7-key "ctx7sk-your-key" \
   --json
 ```
 
@@ -64,9 +79,14 @@ Then edit placeholders. Never commit `grok-search.json`.
 
 ```bash
 ./grok-search cli search "latest Go release notes" --json
+./grok-search cli docs-search "middleware auth" --library-id /vercel/next.js --json
+./grok-search cli context7-library next.js "middleware auth" --json
+./grok-search cli context7-docs /vercel/next.js "middleware auth" --json
 ./grok-search cli fetch "https://example.com" --json
 ./grok-search cli research "Evaluate the current status of Go modules" --depth standard --json
 ```
+
+Context7 is optional and specialized for library/framework/API docs. It is used only when you pass an explicit Context7 `library-id` or `library-name`; general docs/web search remains Exa-oriented.
 
 ## 5. Add MCP server
 

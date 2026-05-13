@@ -4,7 +4,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/500tpig/grok-search-go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Grok Search Go is an MCP-native search, fetch, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
+Grok Search Go is an MCP-native search, fetch, docs, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
 
 ## 中文简介
 
@@ -18,6 +18,7 @@ The default routing is:
 
 - `web_search` / `cli search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
 - `web_fetch` / `cli fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
+- `docs_search` / `cli docs-search`: explicit Context7 library-docs lookup -> Exa docs/web search fallback
 - `research_run` / `cli research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages
 - `smart_answer` / `cli smart-answer`: run bounded research, then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
 
@@ -27,12 +28,24 @@ The default routing is:
 - MCP text responses stay compact; CLI text/JSON remain the canonical full-output surfaces.
 - Single explicit JSON config file: `./grok-search.json` by default, or `--config /path/to/grok-search.json`.
 - Grok/OpenAI-compatible endpoint pool with priority fallback.
-- Optional TinyFish, Exa, Tavily, and Jina integrations.
+- Optional TinyFish, Exa, Tavily, Jina, and Context7 integrations.
 - Source caching via `get_sources` for MCP workflows.
 - Bounded research packs for reproducible downstream reasoning.
 - Separate `reasoningEndpoints[]` for synthesis models such as DeepSeek Flash/Pro.
 
 ## Install
+
+Choose one:
+
+```bash
+brew tap 500tpig/tap
+brew install --cask grok-search
+```
+
+```powershell
+scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
+scoop install 500tpig/grok-search
+```
 
 ```bash
 go install github.com/500tpig/grok-search-go/cmd/grok-search@latest
@@ -47,6 +60,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 Verify the command:
 
 ```bash
+grok-search version
 grok-search cli config path
 ```
 
@@ -69,6 +83,7 @@ grok-search cli setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
+  --context7-key "ctx7sk-your-key" \
   --json
 ```
 
@@ -86,6 +101,7 @@ grok-search cli search "What changed in the latest Go release?" --json
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
 AI agent integration guidance is in [`docs/AI_USAGE.md`](docs/AI_USAGE.md).
+Release automation notes are in [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Configuration
 
@@ -162,7 +178,10 @@ Main subcommands:
 | Command | Purpose |
 | --- | --- |
 | `search <query>` | One search through the fallback route. |
+| `docs-search <query>` | Documentation search; Context7 is used only with `--library-id` or `--library-name`, then Exa can fallback. |
 | `fetch <url>` | Fetch one URL through the fallback route. |
+| `context7-library <name> <query>` | Resolve a Context7 library name and fetch matching docs. |
+| `context7-docs <id> <query>` | Fetch Context7 docs for an explicit library ID. |
 | `exa-search <query>` | Direct advanced Exa Search call. |
 | `exa-contents <url>` | Direct advanced Exa Contents call. |
 | `map <url>` | Tavily URL discovery. |
@@ -204,6 +223,7 @@ MCP tools:
 | Tool | Purpose |
 | --- | --- |
 | `web_search` | Compact MCP search summary with source extraction and provider fallback. |
+| `docs_search` | Documentation search; explicit `library_id` / `library_name` requests try Context7 first. |
 | `get_sources` | Return URLs from a previous `web_search` session. |
 | `web_fetch` | Compact MCP fetch excerpt with provider fallback. |
 | `exa_search_advanced` | Direct Exa Search advanced options. |
