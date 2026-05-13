@@ -1,0 +1,90 @@
+version: 2
+
+project_name: grok-search
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: grok-search
+    main: ./cmd/grok-search
+    binary: grok-search
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: default
+    ids:
+      - grok-search
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: 500tpig
+    name: grok-search-go
+
+homebrew_casks:
+  - name: grok-search
+    ids:
+      - default
+    binaries:
+      - grok-search
+    repository:
+      owner: 500tpig
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/500tpig/grok-search-go"
+    description: "MCP-native Grok search server and CLI with provider fallback routing"
+    license: MIT
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/grok-search"]
+          end
+
+scoops:
+  - name: grok-search
+    repository:
+      owner: 500tpig
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: "https://github.com/500tpig/grok-search-go"
+    description: "MCP-native Grok search server and CLI with provider fallback routing"
+    license: MIT
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"

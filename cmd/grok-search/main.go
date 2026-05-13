@@ -6,6 +6,13 @@ import (
 	"github.com/500tpig/grok-search-go/internal/app"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	app.SetVersionInfo(version, commit, date)
 	os.Exit(app.Run(os.Args[1:]))
 }

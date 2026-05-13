@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,22 @@ import (
 	"github.com/500tpig/grok-search-go/internal/config"
 	"github.com/500tpig/grok-search-go/internal/server"
 )
+
+type VersionInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+}
+
+var buildInfo = VersionInfo{Version: "dev", Commit: "none", Date: "unknown"}
+
+func SetVersionInfo(version, commit, date string) {
+	buildInfo = VersionInfo{
+		Version: stringOr(version, "dev"),
+		Commit:  stringOr(commit, "none"),
+		Date:    stringOr(date, "unknown"),
+	}
+}
 
 // Run routes between MCP stdio server mode and the one-shot CLI mode.
 func Run(args []string) int {
@@ -20,6 +37,9 @@ func Run(args []string) int {
 
 	if len(args) > 0 && args[0] == "cli" {
 		return cli.RunWithConfig(args[1:], configPath)
+	}
+	if len(args) > 0 && args[0] == "version" {
+		return printVersion(args[1:])
 	}
 
 	cfg, err := config.LoadFile(configPath)
@@ -33,6 +53,37 @@ func Run(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func printVersion(args []string) int {
+	asJSON := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			asJSON = true
+		case "-h", "--help":
+			fmt.Fprintln(os.Stdout, "Usage: grok-search version [--json]")
+			return 0
+		default:
+			fmt.Fprintf(os.Stderr, "unknown version flag %q\n", arg)
+			return 2
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(buildInfo)
+		return 0
+	}
+	fmt.Fprintf(os.Stdout, "grok-search %s (commit=%s date=%s)\n", buildInfo.Version, buildInfo.Commit, buildInfo.Date)
+	return 0
+}
+
+func stringOr(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func SplitGlobalConfigArg(args []string) (string, []string, error) {
