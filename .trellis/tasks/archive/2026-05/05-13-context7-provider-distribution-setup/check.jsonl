@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify provider fallback, setup/config, docs, and required Go checks against project standards."}
+{"file": ".trellis/tasks/05-13-context7-provider-distribution-setup/prd.md", "reason": "Verify implementation against task acceptance criteria."}
