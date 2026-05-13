@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify CLI/config/setup, release hygiene, and public rename contracts."}
+{"file": ".trellis/tasks/05-13-product-rename-to-sourcemux/prd.md", "reason": "Verify implementation against rename acceptance criteria."}
