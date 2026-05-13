@@ -58,7 +58,7 @@ Then edit placeholders. Never commit `grok-search.json`.
 ./grok-search cli doctor --json
 ```
 
-`config list` masks secrets and does not probe the network. `doctor` probes configured Grok endpoints.
+`config list` masks secrets and does not probe the network. `doctor` is local-only by default; use `doctor --probe` or `probe` only when you explicitly want live provider checks.
 
 ## 4. Run CLI commands
 

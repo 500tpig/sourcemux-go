@@ -613,8 +613,11 @@ Correct:
 - Setup:
   - `grok-search cli setup [--non-interactive] --api-url <url> --api-key <key> [--model <model>] [--api-type chat|responses] [--send-search-flag] [--response-tools <csv>] [--tavily-key <key>] [--exa-key <key>] [--jina-key <key>] [--tinyfish-keys <csv>] [--tinyfish-key-names <csv>] [--force] [--json]`
 - Diagnostics:
-  - `grok-search cli doctor [--list-timeout <dur>] [--preview <n>] [--json]`
-  - `grok-search cli probe ...` remains a backward-compatible alias.
+  - `grok-search cli doctor [--json]` performs local-only structural checks and must not call provider APIs.
+  - `grok-search cli doctor --probe [--json]` opts into live provider probes.
+  - `grok-search cli probe ...` remains an explicit live-probe command.
+- Migration:
+  - `grok-search cli config migrate [--backup <path>] [--json]`
 
 #### 3. Contracts
 
@@ -626,6 +629,14 @@ Correct:
   - Must call the same config loader used by MCP/CLI runtime.
   - Must mask all secrets with `keyStatus`; never print full API keys.
   - Must not probe network or call provider APIs.
+- Doctor:
+  - Default `doctor` is a dry structural validator: config load, parseable URLs, masked provider status, and `minimum_profile` readiness only.
+  - Live checks require explicit `doctor --probe` or `probe`; never add opportunistic startup, setup, list, or doctor network probes.
+  - `minimum_profile=standard` requires `main_search`, `docs_search`, and `web_fetch`; missing required capability providers return exit code `3`.
+- Config migrate:
+  - Must create a `0600` backup before rewriting the active config.
+  - Must preserve secrets in the rewritten config file but never echo full secrets in text or JSON output.
+  - Migrated v1 configs should default to `minimum_profile: "off"` to preserve existing behavior.
 - Config files:
   - Must show only the active config file by name/path/stat.
   - Must not read or print secret values.
@@ -646,6 +657,10 @@ Correct:
 | `config files` with historical hidden files elsewhere | Do not scan or load them; show only the active config file |
 | `config list` with missing config file | Return clear error plus next steps |
 | `config list` with provider-only config | Load successfully; Grok endpoints may be empty |
+| `doctor` default mode | Return structural status without live network requests |
+| `doctor --probe` or `probe` | Live provider requests are allowed because the user explicitly opted in |
+| `minimum_profile=standard` missing `main_search`, `docs_search`, or `web_fetch` | Return exit code `3` and name each missing capability |
+| `config migrate` on v1 file | Write a `0600` backup, rewrite the active file as v2, and omit raw secrets from output |
 | Missing `--api-url` in `setup --non-interactive` | Return setup error before writing |
 | Missing `--api-key` in `setup --non-interactive` | Return setup error before writing |
 | Invalid `--api-type` | Return setup error before writing |
@@ -669,6 +684,10 @@ Correct:
   - `config files --json` reports only the active single file and loading notes without leaking secrets.
   - `config list --json` masks all provider and endpoint secrets.
   - Missing config returns next steps.
+- Diagnostics/migration:
+  - `doctor --json` against a local test-server config makes zero HTTP requests.
+  - `search --json` and `fetch --json` with `minimum_profile=standard` and missing required capabilities return exit code `3`.
+  - `config migrate --json` writes a backup, produces a loadable v2 config, and does not print raw secrets.
 - Setup:
   - Non-interactive setup writes a loadable config file.
   - Setup JSON output masks secrets.

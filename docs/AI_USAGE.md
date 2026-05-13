@@ -6,8 +6,8 @@ This document defines the recommended integration model for `grok-search-go` acr
 
 `grok-search-go` should be treated as:
 
-* **CLI-first** for heavy, reproducible, or file-oriented workflows
-* **MCP-thin** for light interactive lookups inside an agent host
+* **MCP-native** for compact interactive lookups inside an agent host
+* **CLI-peer** for heavy, reproducible, or file-oriented workflows
 * **Prompt/skill-routed** so each host knows when to choose MCP vs CLI
 
 The Go engine stays shared. The choice is about the best invocation surface for the workflow.
