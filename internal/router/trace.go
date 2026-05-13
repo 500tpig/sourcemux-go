@@ -1,6 +1,6 @@
 package router
 
-import "github.com/500tpig/grok-search-go/internal/capability"
+import "github.com/500tpig/sourcemux-go/internal/capability"
 
 type RouteDecision struct {
 	Capability     capability.Kind           `json:"capability"`

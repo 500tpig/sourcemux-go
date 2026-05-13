@@ -15,7 +15,7 @@ func TestLoad_MissingDefaultConfigErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "config file not found: grok-search.json") {
+	if !strings.Contains(err.Error(), "config file not found: sourcemux.json") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -26,7 +26,7 @@ func TestLoad_ReadsOnlyDefaultLocalFile(t *testing.T) {
 	t.Setenv("GROK_API_URL", "https://env.example/v1")
 	t.Setenv("GROK_API_KEY", "sk-env")
 
-	hiddenDir := filepath.Join(dir, ".config", "grok-search")
+	hiddenDir := filepath.Join(dir, ".config", "sourcemux")
 	if err := os.MkdirAll(hiddenDir, 0o755); err != nil {
 		t.Fatalf("mkdir hidden config: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestLoadFile_V2RejectsMixedLegacyFields(t *testing.T) {
 
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

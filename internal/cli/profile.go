@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	cfgpkg "github.com/500tpig/grok-search-go/internal/config"
+	cfgpkg "github.com/500tpig/sourcemux-go/internal/config"
 )
 
 func minimumProfileError(cfg *cfgpkg.Config) string {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/500tpig/grok-search-go/internal/capability"
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/capability"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 const (

@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	cfgpkg "github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/engine"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	cfgpkg "github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 func TestRunUsageOnEmpty(t *testing.T) {
@@ -149,7 +149,7 @@ func TestKeyStatusMasking(t *testing.T) {
 }
 
 func TestConfigPathOutputJSON(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "custom.grok-search.json")
+	path := filepath.Join(t.TempDir(), "custom.sourcemux.json")
 	out := captureStdout(t, func() {
 		if got := Run([]string{"--config", path, "config", "path", "--json"}); got != 0 {
 			t.Fatalf("Run(config path --json) = %d, want 0", got)
@@ -206,7 +206,7 @@ func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
 		t.Fatalf("notes = %+v", parsed.Notes)
 	}
 	notes := strings.Join(parsed.Notes, "\n")
-	if !strings.Contains(notes, "grok-search cli --config") || !strings.Contains(notes, path) {
+	if !strings.Contains(notes, "sourcemux cli --config") || !strings.Contains(notes, path) {
 		t.Fatalf("custom-path setup note missing: %+v", parsed.Notes)
 	}
 }
@@ -322,7 +322,7 @@ func TestConfigListMissingConfigReportsNextSteps(t *testing.T) {
 			t.Fatalf("Run(config list --json) = %d, want 1", got)
 		}
 	})
-	for _, want := range []string{`"error"`, `"next_steps"`, "config file not found", "grok-search cli --config", path, "setup"} {
+	for _, want := range []string{`"error"`, `"next_steps"`, "config file not found", "sourcemux cli --config", path, "setup"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %s", want, out)
 		}
@@ -330,7 +330,7 @@ func TestConfigListMissingConfigReportsNextSteps(t *testing.T) {
 }
 
 func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	out := captureStdout(t, func() {
 		got := Run([]string{
 			"--config", path,
@@ -394,7 +394,7 @@ func TestSetupNonInteractiveWritesConfigAndMasksOutput(t *testing.T) {
 }
 
 func TestSetupRefusesExistingConfigWithoutForce(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestSetupRefusesExistingConfigWithoutForce(t *testing.T) {
 }
 
 func TestSetupRejectsInvalidResponseTools(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	out := captureStdout(t, func() {
 		got := Run([]string{
 			"--config", path,
@@ -446,7 +446,7 @@ func TestSetupRejectsInvalidResponseTools(t *testing.T) {
 }
 
 func TestSetupResponseToolsRequireResponsesAPI(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	out := captureStdout(t, func() {
 		got := Run([]string{
 			"--config", path,
@@ -653,7 +653,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	runner := &fakeCLIResearchRunner{}
 	out := captureStdout(t, func() {
 		if got := runResearchWithRunner([]string{
-			"Grok Search MCP",
+			"SourceMux MCP",
 			"--depth", "deep",
 			"--platform", "GitHub",
 			"--domain", "example.com",
@@ -665,7 +665,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 		}
 	})
 
-	if runner.opts.Query != "Grok Search MCP" || runner.opts.Depth != "deep" || runner.opts.Platform != "GitHub" {
+	if runner.opts.Query != "SourceMux MCP" || runner.opts.Depth != "deep" || runner.opts.Platform != "GitHub" {
 		t.Fatalf("runner opts = %+v", runner.opts)
 	}
 	if strings.Join(runner.opts.Domains, ",") != "example.com,github.com" {
@@ -679,7 +679,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
 		t.Fatalf("decode output: %v\n%s", err, out)
 	}
-	if decoded.Query != "Grok Search MCP" || decoded.EffectiveDepth != "deep" || decoded.Platform != "GitHub" {
+	if decoded.Query != "SourceMux MCP" || decoded.EffectiveDepth != "deep" || decoded.Platform != "GitHub" {
 		t.Fatalf("decoded metadata = %+v", decoded)
 	}
 	if decoded.SourceSummary.SelectedForFetch != 3 {
@@ -966,7 +966,7 @@ func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOpti
 			URL:     "https://example.com/a",
 			Source:  "fake",
 			Success: true,
-			Excerpt: "Grok Search MCP is test content.",
+			Excerpt: "SourceMux MCP is test content.",
 		}},
 		HighSignalSources: []tools.ResearchSource{{
 			URL:         "https://example.com/a",
@@ -974,7 +974,7 @@ func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOpti
 			Score:       1,
 			Occurrences: 1,
 		}},
-		ConfirmedFacts:   []string{"Grok Search MCP is test content. (source: https://example.com/a)"},
+		ConfirmedFacts:   []string{"SourceMux MCP is test content. (source: https://example.com/a)"},
 		LikelyInferences: []string{"fake inference"},
 		OpenQuestions:    []string{"fake question"},
 	}, nil
@@ -1059,7 +1059,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func writeCLIConfig(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "grok-search.json")
+	path := filepath.Join(t.TempDir(), "sourcemux.json")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

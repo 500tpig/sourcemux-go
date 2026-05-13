@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/500tpig/grok-search-go/internal/capability"
-	"github.com/500tpig/grok-search-go/internal/router"
+	"github.com/500tpig/sourcemux-go/internal/capability"
+	"github.com/500tpig/sourcemux-go/internal/router"
 )
 
 type smokeOutput struct {

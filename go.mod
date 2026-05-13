@@ -1,4 +1,4 @@
-module github.com/500tpig/grok-search-go
+module github.com/500tpig/sourcemux-go
 
 go 1.23
 

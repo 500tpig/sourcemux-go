@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 const smartAnswerEvidenceMaxChars = 48000
-const missingReasoningEndpointsMessage = "no reasoningEndpoints configured; add a reasoningEndpoints[] entry to grok-search.json (for example DeepSeek Flash/Pro), then rerun smart_answer. Do not put synthesis-only models in grokEndpoints."
+const missingReasoningEndpointsMessage = "no reasoningEndpoints configured; add a reasoningEndpoints[] entry to sourcemux.json (for example DeepSeek Flash/Pro), then rerun smart_answer. Do not put synthesis-only models in grokEndpoints."
 
 // SmartAnswerOptions controls the evidence-gathering plus reasoning workflow.
 type SmartAnswerOptions struct {

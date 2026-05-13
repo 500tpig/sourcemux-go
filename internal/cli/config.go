@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	cfgpkg "github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/engine"
+	cfgpkg "github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
-const configUsage = `Usage: grok-search cli config <command> [flags]
+const configUsage = `Usage: sourcemux cli config <command> [flags]
 
 Commands:
   path               Show the active config file path.
-  files              Show the one config file grok-search will read.
+  files              Show the one config file sourcemux will read.
   list               Show the effective loaded config with secrets masked.
   migrate            Rewrite a legacy v1 config to v2 capabilities format.
 
@@ -25,10 +25,10 @@ Flags:
   --help, -h         Show this usage.
 
 Examples:
-  grok-search cli config path
-  grok-search cli --config ./prod.grok-search.json config path --json
-  grok-search cli config files --json
-  grok-search cli config list --json
+  sourcemux cli config path
+  sourcemux cli --config ./prod.sourcemux.json config path --json
+  sourcemux cli config files --json
+  sourcemux cli config list --json
 `
 
 type configPathOutput struct {
@@ -407,7 +407,7 @@ func runConfigList(args []string) int {
 		return 0
 	}
 
-	fmt.Println("=== Grok Search Effective Config ===")
+	fmt.Println("=== SourceMux Effective Config ===")
 	fmt.Printf("Config file: %s\n", out.Paths.ConfigFile)
 	fmt.Printf("Absolute:    %s\n", out.Paths.AbsConfigFile)
 	fmt.Printf("Version:     %d\n", out.Version)
@@ -470,7 +470,7 @@ func buildConfigFilesOutput() configFilesOutput {
 	status := configFileStatus{
 		Path:    path,
 		AbsPath: absPath(path),
-		Role:    "the only config file loaded by grok-search",
+		Role:    "the only config file loaded by sourcemux",
 	}
 	if info, err := os.Stat(path); err == nil {
 		status.Exists = true
@@ -481,7 +481,7 @@ func buildConfigFilesOutput() configFilesOutput {
 		ConfigFile: status,
 		Notes: []string{
 			"Only this file is loaded. There is no environment-variable config chain.",
-			"Hidden files under ~/.config/grok-search and legacy endpoints.json are ignored.",
+			"Hidden files under ~/.config/sourcemux and legacy endpoints.json are ignored.",
 			"Use the global --config flag to select a different single JSON file.",
 			fmt.Sprintf("Run `%s` to create the file without hand-writing JSON.", setupCmd),
 		},
@@ -559,7 +559,7 @@ func reportConfigErr(jsonOut bool, message string) int {
 	pathCmd := scopedConfigCLICommand(path, "config path")
 	nextSteps := []string{
 		fmt.Sprintf("Run `%s` to create the active config file without hand-writing JSON.", setupCmd),
-		"Or create one JSON file at the active path and pass the same path with `--config` when it is not ./grok-search.json.",
+		"Or create one JSON file at the active path and pass the same path with `--config` when it is not ./sourcemux.json.",
 		fmt.Sprintf("Run `%s` to see the active target file.", pathCmd),
 	}
 	if jsonOut {
@@ -577,9 +577,9 @@ func reportConfigErr(jsonOut bool, message string) int {
 
 func scopedConfigCLICommand(path, command string) string {
 	if strings.TrimSpace(path) == "" || path == cfgpkg.DefaultConfigPath() {
-		return "grok-search cli " + command
+		return "sourcemux cli " + command
 	}
-	return "grok-search cli --config " + shellQuote(path) + " " + command
+	return "sourcemux cli --config " + shellQuote(path) + " " + command
 }
 
 func formatNamedKeyStatuses(keys []configNamedKeyOutput) string {

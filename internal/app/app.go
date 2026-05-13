@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/500tpig/grok-search-go/internal/cli"
-	"github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/server"
+	"github.com/500tpig/sourcemux-go/internal/cli"
+	"github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/server"
 )
 
 type VersionInfo struct {
@@ -62,7 +62,7 @@ func printVersion(args []string) int {
 		case "--json":
 			asJSON = true
 		case "-h", "--help":
-			fmt.Fprintln(os.Stdout, "Usage: grok-search version [--json]")
+			fmt.Fprintln(os.Stdout, "Usage: sourcemux version [--json]")
 			return 0
 		default:
 			fmt.Fprintf(os.Stderr, "unknown version flag %q\n", arg)
@@ -75,7 +75,7 @@ func printVersion(args []string) int {
 		_ = enc.Encode(buildInfo)
 		return 0
 	}
-	fmt.Fprintf(os.Stdout, "grok-search %s (commit=%s date=%s)\n", buildInfo.Version, buildInfo.Commit, buildInfo.Date)
+	fmt.Fprintf(os.Stdout, "sourcemux %s (commit=%s date=%s)\n", buildInfo.Version, buildInfo.Commit, buildInfo.Date)
 	return 0
 }
 

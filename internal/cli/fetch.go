@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/router"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	"github.com/500tpig/sourcemux-go/internal/router"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 type fetchOutput struct {

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	"github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 type repeatedStringFlag []string

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/router"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	"github.com/500tpig/sourcemux-go/internal/router"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 // searchOutput is the JSON envelope for `cli search`. Keep the fields stable

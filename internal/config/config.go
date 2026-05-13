@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
-const DefaultConfigFilename = "grok-search.json"
+const DefaultConfigFilename = "sourcemux.json"
 
 // Config holds all runtime configuration, resolved from one explicit JSON file.
 type Config struct {
@@ -127,7 +127,7 @@ type tinyFishFileConfig struct {
 	FetchURL  string               `json:"fetchURL"`
 }
 
-// Load reads the default single-file config from ./grok-search.json.
+// Load reads the default single-file config from ./sourcemux.json.
 func Load() (*Config, error) {
 	return LoadFile(DefaultConfigPath())
 }

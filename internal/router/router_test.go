@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/500tpig/grok-search-go/internal/capability"
+	"github.com/500tpig/sourcemux-go/internal/capability"
 )
 
 type fakeProvider struct {

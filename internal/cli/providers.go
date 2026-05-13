@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"github.com/500tpig/grok-search-go/internal/config"
-	"github.com/500tpig/grok-search-go/internal/engine"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	"github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 func buildWebSearchClients(cfg *config.Config, cache tools.SourceCacher) tools.WebSearchClients {

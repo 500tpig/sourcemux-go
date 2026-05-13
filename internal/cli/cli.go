@@ -1,5 +1,5 @@
-// Package cli exposes the grok-search engine layer (Grok pool, Jina Reader,
-// Tavily) as a non-MCP one-shot CLI. It is invoked via `grok-search cli
+// Package cli exposes the sourcemux engine layer (Grok pool, Jina Reader,
+// Tavily) as a non-MCP one-shot CLI. It is invoked via `sourcemux cli
 // <subcommand> [flags]` and mirrors the MCP tool surface: search / fetch /
 // map / crawl / doctor / probe / config / setup / plan / research /
 // smart-answer.
@@ -20,10 +20,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/500tpig/grok-search-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/config"
 )
 
-const usage = `Usage: grok-search cli <command> [flags]
+const usage = `Usage: sourcemux cli <command> [flags]
 
 Commands:
   search <query>      Run a web search through Grok/TinyFish/Exa/Tavily fallbacks.
@@ -40,7 +40,7 @@ Commands:
   doctor              Check config locally; use --probe for live provider probes.
   probe               Show config and probe each Grok endpoint (/models).
   config <command>    Inspect the single active config file or masked effective config.
-  setup               Write grok-search.json without hand-editing JSON.
+  setup               Write sourcemux.json without hand-editing JSON.
   plan   <query>      Print a deterministic multi-step search plan.
   research <query>    Run a composable in-memory research workflow.
   smart-answer <query>
@@ -48,7 +48,7 @@ Commands:
   tinyfish-bench      Benchmark TinyFish Search, Fetch, and Agent locally.
 
 Common flags (subcommand-dependent):
-  --config <path>     Use one explicit config file (default: ./grok-search.json).
+  --config <path>     Use one explicit config file (default: ./sourcemux.json).
   --json              Emit machine-readable JSON instead of human text.
   --platform <name>   Focus a platform, e.g. 'Twitter' or 'GitHub, Reddit'.
                       Useful for content blocked by CF or hosted on X.
@@ -57,25 +57,25 @@ Common flags (subcommand-dependent):
   --help, -h          Show this usage.
 
 Examples:
-  grok-search cli search "X 上 grok 4 的最新评价" --platform Twitter --json
-  grok-search cli docs-search "middleware auth" --library-id /vercel/next.js --json
-  grok-search cli context7-library next.js "middleware auth" --json
-  grok-search cli context7-docs /vercel/next.js "middleware auth" --json
-  grok-search cli fetch  "https://example.com/article" --json
-  grok-search cli exa-search "latest AI chip launches" --type deep --output-schema-json '{"type":"object"}' --json
-  grok-search cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-  grok-search cli crawl  "https://example.com/docs" --instructions "Find API pages" --limit 10 --json
-  grok-search cli doctor --json
-  grok-search cli config path
-  grok-search cli config files --json
-  grok-search cli config list --json
-  grok-search cli --config ./prod.grok-search.json config list --json
-  grok-search cli setup --non-interactive --api-url https://your-endpoint/v1 --api-key sk-... --json
-  grok-search cli probe  --json
-  grok-search cli plan   "Notion AI agents" --depth deep
-  grok-search cli research "Notion AI agents" --depth deep --domain example.com --max-fetches 6 --json
-  grok-search cli smart-answer "Should I use SuperGrok or DeepSeek?" --reasoning-model deepseek-v4-flash --json
-  grok-search cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
+  sourcemux cli search "X 上 grok 4 的最新评价" --platform Twitter --json
+  sourcemux cli docs-search "middleware auth" --library-id /vercel/next.js --json
+  sourcemux cli context7-library next.js "middleware auth" --json
+  sourcemux cli context7-docs /vercel/next.js "middleware auth" --json
+  sourcemux cli fetch  "https://example.com/article" --json
+  sourcemux cli exa-search "latest AI chip launches" --type deep --output-schema-json '{"type":"object"}' --json
+  sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+  sourcemux cli crawl  "https://example.com/docs" --instructions "Find API pages" --limit 10 --json
+  sourcemux cli doctor --json
+  sourcemux cli config path
+  sourcemux cli config files --json
+  sourcemux cli config list --json
+  sourcemux cli --config ./prod.sourcemux.json config list --json
+  sourcemux cli setup --non-interactive --api-url https://your-endpoint/v1 --api-key sk-... --json
+  sourcemux cli probe  --json
+  sourcemux cli plan   "Notion AI agents" --depth deep
+  sourcemux cli research "Notion AI agents" --depth deep --domain example.com --max-fetches 6 --json
+  sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --reasoning-model deepseek-v4-flash --json
+  sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
 `
 
 // Run dispatches the cli subcommand tree. args is everything after the

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
-	"github.com/500tpig/grok-search-go/internal/tools"
+	"github.com/500tpig/sourcemux-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
 type context7Output struct {

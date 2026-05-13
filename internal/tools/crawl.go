@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )

@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 type setupConfigFile struct {
@@ -76,7 +76,7 @@ func runSetup(args []string) int {
 	fs.SetOutput(os.Stderr)
 	opts := setupOptions{}
 	fs.BoolVar(&opts.NonInteractive, "non-interactive", false, "Do not prompt; require required flags")
-	fs.BoolVar(&opts.Force, "force", false, "Overwrite existing grok-search.json")
+	fs.BoolVar(&opts.Force, "force", false, "Overwrite existing sourcemux.json")
 	fs.BoolVar(&opts.JSONOut, "json", false, "Emit JSON")
 	fs.StringVar(&opts.Name, "name", "primary", "Endpoint display name")
 	fs.StringVar(&opts.APIURL, "api-url", "", "Grok-compatible base URL, e.g. https://api.x.ai/v1")
@@ -365,15 +365,15 @@ func setupSplitCSV(raw string) []string {
 
 func buildSetupOutput(path string, cfg setupConfigFile) setupOutput {
 	configFlag := ""
-	if strings.TrimSpace(path) != "" && path != "grok-search.json" {
+	if strings.TrimSpace(path) != "" && path != "sourcemux.json" {
 		configFlag = " --config " + shellQuote(path)
 	}
 	out := setupOutput{
 		ConfigFile: path,
 		NextSteps: []string{
-			fmt.Sprintf("Run `grok-search cli%s config list --json` to inspect masked effective config.", configFlag),
-			fmt.Sprintf("Run `grok-search cli%s doctor --json` to verify local config structure without provider requests.", configFlag),
-			fmt.Sprintf("Run `grok-search cli%s search \"test query\" --json` to test search.", configFlag),
+			fmt.Sprintf("Run `sourcemux cli%s config list --json` to inspect masked effective config.", configFlag),
+			fmt.Sprintf("Run `sourcemux cli%s doctor --json` to verify local config structure without provider requests.", configFlag),
+			fmt.Sprintf("Run `sourcemux cli%s search \"test query\" --json` to test search.", configFlag),
 		},
 	}
 	if len(cfg.GrokEndpoints) > 0 {
@@ -428,14 +428,14 @@ func reportSetupErr(jsonOut bool, message string) int {
 		_ = enc.Encode(map[string]any{
 			"error": message,
 			"next_steps": []string{
-				"Run `grok-search cli setup --help` for available flags.",
-				"Run `grok-search cli config path` to inspect the target path.",
+				"Run `sourcemux cli setup --help` for available flags.",
+				"Run `sourcemux cli config path` to inspect the target path.",
 			},
 		})
 		return 1
 	}
 	fmt.Fprintln(os.Stderr, message)
-	fmt.Fprintln(os.Stderr, "- Run `grok-search cli setup --help` for available flags.")
-	fmt.Fprintln(os.Stderr, "- Run `grok-search cli config path` to inspect the target path.")
+	fmt.Fprintln(os.Stderr, "- Run `sourcemux cli setup --help` for available flags.")
+	fmt.Fprintln(os.Stderr, "- Run `sourcemux cli config path` to inspect the target path.")
 	return 1
 }

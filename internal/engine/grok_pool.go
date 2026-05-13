@@ -9,7 +9,7 @@ import (
 )
 
 // GrokEndpoint is one entry in the ordered endpoint pool stored in
-// grok-search.json.
+// sourcemux.json.
 type GrokEndpoint struct {
 	Name           string `json:"name"`
 	BaseURL        string `json:"baseURL"`

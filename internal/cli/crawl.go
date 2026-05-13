@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 type crawlOutput struct {

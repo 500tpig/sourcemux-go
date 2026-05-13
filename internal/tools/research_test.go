@@ -12,12 +12,12 @@ import (
 )
 
 func TestExtractPlanQueries(t *testing.T) {
-	plan := BuildSearchPlan("Grok Search MCP", "standard", "GitHub")
+	plan := BuildSearchPlan("SourceMux MCP", "standard", "GitHub")
 	got := ExtractPlanQueries(plan)
 	if len(got) != 4 {
 		t.Fatalf("queries len = %d, want 4: %#v", len(got), got)
 	}
-	if got[0] != "Grok Search MCP GitHub" {
+	if got[0] != "SourceMux MCP GitHub" {
 		t.Fatalf("first query = %q", got[0])
 	}
 
@@ -77,7 +77,7 @@ func TestApplyFetchSignalsDownranksFailures(t *testing.T) {
 	}
 	got := applyFetchSignals(sources, []ResearchFetchedPage{
 		{URL: "https://docs.example.com/docs", Success: false, Error: "blocked"},
-		{URL: "https://example.com/blog", Success: true, Excerpt: "Grok Search MCP is useful source text."},
+		{URL: "https://example.com/blog", Success: true, Excerpt: "SourceMux MCP is useful source text."},
 	})
 	if got[0].URL != "https://example.com/blog" {
 		t.Fatalf("ranking after fetch signals = %+v", got)
@@ -94,14 +94,14 @@ func TestResearchExecutorBuildsStablePack(t *testing.T) {
 	}
 
 	pack, err := executor.Run(context.Background(), ResearchOptions{
-		Query:      "Grok Search MCP",
+		Query:      "SourceMux MCP",
 		Depth:      "quick",
 		MaxFetches: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.Query != "Grok Search MCP" || pack.EffectiveDepth != "quick" {
+	if pack.Query != "SourceMux MCP" || pack.EffectiveDepth != "quick" {
 		t.Fatalf("metadata = %+v", pack)
 	}
 	if len(pack.ExecutedSearches) != 2 {
@@ -120,7 +120,7 @@ func TestResearchExecutorBuildsStablePack(t *testing.T) {
 	}
 	gotJSON := string(data)
 	for _, want := range []string{
-		`"query":"Grok Search MCP"`,
+		`"query":"SourceMux MCP"`,
 		`"effective_depth":"quick"`,
 		`"executed_searches":[`,
 		`"source_summary":`,
@@ -180,7 +180,7 @@ func TestResearchExecutorNoSourcesUsesStableEmptyArrays(t *testing.T) {
 
 func TestFormatResearchPackMCPStaysThinWhileFullPackRemainsDetailed(t *testing.T) {
 	pack := ResearchPack{
-		Query:          "Grok Search MCP",
+		Query:          "SourceMux MCP",
 		EffectiveDepth: "deep",
 		MaxFetches:     6,
 		PlanQueries: []string{
@@ -335,7 +335,7 @@ func (fakeResearchSearcher) Search(ctx context.Context, query, platform string) 
 		Engine:       "fake",
 		SessionID:    "session-" + strings.ReplaceAll(query, " ", "-"),
 		Content:      "fake search result for " + query,
-		SourceURLs:   []string{"https://docs.example.com/docs/grok-search-mcp", "https://example.com/blog"},
+		SourceURLs:   []string{"https://docs.example.com/docs/sourcemux-mcp", "https://example.com/blog"},
 		SourcesCount: 2,
 	}, nil
 }
@@ -358,7 +358,7 @@ func (fakeResearchFetcher) Fetch(ctx context.Context, rawURL string) (*WebFetchR
 	return &WebFetchResult{
 		Source:  "fake-fetch",
 		URL:     rawURL,
-		Content: "# Grok Search MCP\nGrok Search MCP is a source-backed MCP server for search workflows.\nMore implementation details follow.",
+		Content: "# SourceMux MCP\nSourceMux MCP is a source-backed MCP server for search workflows.\nMore implementation details follow.",
 	}, nil
 }
 
@@ -409,7 +409,7 @@ func (f *indexFetcher) Fetch(ctx context.Context, rawURL string) (*WebFetchResul
 	return &WebFetchResult{
 		Source:  "fake-fetch",
 		URL:     rawURL,
-		Content: "Grok Search MCP excerpt for " + rawURL,
+		Content: "SourceMux MCP excerpt for " + rawURL,
 	}, nil
 }
 
@@ -425,7 +425,7 @@ func (t timeoutFetcher) Fetch(ctx context.Context, rawURL string) (*WebFetchResu
 	return &WebFetchResult{
 		Source:  "fake-fetch",
 		URL:     rawURL,
-		Content: "Grok Search MCP page " + rawURL,
+		Content: "SourceMux MCP page " + rawURL,
 	}, nil
 }
 
@@ -438,7 +438,7 @@ func TestResearchExecutorRunsSearchesConcurrentlyPreservingOrder(t *testing.T) {
 
 	start := time.Now()
 	pack, err := executor.Run(context.Background(), ResearchOptions{
-		Query:      "Grok Search MCP",
+		Query:      "SourceMux MCP",
 		Depth:      "standard",
 		MaxFetches: 2,
 	})

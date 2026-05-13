@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 func TestSmartAnswererRun(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSmartAnswererRun(t *testing.T) {
 func TestSmartAnswererRequiresReasoner(t *testing.T) {
 	answerer := &SmartAnswerer{Researcher: &fakeSmartResearcher{}}
 	_, err := answerer.Run(context.Background(), SmartAnswerOptions{Query: "hello"})
-	if err == nil || !strings.Contains(err.Error(), "no reasoningEndpoints configured") || !strings.Contains(err.Error(), "grok-search.json") {
+	if err == nil || !strings.Contains(err.Error(), "no reasoningEndpoints configured") || !strings.Contains(err.Error(), "sourcemux.json") {
 		t.Fatalf("err = %v", err)
 	}
 }

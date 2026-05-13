@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildSearchPlanDeepIncludesWorkflow(t *testing.T) {
-	plan := BuildSearchPlan("Grok Search MCP", "deep", "GitHub")
+	plan := BuildSearchPlan("SourceMux MCP", "deep", "GitHub")
 	for _, want := range []string{
 		"depth: deep",
 		"platform_focus: GitHub",

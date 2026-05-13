@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/500tpig/grok-search-go/internal/engine"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 type probeEndpoint struct {
@@ -116,7 +116,7 @@ func runProbeNamed(name string, args []string) int {
 		return 0
 	}
 
-	fmt.Println("=== Grok Search Config ===")
+	fmt.Println("=== SourceMux Config ===")
 	fmt.Printf("Tavily Enabled: %v\n", out.TavilyEnabled)
 	fmt.Printf("Tavily API URL: %s\n", out.TavilyAPIURL)
 	fmt.Printf("Tavily API Key: %s\n", out.TavilyKey)
