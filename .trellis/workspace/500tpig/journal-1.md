@@ -384,3 +384,37 @@ Renamed the project identity to SourceMux, updated module/import paths and prima
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Multi-agent installer MVP
+
+**Date**: 2026-05-14
+**Task**: Multi-agent installer MVP
+**Branch**: `main`
+
+### Summary
+
+Added SourceMux multi-agent install/uninstall surface with routing skill generation, first-tier MCP setup guidance, --binary support, and manifest-backed safe status/uninstall.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa5fb54` | (see git log) |
+| `ca76667` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
