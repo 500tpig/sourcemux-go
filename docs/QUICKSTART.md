@@ -97,7 +97,34 @@ Then edit placeholders. Never commit `sourcemux.json`.
 
 Context7 is optional and specialized for library/framework/API docs. It is used only when you pass an explicit Context7 `library-id` or `library-name`; general docs/web search remains Exa-oriented.
 
-## 5. Add MCP server
+## 5. Install agent routing skill and MCP snippets
+
+SourceMux includes a top-level installer that writes a concise
+`sourcemux-routing` skill and prints copyable MCP stdio JSON where automatic
+client config is not yet verified:
+
+```bash
+./sourcemux install list-agents
+./sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
+./sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux install status
+```
+
+Use `--json` for automation and `--force` to back up and replace an existing
+generated skill. The installer does not write provider API keys into agent
+config; it only passes the selected config file path to the SourceMux binary.
+If you run the installer through `go run`, pass `--binary` so generated agent
+commands do not point at Go's temporary build artifact.
+
+For first-tier targets, the dry-run/install plan also prints the official MCP
+setup command or config snippet:
+
+* Codex: `codex mcp add ...` and `.codex/config.toml` / `~/.codex/config.toml`
+* Claude Code: `claude mcp add --transport stdio --scope ...`
+* Gemini CLI: `gemini mcp add --scope ...` and `.gemini/settings.json`
+* OpenCode: `opencode.json` / JSONC `mcp` snippet
+
+## 6. Add MCP server manually
 
 Use absolute paths so the MCP client's working directory does not matter:
 

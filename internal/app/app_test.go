@@ -49,6 +49,38 @@ func TestRunVersionJSON(t *testing.T) {
 	}
 }
 
+func TestRunTopLevelInstallDryRun(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"install", "codex", "--dry-run", "--json"}); got != 0 {
+			t.Fatalf("Run(install codex --dry-run --json) = %d, want 0", got)
+		}
+	})
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("install output is not JSON: %s", out)
+	}
+	if _, err := os.Stat(".agents/skills/sourcemux-routing/SKILL.md"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote skill file: %v", err)
+	}
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(old); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout

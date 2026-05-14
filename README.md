@@ -170,6 +170,7 @@ sourcemux cli --config ./grok-search.json config list --json
 | `sourcemux cli config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
 | `sourcemux cli setup` | 生成本地配置，不必手写 JSON |
 | `sourcemux cli doctor` / `probe` | 本地配置检查 / 显式 live probe |
+| `sourcemux install list-agents/status` | 安装或检查 AI Agent 路由 skill 与 MCP 配置片段 |
 
 ### MCP 接入
 
@@ -192,6 +193,19 @@ claude mcp add-json sourcemux '{
   "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }'
 ```
+
+也可以先用内置安装器生成 `sourcemux-routing` skill 和 MCP JSON 片段：
+
+```bash
+sourcemux install list-agents
+sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
+sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+```
+
+第一批目标会输出更具体的官方 MCP 接入方式：Codex 的
+`codex mcp add` / `config.toml`、Claude Code 的
+`claude mcp add --transport stdio`、Gemini CLI 的 `gemini mcp add` /
+`settings.json`，以及 OpenCode 的 `opencode.json` 配置片段。
 
 MCP 侧常用工具：
 
@@ -426,6 +440,7 @@ Main subcommands:
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
 | `doctor` / `probe` | Local config overview; opt-in live provider probes. |
+| `install list-agents/status` | Install or inspect AI agent routing skills and MCP snippets. |
 | `tinyfish-bench` | Local TinyFish Search / Fetch / Agent benchmark. |
 
 ## MCP usage
@@ -451,6 +466,19 @@ claude mcp add-json sourcemux '{
   "args": ["--config", "/absolute/path/to/sourcemux.json"]
 }'
 ```
+
+The installer can generate the `sourcemux-routing` skill and MCP JSON snippets:
+
+```bash
+sourcemux install list-agents
+sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
+sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+```
+
+First-tier targets emit more specific official MCP setup guidance: Codex
+`codex mcp add` / `config.toml`, Claude Code
+`claude mcp add --transport stdio`, Gemini CLI `gemini mcp add` /
+`settings.json`, and OpenCode `opencode.json` snippets.
 
 MCP tools:
 

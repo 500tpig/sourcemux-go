@@ -8,6 +8,7 @@ import (
 
 	"github.com/500tpig/sourcemux-go/internal/cli"
 	"github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/install"
 	"github.com/500tpig/sourcemux-go/internal/server"
 )
 
@@ -37,6 +38,12 @@ func Run(args []string) int {
 
 	if len(args) > 0 && args[0] == "cli" {
 		return cli.RunWithConfig(args[1:], configPath)
+	}
+	if len(args) > 0 && args[0] == "install" {
+		return install.RunInstall(args[1:], configPath)
+	}
+	if len(args) > 0 && args[0] == "uninstall" {
+		return install.RunUninstall(args[1:], configPath)
 	}
 	if len(args) > 0 && args[0] == "version" {
 		return printVersion(args[1:])

@@ -79,6 +79,33 @@ sourcemux cli smart-answer "question" --depth standard --json
 
 ## Recommended host setup
 
+Use the installer first when possible:
+
+```bash
+sourcemux install list-agents
+sourcemux install codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
+sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install status
+```
+
+Pass `--binary` when running from a source checkout or through `go run`; the
+path is embedded into generated MCP commands/snippets.
+
+The first implementation uses a two-tier support model:
+
+* full first-tier targets: `codex`, `claude-code`, `gemini`, `opencode`
+* skill/JSON/profile first targets: `copilot`, `cursor`, `trellis`, `mcp-json`, `stdio`
+
+For first-tier targets, the plan includes both the routing skill write and
+official MCP setup guidance:
+
+| Target | MCP guidance emitted |
+| --- | --- |
+| `codex` | `codex mcp add ...` plus a `config.toml` snippet |
+| `claude-code` | `claude mcp add --transport stdio --scope ...` plus MCP JSON |
+| `gemini` | `gemini mcp add --scope ...` plus a `settings.json` snippet |
+| `opencode` | `opencode.json` / JSONC `mcp` snippet |
+
 ### Codex
 
 Use both:
