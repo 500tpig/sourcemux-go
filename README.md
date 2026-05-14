@@ -4,15 +4,234 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/500tpig/sourcemux-go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+[中文](#中文) | [English](#english)
+
+## 中文
+
+SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索、网页抓取、文档检索与轻量研究工具。你可以把它理解成一个“多来源研究路由器”：用同一个二进制同时提供 stdio MCP server 和 CLI，把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina、Context7 等能力接到统一的 fallback route 里。
+
+仓库默认只保存安全示例配置。真实 API key 只应该放在本地 `sourcemux.json`，或用 `--config /path/to/sourcemux.json` 显式指定的本地配置文件里。不要提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
+
+### 适合什么时候用
+
+- 你希望 AI 助手联网搜索当前信息，但要保留可复现的 CLI 命令和 JSON 输出。
+- 你想抓取一个 URL 正文，或把网页内容交给后续 Agent / 脚本处理。
+- 你想查官方文档、API、SDK、框架用法，并在 Context7 / Exa 之间做文档能力路由。
+- 你想生成一个可审计的轻量 research pack：先规划搜索，再收集来源，最后抓取关键页面。
+- 你想把同一套搜索能力接入 Codex、Claude Code、Cherry Studio 等 MCP 客户端。
+
+### 默认路由
+
+| 能力 / 命令 | 默认路线 |
+| --- | --- |
+| `web_search` / `sourcemux cli search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
+| `web_fetch` / `sourcemux cli fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
+| `docs_search` / `sourcemux cli docs-search` | 显式 Context7 library-docs -> Exa docs/web search fallback |
+| `research_run` / `sourcemux cli research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面 |
+| `smart_answer` / `sourcemux cli smart-answer` | 先跑 bounded research，再交给配置好的 reasoning endpoint 综合回答 |
+
+### 安装
+
+当前可直接给别人用的方式是从包含 SourceMux 改名后的源码构建。Homebrew / Scoop / `go install ...@latest` 需要等第一次 SourceMux release 发布后再作为稳定安装方式使用。
+
+源码构建：
+
+```bash
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+```
+
+发布后可用的稳定安装方式：
+
+```bash
+brew tap 500tpig/tap
+brew install --cask sourcemux
+```
+
+```powershell
+scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
+scoop install 500tpig/sourcemux
+```
+
+```bash
+go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
+```
+
+确认安装：
+
+```bash
+sourcemux version
+sourcemux cli config path
+```
+
+### 快速开始
+
+生成本地配置：
+
+```bash
+sourcemux cli setup --non-interactive \
+  --api-url "https://your-grok-compatible-endpoint.example/v1" \
+  --api-key "sk-your-key" \
+  --model "grok-4.20-fast" \
+  --context7-key "ctx7sk-your-key" \
+  --json
+```
+
+检查配置，输出会遮蔽 key：
+
+```bash
+sourcemux cli config list --json
+sourcemux cli doctor --json
+```
+
+跑一次搜索：
+
+```bash
+sourcemux cli search "今天 Go 生态有哪些重要更新？" --json
+```
+
+抓取网页正文：
+
+```bash
+sourcemux cli fetch "https://example.com" --json
+```
+
+查库 / 框架 / SDK 文档：
+
+```bash
+sourcemux cli docs-search "middleware auth" --library-id /vercel/next.js --json
+sourcemux cli context7-library next.js "middleware auth" --json
+sourcemux cli context7-docs /vercel/next.js "middleware auth" --json
+```
+
+生成研究包：
+
+```bash
+sourcemux cli research "Evaluate the current status of Go modules" --depth standard --json
+```
+
+### 配置文件
+
+SourceMux 只读取一个显式 JSON 配置文件：
+
+- 默认：`./sourcemux.json`
+- 显式：`sourcemux --config /path/to/sourcemux.json`
+- CLI 显式：`sourcemux cli --config /path/to/sourcemux.json <command>`
+
+它不会读取环境变量配置链、`~/.config/sourcemux/*` 或旧的 `endpoints.json`。如果你已有旧版 `grok-search.json`，可以改名：
+
+```bash
+mv grok-search.json sourcemux.json
+```
+
+也可以继续显式指定旧文件：
+
+```bash
+sourcemux cli --config ./grok-search.json config list --json
+```
+
+最小配置示例：
+
+```json
+{
+  "grokEndpoints": [
+    {
+      "name": "primary",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-key",
+      "model": "grok-4.20-fast",
+      "sendSearchFlag": false
+    }
+  ],
+  "grokPoolTimeoutSec": 45,
+  "logLevel": "INFO"
+}
+```
+
+安全示例文件：
+
+- [`configs/sourcemux.example.json`](configs/sourcemux.example.json)
+- [`configs/sourcemux.reasoning.example.json`](configs/sourcemux.reasoning.example.json)
+
+### 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `sourcemux cli search <query>` | 按 fallback route 做一次网页搜索 |
+| `sourcemux cli docs-search <query>` | 文档搜索；显式 library 时优先 Context7 |
+| `sourcemux cli fetch <url>` | 抓取一个 URL 的正文 |
+| `sourcemux cli context7-library <name> <query>` | 解析 Context7 library name 并取相关文档 |
+| `sourcemux cli context7-docs <id> <query>` | 按 Context7 library ID 取文档 |
+| `sourcemux cli map <url>` | 用 Tavily 发现站点 URL |
+| `sourcemux cli crawl <url>` | 用 Tavily 抓取站点内容 |
+| `sourcemux cli research <query>` | 生成 bounded research pack |
+| `sourcemux cli smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
+| `sourcemux cli config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
+| `sourcemux cli setup` | 生成本地配置，不必手写 JSON |
+| `sourcemux cli doctor` / `probe` | 本地配置检查 / 显式 live probe |
+
+### MCP 接入
+
+通用 stdio MCP server 配置：
+
+```json
+{
+  "type": "stdio",
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
+}
+```
+
+Claude Code 示例：
+
+```bash
+claude mcp add-json sourcemux '{
+  "type": "stdio",
+  "command": "/absolute/path/to/sourcemux",
+  "args": ["--config", "/absolute/path/to/sourcemux.json"]
+}'
+```
+
+MCP 侧常用工具：
+
+| 工具 | 用途 |
+| --- | --- |
+| `web_search` | 紧凑搜索摘要，带 provider fallback 和来源提取 |
+| `docs_search` | 文档搜索；显式 `library_id` / `library_name` 时尝试 Context7 |
+| `get_sources` | 返回上一次 `web_search` 的 URL 列表 |
+| `web_fetch` | 抓取网页正文摘要 |
+| `web_map` / `web_crawl` | 站点 URL 发现 / 站点抓取 |
+| `research_run` | 返回紧凑 research pack |
+| `smart_answer` | research 后调用 reasoning endpoint 综合 |
+| `get_config_info` | 配置诊断和 Grok `/models` probe |
+
+### 从 grok-search 迁移
+
+项目已改名为 SourceMux：
+
+- GitHub 仓库目标名：`500tpig/sourcemux-go`
+- 主命令：`sourcemux`
+- 默认配置：`sourcemux.json`
+
+旧的 `cmd/grok-search` 仍保留一个迁移窗口，GoReleaser 也会把 `grok-search` 兼容 binary 一起打包。新文档和新安装请使用 `sourcemux`。
+
+已有本地 clone 在 GitHub 仓库改名后运行：
+
+```bash
+git remote set-url origin https://github.com/500tpig/sourcemux-go.git
+```
+
+### 更多文档
+
+- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — 更完整的快速开始。
+- [`docs/AI_USAGE.md`](docs/AI_USAGE.md) — AI Agent / MCP / CLI 使用建议。
+- [`docs/MIGRATION.md`](docs/MIGRATION.md) — 改名与配置迁移。
+- [`docs/RELEASE.md`](docs/RELEASE.md) — 发布、Homebrew、Scoop 和 GoReleaser。
+
+## English
+
 SourceMux is an MCP-native search, fetch, docs, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
-
-## 中文简介
-
-SourceMux 是一个面向 AI Agent 和 MCP 客户端的搜索、网页抓取与轻量研究工具。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力封装成统一的 fallback route：优先走 Grok 搜索，失败后自动降级到其他搜索/抓取服务。
-
-同一个 Go 二进制可以直接当 CLI 使用，也可以作为 stdio MCP server 接入 Codex、Claude Code、Cherry Studio 等客户端。适合需要在 Agent 工作流里做实时网页搜索、网页内容提取、URL 发现、站点抓取、研究包生成和最终答案综合的场景。
-
-隐私上，真实 API key 只应该放在本地的 `sourcemux.json` 或显式指定的本地配置文件里；该文件默认被 Git 忽略。仓库里的示例配置只使用占位符，不应提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
 The default routing is:
 
@@ -35,7 +254,17 @@ The default routing is:
 
 ## Install
 
-Choose one:
+The currently shareable install path is to build from a source checkout that includes the SourceMux rename. Homebrew, Scoop, and `go install ...@latest` become stable install paths after the first SourceMux release is published.
+
+Build from source:
+
+```bash
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+```
+
+Stable install paths after release:
 
 ```bash
 brew tap 500tpig/tap

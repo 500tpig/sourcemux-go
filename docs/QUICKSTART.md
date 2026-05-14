@@ -4,7 +4,20 @@ This guide starts from a fresh clone and avoids any local-only paths.
 
 ## 1. Install or build
 
-Released binaries are published for Homebrew, Scoop, and GitHub Releases:
+The currently shareable path is to build from a source checkout that includes
+the SourceMux rename. Homebrew, Scoop, GitHub Releases, and `go install
+...@latest` become stable install paths after the first SourceMux release is
+published.
+
+Build from source:
+
+```bash
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+```
+
+Stable install paths after release:
 
 ```bash
 brew tap 500tpig/tap
@@ -16,15 +29,7 @@ scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
 ```
 
-Or build from source:
-
-```bash
-git clone https://github.com/500tpig/sourcemux-go.git
-cd sourcemux-go
-go build -o sourcemux .
-```
-
-Or install the `sourcemux` command directly:
+After release, `@latest` also resolves to the published SourceMux version:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
