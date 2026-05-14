@@ -418,3 +418,36 @@ Added SourceMux multi-agent install/uninstall surface with routing skill generat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Installer safe config merge
+
+**Date**: 2026-05-14
+**Task**: Installer safe config merge
+**Branch**: `main`
+
+### Summary
+
+Implemented safe MCP client config merging for installer write-config/status flows with backups, warnings, tests, docs, and backend spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `945b5dd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
