@@ -85,7 +85,8 @@ Use the installer first when possible:
 sourcemux install list-agents
 sourcemux install codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install status
+sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install status --config-status
 ```
 
 Pass `--binary` when running from a source checkout or through `go run`; the
@@ -94,6 +95,17 @@ path is embedded into generated MCP commands/snippets.
 Each generated skill directory gets a `.sourcemux-install.json` manifest. The
 manifest records the target and content hash, so `install status` can report
 managed/modified state and `uninstall` can refuse to remove user-edited files.
+Pass `--write-config` to safely merge supported MCP client config files for
+Codex, Gemini, and OpenCode without invoking external agent CLIs. Existing
+matching `sourcemux` entries are reported as unchanged; drifted entries may be
+updated, but the plan and JSON output show that a timestamped backup will be
+created first and why. Dry-runs show the same backup intent without writing
+files. The current writers preserve config semantics, unrelated keys, and
+unrelated MCP entries, but may reserialize/reformat Codex TOML, Gemini JSON,
+and OpenCode JSONC; comments and original formatting are not guaranteed to be
+preserved, so backups are the rollback path. `sourcemux uninstall <target> --write-config`
+removes only the `sourcemux` MCP entry and preserves unrelated keys plus the
+config file itself.
 
 The first implementation uses a two-tier support model:
 

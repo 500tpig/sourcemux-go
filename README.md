@@ -200,12 +200,24 @@ claude mcp add-json sourcemux '{
 sourcemux install list-agents
 sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install status --config-status
 ```
 
 第一批目标会输出更具体的官方 MCP 接入方式：Codex 的
 `codex mcp add` / `config.toml`、Claude Code 的
 `claude mcp add --transport stdio`、Gemini CLI 的 `gemini mcp add` /
 `settings.json`，以及 OpenCode 的 `opencode.json` 配置片段。
+`--write-config` 会为 Codex（`.codex/config.toml` / `~/.codex/config.toml`）、
+Gemini（`.gemini/settings.json` / `~/.gemini/settings.json`）和 OpenCode
+（`opencode.json` / `~/.config/opencode/opencode.json`）安全合并
+`sourcemux` MCP 条目，不调用外部 agent CLI，也不会写入 provider API key。
+修改已有配置前会创建带时间戳的备份；`--dry-run --json`
+会显示将创建备份的原因和路径意图，但不会写文件。当前写入器会保留配置语义、
+无关 key 和无关 MCP 条目，但可能重新序列化 Codex TOML、Gemini JSON 和
+OpenCode JSONC；注释和原始排版不保证保留，备份文件是回滚路径。
+`sourcemux uninstall <target> --write-config` 只删除 `sourcemux` 条目，
+不删除整个配置文件。
 生成的 skill 目录会带 `.sourcemux-install.json` manifest；`uninstall`
 只删除 manifest hash 仍匹配的生成文件，避免误删用户改过的 skill。
 
@@ -475,12 +487,26 @@ The installer can generate the `sourcemux-routing` skill and MCP JSON snippets:
 sourcemux install list-agents
 sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install status --config-status
 ```
 
 First-tier targets emit more specific official MCP setup guidance: Codex
 `codex mcp add` / `config.toml`, Claude Code
 `claude mcp add --transport stdio`, Gemini CLI `gemini mcp add` /
 `settings.json`, and OpenCode `opencode.json` snippets.
+Pass `--write-config` to safely merge the `sourcemux` MCP entry for Codex
+(`.codex/config.toml` or `~/.codex/config.toml`), Gemini
+(`.gemini/settings.json` or `~/.gemini/settings.json`), and OpenCode
+(`opencode.json` or `~/.config/opencode/opencode.json`). The installer does
+not invoke external agent CLIs and does not write provider API keys. Before it
+modifies an existing client config, it creates a timestamped backup so the
+previous file can be restored; `--dry-run --json` reports the backup intent
+without creating files. Current writers preserve config semantics, unrelated
+keys, and unrelated MCP entries, but may reserialize/reformat Codex TOML,
+Gemini JSON, and OpenCode JSONC; comments and original formatting are not
+guaranteed to be preserved, so backups are the rollback path. `sourcemux uninstall <target> --write-config`
+removes only the `sourcemux` entry and never deletes the whole config file.
 Generated skill directories include a `.sourcemux-install.json` manifest;
 `uninstall` removes only generated files whose content still matches the
 manifest hash.

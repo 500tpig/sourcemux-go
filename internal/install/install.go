@@ -22,7 +22,7 @@ const (
 
 const installUsage = `Usage: sourcemux install <target...> [flags]
        sourcemux install list-agents [--json]
-       sourcemux install status [target...] [--scope project|user] [--json]
+       sourcemux install status [target...] [--scope project|user] [--config-status] [--json]
 
 Targets:
   codex, claude-code, gemini, opencode, copilot, cursor, trellis, mcp-json, stdio
@@ -33,6 +33,7 @@ Flags:
   --scope <scope>     Install scope: project or user (default: project).
   --binary <path>     SourceMux binary path for generated commands.
   --config <path>     SourceMux config path passed to MCP/CLI snippets.
+  --write-config      Safely merge supported MCP client config files.
   --dry-run           Print planned changes without writing files.
   --force             Back up and replace conflicting generated skill files.
   --json              Emit machine-readable JSON.
@@ -51,6 +52,7 @@ Flags:
   --agent <name>      Add an agent target; can be repeated.
   --all               Select all targets with generated skill files.
   --scope <scope>     Install scope: project or user (default: project).
+  --write-config      Safely remove supported SourceMux MCP config entries.
   --dry-run           Print planned removals without deleting files.
   --json              Emit machine-readable JSON.
   --help, -h          Show this usage.
@@ -78,15 +80,28 @@ type Target struct {
 }
 
 type TargetStatus struct {
-	Name         string       `json:"name"`
-	Support      SupportLevel `json:"support"`
-	Scope        string       `json:"scope"`
-	SkillPath    string       `json:"skill_path,omitempty"`
-	ManifestPath string       `json:"manifest_path,omitempty"`
-	Installed    bool         `json:"installed"`
-	Managed      bool         `json:"managed"`
-	Modified     bool         `json:"modified"`
-	Notes        []string     `json:"notes,omitempty"`
+	Name         string        `json:"name"`
+	Support      SupportLevel  `json:"support"`
+	Scope        string        `json:"scope"`
+	SkillPath    string        `json:"skill_path,omitempty"`
+	ManifestPath string        `json:"manifest_path,omitempty"`
+	Installed    bool          `json:"installed"`
+	Managed      bool          `json:"managed"`
+	Modified     bool          `json:"modified"`
+	Notes        []string      `json:"notes,omitempty"`
+	ConfigStatus *ConfigStatus `json:"config_status,omitempty"`
+}
+
+type ConfigStatus struct {
+	Supported    bool   `json:"supported"`
+	Path         string `json:"path,omitempty"`
+	Exists       bool   `json:"exists"`
+	EntryPresent bool   `json:"entry_present"`
+	Matches      bool   `json:"matches"`
+	Drifted      bool   `json:"drifted"`
+	Status       string `json:"status"`
+	Error        string `json:"error,omitempty"`
+	Message      string `json:"message,omitempty"`
 }
 
 type Plan struct {
@@ -114,14 +129,16 @@ type PlanAction struct {
 }
 
 type options struct {
-	Scope      string
-	ConfigPath string
-	BinaryPath string
-	DryRun     bool
-	Force      bool
-	JSON       bool
-	All        bool
-	Agents     []string
+	Scope        string
+	ConfigPath   string
+	BinaryPath   string
+	DryRun       bool
+	Force        bool
+	JSON         bool
+	All          bool
+	WriteConfig  bool
+	ConfigStatus bool
+	Agents       []string
 }
 
 type installManifest struct {
@@ -256,6 +273,7 @@ func RunInstall(args []string, configPath string) int {
 		return 2
 	}
 	if !opts.DryRun {
+		printPreApplyBackupNotice(plan)
 		if err := ApplyPlan(plan, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "install error: %v\n", err)
 			return 1
@@ -286,6 +304,7 @@ func RunUninstall(args []string, configPath string) int {
 		return 2
 	}
 	if !opts.DryRun {
+		printPreApplyBackupNotice(plan)
 		if err := ApplyPlan(plan, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "uninstall error: %v\n", err)
 			return 1
@@ -338,8 +357,22 @@ func runStatus(args []string, configPath string) int {
 		return 2
 	}
 	var statuses []TargetStatus
+	bin := ""
+	cfgPath := ""
+	if opts.ConfigStatus {
+		bin, err = resolveBinaryPath(opts.BinaryPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "install status error: %v\n", err)
+			return 2
+		}
+		cfgPath, err = filepath.Abs(opts.ConfigPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "install status error: resolve config path: %v\n", err)
+			return 2
+		}
+	}
 	for _, target := range selected {
-		statuses = append(statuses, statusFor(target, opts.Scope))
+		statuses = append(statuses, statusFor(target, opts.Scope, opts.ConfigStatus, bin, cfgPath))
 	}
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -354,9 +387,17 @@ func runStatus(args []string, configPath string) int {
 		}
 		if s.SkillPath == "" {
 			fmt.Fprintf(os.Stdout, "%s: %s (%s)\n", s.Name, s.Support, strings.Join(s.Notes, "; "))
-			continue
+		} else {
+			fmt.Fprintf(os.Stdout, "%s: %s at %s [%s]\n", s.Name, state, s.SkillPath, s.Support)
 		}
-		fmt.Fprintf(os.Stdout, "%s: %s at %s [%s]\n", s.Name, state, s.SkillPath, s.Support)
+		if s.ConfigStatus != nil {
+			cs := s.ConfigStatus
+			if cs.Supported {
+				fmt.Fprintf(os.Stdout, "  config: %s at %s\n", cs.Status, cs.Path)
+			} else {
+				fmt.Fprintf(os.Stdout, "  config: unsupported\n")
+			}
+		}
 	}
 	return 0
 }
@@ -397,8 +438,18 @@ func BuildPlan(mode string, opts options) (Plan, error) {
 		switch mode {
 		case "install":
 			addInstallActions(&plan, target, opts.Scope)
+			if opts.WriteConfig {
+				if err := addConfigWriteAction(&plan, target, opts.Scope); err != nil {
+					return Plan{}, err
+				}
+			}
 		case "uninstall":
-			addUninstallActions(&plan, target, opts.Scope)
+			addUninstallActions(&plan, target, opts.Scope, opts.WriteConfig)
+			if opts.WriteConfig {
+				if err := addConfigRemoveAction(&plan, target, opts.Scope); err != nil {
+					return Plan{}, err
+				}
+			}
 		default:
 			return Plan{}, fmt.Errorf("unsupported mode %q", mode)
 		}
@@ -437,6 +488,20 @@ func ApplyPlan(plan Plan, opts options) error {
 				return err
 			}
 			action.Status = status
+		case "merge_config":
+			status, backup, err := writeMCPConfig(action.Target, action.Path, plan.Binary, plan.ConfigFile, action.Backup)
+			if err != nil {
+				return err
+			}
+			action.Status = status
+			action.Backup = backup
+		case "remove_config":
+			status, backup, err := removeMCPConfig(action.Target, action.Path, action.Backup)
+			if err != nil {
+				return err
+			}
+			action.Status = status
+			action.Backup = backup
 		case "config_snippet", "mcp_json", "shell_command", "stdio", "note":
 			if action.Status == "" {
 				action.Status = "informational"
@@ -503,6 +568,10 @@ func parseOptions(args []string, configPath string, uninstall bool) (options, er
 				return opts, fmt.Errorf("--force is not supported for uninstall")
 			}
 			opts.Force = true
+		case arg == "--write-config":
+			opts.WriteConfig = true
+		case arg == "--config-status":
+			opts.ConfigStatus = true
 		case arg == "--json":
 			opts.JSON = true
 		case arg == "--all":
@@ -611,7 +680,7 @@ func addInstallActions(plan *Plan, target Target, scope string) {
 	}
 }
 
-func addUninstallActions(plan *Plan, target Target, scope string) {
+func addUninstallActions(plan *Plan, target Target, scope string, writeConfig bool) {
 	if !target.Skill {
 		plan.Actions = append(plan.Actions, PlanAction{
 			Type:    "note",
@@ -634,11 +703,55 @@ func addUninstallActions(plan *Plan, target Target, scope string) {
 		Status:   "planned",
 		Message:  "Remove SourceMux routing skill file if manifest and hash prove it is generated by SourceMux.",
 	})
-	plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: MCP client config is not removed automatically in this MVP.", target.Name))
+	if !writeConfig {
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: MCP client config is not removed unless --write-config is passed.", target.Name))
+	}
 }
 
-func statusFor(target Target, scope string) TargetStatus {
-	status := TargetStatus{Name: target.Name, Support: target.Support, Scope: scope}
+func addConfigWriteAction(plan *Plan, target Target, scope string) error {
+	action, ok, err := planConfigWriteAction(target.Name, scope, plan.Binary, plan.ConfigFile)
+	if err != nil {
+		return fmt.Errorf("%s MCP config merge: %w", target.Name, err)
+	}
+	if !ok {
+		plan.Actions = append(plan.Actions, PlanAction{
+			Type:    "note",
+			Target:  target.Name,
+			Status:  "informational",
+			Message: "No verified safe MCP config writer exists for this target yet; no external agent CLI will be invoked.",
+		})
+		return nil
+	}
+	plan.Actions = append(plan.Actions, action)
+	return nil
+}
+
+func addConfigRemoveAction(plan *Plan, target Target, scope string) error {
+	action, ok, err := planConfigRemoveAction(target.Name, scope)
+	if err != nil {
+		return fmt.Errorf("%s MCP config removal: %w", target.Name, err)
+	}
+	if !ok {
+		plan.Actions = append(plan.Actions, PlanAction{
+			Type:    "note",
+			Target:  target.Name,
+			Status:  "informational",
+			Message: "No verified safe MCP config remover exists for this target yet; no external agent CLI will be invoked.",
+		})
+		return nil
+	}
+	plan.Actions = append(plan.Actions, action)
+	return nil
+}
+
+func statusFor(target Target, scope string, includeConfig bool, binary string, configPath string) (status TargetStatus) {
+	status = TargetStatus{Name: target.Name, Support: target.Support, Scope: scope}
+	defer func() {
+		if includeConfig {
+			cs := configStatusFor(target.Name, scope, binary, configPath)
+			status.ConfigStatus = &cs
+		}
+	}()
 	if !target.Skill {
 		status.Notes = append(status.Notes, "print-only target")
 		return status
@@ -1056,6 +1169,17 @@ func printPlan(plan Plan, asJSON bool) {
 			if action.Manifest != "" {
 				fmt.Fprintf(os.Stdout, "  manifest: %s\n", action.Manifest)
 			}
+			if action.Backup != "" {
+				fmt.Fprintf(os.Stdout, "  backup: %s\n", action.Backup)
+			}
+		case "merge_config", "remove_config":
+			fmt.Fprintf(os.Stdout, "- %s %s %s: %s\n", action.Target, action.Type, status, action.Path)
+			if action.Backup != "" {
+				fmt.Fprintf(os.Stdout, "  backup: %s\n", action.Backup)
+			}
+			if action.Message != "" {
+				fmt.Fprintf(os.Stdout, "  %s\n", action.Message)
+			}
 		case "mcp_json":
 			fmt.Fprintf(os.Stdout, "- %s MCP JSON (%s):\n%s\n", action.Target, status, action.MCPJSON)
 		case "shell_command":
@@ -1072,6 +1196,18 @@ func printPlan(plan Plan, asJSON bool) {
 		fmt.Fprintln(os.Stdout, "Warnings:")
 		for _, warning := range uniqueSorted(plan.Warnings) {
 			fmt.Fprintf(os.Stdout, "- %s\n", warning)
+		}
+	}
+}
+
+func printPreApplyBackupNotice(plan Plan) {
+	for _, action := range plan.Actions {
+		if action.Backup == "" || (action.Type != "merge_config" && action.Type != "remove_config") {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "%s %s will modify %s and create backup %s\n", action.Target, action.Type, action.Path, action.Backup)
+		if action.Message != "" {
+			fmt.Fprintf(os.Stderr, "%s\n", action.Message)
 		}
 	}
 }

@@ -717,6 +717,112 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 
 ---
 
+### Scenario: Installer safe MCP client config writers
+
+#### 1. Scope / Trigger
+
+- Trigger: adding or changing `sourcemux install` / `sourcemux uninstall` behavior that writes local AI-agent MCP client configuration.
+- Scope: installer config writers may edit local client config files only when the user explicitly passes `--write-config`; they must not run external agent CLIs or write provider API keys.
+
+#### 2. Signatures
+
+- Install:
+  - `sourcemux install <target...> [--scope project|user] [--binary <path>] [--config <path>] [--write-config] [--dry-run] [--json]`
+- Uninstall:
+  - `sourcemux uninstall <target...> [--scope project|user] [--write-config] [--dry-run] [--json]`
+- Status:
+  - `sourcemux install status [target...] [--scope project|user] [--binary <path>] [--config <path>] [--config-status] [--json]`
+- First supported file writers:
+  - Codex: project `.codex/config.toml`, user `~/.codex/config.toml`, entry `[mcp_servers.sourcemux]`
+  - Gemini: project `.gemini/settings.json`, user `~/.gemini/settings.json`, entry `mcpServers.sourcemux`
+  - OpenCode: project `opencode.json`, user `~/.config/opencode/opencode.json`, entry `mcp.sourcemux`
+
+#### 3. Contracts
+
+- Explicit opt-in:
+  - Without `--write-config`, install/uninstall may print snippets or warnings but must not modify MCP client config files.
+  - With `--write-config`, only verified file-based writers are allowed. Unsupported targets must not invoke external agent CLIs as a fallback.
+- Entry payload:
+  - Codex/Gemini write only command and args: `command=<sourcemux binary>`, `args=["--config", <active config path>]`.
+  - OpenCode writes local command form: `type="local"`, `command=[<sourcemux binary>, "--config", <active config path>]`, `enabled=true`.
+  - Agent config must never include provider API keys, endpoint secrets, or copied `sourcemux.json` contents.
+- Merge behavior:
+  - Preserve unrelated top-level keys and unrelated MCP entries.
+  - Matching `sourcemux` entries are idempotent and report `unchanged`.
+  - Drifted `sourcemux` entries may be updated automatically, but only after backup intent is visible to the user.
+  - Parent MCP containers (`mcp_servers`, `mcpServers`, `mcp`) must be object/table shaped; do not overwrite a non-object parent.
+- Backup and output:
+  - Before modifying an existing client config file, create a timestamped sibling backup.
+  - Human and JSON plans must include backup path/intent plus a clear rewrite warning. Non-dry-run must print the backup/rewrite notice before applying writes; keep JSON stdout parseable by sending human notices to stderr.
+  - `--dry-run` must show planned changes and backup intent without writing config files or backups.
+  - Config writers preserve config semantics, unrelated keys, and unrelated MCP entries; they do not guarantee preserving comments or original formatting. Codex TOML and OpenCode JSONC may be reserialized/reformatted, OpenCode JSONC may be emitted as JSON, and Gemini JSON formatting may change. Backups are the rollback path for formatting/comment recovery.
+- Uninstall:
+  - Remove only the `sourcemux` entry.
+  - Never delete the whole client config file, even if the MCP parent becomes empty.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| `--write-config` omitted | Do not write/remove client config files |
+| Unsupported target with `--write-config` | Emit informational action/warning; do not run external CLI |
+| Client config file missing | Create parent directory and config file with only the required `sourcemux` entry |
+| Existing matching `sourcemux` entry | Report `unchanged`; do not rewrite or create backup |
+| Existing drifted `sourcemux` entry | Plan update with backup path/reason and rewrite warning, create backup before write, then replace only that entry |
+| Existing config lacks `sourcemux` entry | Merge new entry, preserve unrelated keys, warn about reserialization/formatting, create backup first |
+| Malformed JSON/TOML/JSONC | Return clear parse error; do not write config or backup |
+| Parent MCP field is non-object | Return clear config-shape error; do not overwrite unrelated user data |
+| `sourcemux` child is non-object | Treat as drifted child; replacement/removal may affect only that child |
+| Uninstall with missing `sourcemux` entry | Report `unchanged`; do not delete file |
+| Any JSON output path | Keep machine-readable JSON on stdout; human backup notices go to stderr |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `sourcemux install gemini --write-config --dry-run --json` reports a `merge_config` action with backup intent for an existing settings file and creates no files.
+- Base: `sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json` creates `.codex/config.toml` with `[mcp_servers.sourcemux]`.
+- Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, or calling `gemini mcp add` from tests.
+
+#### 6. Tests Required
+
+- Install:
+  - Dry-run JSON does not write config or backups.
+  - Missing config creates the supported file and entry.
+  - Existing config preserves unrelated keys and unrelated MCP entries.
+  - Drifted entries update with a visible backup and backup file containing the original content.
+  - Matching entries are idempotent and do not create backups.
+- Uninstall:
+  - Removes only `sourcemux` and preserves the file plus unrelated config.
+  - Missing `sourcemux` entry is `unchanged`.
+- Status:
+  - `--config-status --json` reports supported/path/exists/entry_present/matches/drifted/status.
+- Error paths:
+  - Malformed JSON/TOML/JSONC leaves file unchanged and creates no backup.
+  - Non-object MCP parent leaves file unchanged and creates no backup.
+  - Unit tests use temp files and never depend on real Codex/Gemini/OpenCode/Claude CLIs.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```go
+root["mcpServers"] = map[string]any{
+	"sourcemux": desired,
+}
+_ = exec.Command("gemini", "mcp", "add", "sourcemux").Run()
+```
+
+Correct:
+
+```go
+parent, ok := root["mcpServers"].(map[string]any)
+if !ok && root["mcpServers"] != nil {
+	return fmt.Errorf("mcpServers must be an object")
+}
+parent["sourcemux"] = desired
+```
+
+---
+
 ### Scenario: Public-release repository hygiene
 
 #### 1. Scope / Trigger

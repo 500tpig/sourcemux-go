@@ -107,7 +107,8 @@ client config is not yet verified:
 ./sourcemux install list-agents
 ./sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 ./sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux install status
+./sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux install status --config-status
 ```
 
 Use `--json` for automation and `--force` to back up and replace an existing
@@ -115,6 +116,20 @@ generated skill. The installer does not write provider API keys into agent
 config; it only passes the selected config file path to the SourceMux binary.
 If you run the installer through `go run`, pass `--binary` so generated agent
 commands do not point at Go's temporary build artifact.
+
+Use `--write-config` when you want SourceMux to safely merge supported local
+MCP client config files instead of only printing snippets. The first safe
+writers are Codex (`.codex/config.toml` or `~/.codex/config.toml`), Gemini
+(`.gemini/settings.json` or `~/.gemini/settings.json`), and OpenCode
+(`opencode.json` or `~/.config/opencode/opencode.json`). Existing unrelated
+keys and unrelated MCP entries are preserved. Before modifying an existing
+file, SourceMux creates a timestamped backup so you can restore the previous
+client config; dry-runs show the backup intent but create no files. The current
+writers preserve config semantics, not comments or original formatting: Codex
+TOML, Gemini JSON, and OpenCode JSONC may be reserialized/reformatted, so
+backups are the rollback path. `sourcemux uninstall <target> --write-config`
+removes only the `sourcemux` MCP entry and never deletes the whole client
+config file.
 
 Generated skills include a `.sourcemux-install.json` manifest with a content
 hash. `sourcemux uninstall <target>` removes only files that still match that
