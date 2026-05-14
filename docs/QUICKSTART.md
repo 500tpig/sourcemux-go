@@ -116,6 +116,10 @@ config; it only passes the selected config file path to the SourceMux binary.
 If you run the installer through `go run`, pass `--binary` so generated agent
 commands do not point at Go's temporary build artifact.
 
+Generated skills include a `.sourcemux-install.json` manifest with a content
+hash. `sourcemux uninstall <target>` removes only files that still match that
+manifest; if you edited the generated skill, uninstall refuses to delete it.
+
 For first-tier targets, the dry-run/install plan also prints the official MCP
 setup command or config snippet:
 

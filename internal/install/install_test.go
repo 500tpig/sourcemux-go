@@ -84,6 +84,13 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated skill: %v", err)
 	}
+	manifest, err := readManifest(manifestPath(path))
+	if err != nil {
+		t.Fatalf("read generated manifest: %v", err)
+	}
+	if manifest.Target != "codex" || manifest.ContentSHA256 != contentSHA256(data) {
+		t.Fatalf("manifest = %+v, content hash = %s", manifest, contentSHA256(data))
+	}
 	text := string(data)
 	for _, want := range []string{"name: sourcemux-routing", "SourceMux routing", "custom.sourcemux.json"} {
 		if !strings.Contains(text, want) {
@@ -208,6 +215,84 @@ func TestUninstallRemovesGeneratedSkill(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("skill still exists after uninstall: %v", err)
 	}
+	if _, err := os.Stat(manifestPath(path)); !os.IsNotExist(err) {
+		t.Fatalf("manifest still exists after uninstall: %v", err)
+	}
+}
+
+func TestUninstallRefusesSkillWithoutManifest(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("user-authored skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := RunUninstall([]string{"codex"}, "sourcemux.json"); got != 1 {
+		t.Fatalf("RunUninstall(codex unmanaged) = %d, want 1", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("unmanaged skill was removed: %v", err)
+	}
+	if string(data) != "user-authored skill" {
+		t.Fatalf("unmanaged skill changed to %q", data)
+	}
+}
+
+func TestUninstallRefusesModifiedGeneratedSkill(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if got := RunInstall([]string{"codex"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex) = %d, want 0", got)
+	}
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	if err := os.WriteFile(path, []byte("locally modified generated skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := RunUninstall([]string{"codex"}, "sourcemux.json"); got != 1 {
+		t.Fatalf("RunUninstall(codex modified) = %d, want 1", got)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("modified skill should remain: %v", err)
+	}
+	if _, err := os.Stat(manifestPath(path)); err != nil {
+		t.Fatalf("manifest should remain: %v", err)
+	}
+}
+
+func TestStatusReportsManagedAndModifiedSkill(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if got := RunInstall([]string{"codex"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex) = %d, want 0", got)
+	}
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--json"}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status codex --json) = %d, want 0", got)
+		}
+	})
+	statuses := decodeStatuses(t, out)
+	if len(statuses) != 1 || !statuses[0].Installed || !statuses[0].Managed || statuses[0].Modified {
+		t.Fatalf("status after install = %+v", statuses)
+	}
+
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	if err := os.WriteFile(path, []byte("locally modified generated skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out = captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--json"}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status codex --json modified) = %d, want 0", got)
+		}
+	})
+	statuses = decodeStatuses(t, out)
+	if len(statuses) != 1 || !statuses[0].Modified {
+		t.Fatalf("status after modification = %+v", statuses)
+	}
 }
 
 func findAction(actions []PlanAction, target, actionType string) *PlanAction {
@@ -230,6 +315,15 @@ func containsAll(values, want []string) bool {
 		}
 	}
 	return true
+}
+
+func decodeStatuses(t *testing.T, out string) []TargetStatus {
+	t.Helper()
+	var statuses []TargetStatus
+	if err := json.Unmarshal([]byte(out), &statuses); err != nil {
+		t.Fatalf("decode statuses: %v\n%s", err, out)
+	}
+	return statuses
 }
 
 func chdir(t *testing.T, dir string) {

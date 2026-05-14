@@ -91,6 +91,10 @@ sourcemux install status
 Pass `--binary` when running from a source checkout or through `go run`; the
 path is embedded into generated MCP commands/snippets.
 
+Each generated skill directory gets a `.sourcemux-install.json` manifest. The
+manifest records the target and content hash, so `install status` can report
+managed/modified state and `uninstall` can refuse to remove user-edited files.
+
 The first implementation uses a two-tier support model:
 
 * full first-tier targets: `codex`, `claude-code`, `gemini`, `opencode`

@@ -206,6 +206,8 @@ sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./s
 `codex mcp add` / `config.toml`、Claude Code 的
 `claude mcp add --transport stdio`、Gemini CLI 的 `gemini mcp add` /
 `settings.json`，以及 OpenCode 的 `opencode.json` 配置片段。
+生成的 skill 目录会带 `.sourcemux-install.json` manifest；`uninstall`
+只删除 manifest hash 仍匹配的生成文件，避免误删用户改过的 skill。
 
 MCP 侧常用工具：
 
@@ -479,6 +481,9 @@ First-tier targets emit more specific official MCP setup guidance: Codex
 `codex mcp add` / `config.toml`, Claude Code
 `claude mcp add --transport stdio`, Gemini CLI `gemini mcp add` /
 `settings.json`, and OpenCode `opencode.json` snippets.
+Generated skill directories include a `.sourcemux-install.json` manifest;
+`uninstall` removes only generated files whose content still matches the
+manifest hash.
 
 MCP tools:
 
