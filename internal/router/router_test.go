@@ -95,7 +95,7 @@ func TestRouterStatusDistinguishesRateLimitAndTimeout(t *testing.T) {
 
 func TestRouterMatcherSkipsWithoutCallingProvider(t *testing.T) {
 	r := New(
-		matchingProvider{fakeProvider: fakeProvider{name: "context7", kind: capability.DocsSearch, content: "should not run"}, allowed: false},
+		matchingProvider{fakeProvider: fakeProvider{name: "docs-provider", kind: capability.DocsSearch, content: "should not run"}, allowed: false},
 		fakeProvider{name: "exa", kind: capability.DocsSearch, content: "docs"},
 	)
 

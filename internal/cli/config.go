@@ -68,16 +68,6 @@ type configNamedKeyOutput struct {
 	KeyStatus string `json:"key_status"`
 }
 
-type configContext7Output struct {
-	Name            string   `json:"name"`
-	APIURL          string   `json:"api_url"`
-	KeyStatus       string   `json:"key_status"`
-	Priority        int      `json:"priority,omitempty"`
-	LibraryScopes   []string `json:"library_scopes,omitempty"`
-	MonthlyBudget   int      `json:"monthly_budget,omitempty"`
-	CooldownSeconds int      `json:"cooldown_on_rate_limit_seconds,omitempty"`
-}
-
 type configListOutput struct {
 	Paths          configPathOutput `json:"paths"`
 	Version        int              `json:"version"`
@@ -93,8 +83,6 @@ type configListOutput struct {
 	ExaEnabled bool   `json:"exa_enabled"`
 	ExaAPIURL  string `json:"exa_api_url"`
 	ExaKey     string `json:"exa_key_status"`
-
-	Context7Endpoints []configContext7Output `json:"context7_endpoints"`
 
 	JinaAPIURL string `json:"jina_api_url"`
 	JinaKey    string `json:"jina_key_status"`
@@ -221,9 +209,6 @@ func buildV2ConfigMap(cfg *cfgpkg.Config) map[string]any {
 	if cfg.ExaEnabled && cfg.ExaAPIKey != "" {
 		docsProviders = append(docsProviders, exaProviderMap(cfg))
 	}
-	for _, ep := range cfg.Context7Endpoints {
-		docsProviders = append(docsProviders, context7ProviderMap(ep))
-	}
 
 	fetchProviders := []map[string]any{
 		{
@@ -287,19 +272,6 @@ func tinyFishProviderMap(cfg *cfgpkg.Config) map[string]any {
 		"searchURL": cfg.TinyFishSearchURL,
 		"fetchURL":  cfg.TinyFishFetchURL,
 		"enabled":   cfg.TinyFishEnabled,
-	}
-}
-
-func context7ProviderMap(ep engine.Context7Endpoint) map[string]any {
-	return map[string]any{
-		"type":                           "context7",
-		"name":                           ep.Name,
-		"apiURL":                         ep.APIURL,
-		"apiKey":                         ep.APIKey,
-		"priority":                       ep.Priority,
-		"library_scopes":                 ep.LibraryScopes,
-		"monthly_budget":                 ep.MonthlyBudget,
-		"cooldown_on_rate_limit_seconds": ep.CooldownSeconds,
 	}
 }
 
@@ -437,10 +409,6 @@ func runConfigList(args []string) int {
 	}
 	fmt.Printf("\nTavily: enabled=%v url=%s key=%s\n", out.TavilyEnabled, out.TavilyAPIURL, out.TavilyKey)
 	fmt.Printf("Exa:    enabled=%v url=%s key=%s\n", out.ExaEnabled, out.ExaAPIURL, out.ExaKey)
-	fmt.Printf("Context7 endpoints: %d\n", len(out.Context7Endpoints))
-	for i, ep := range out.Context7Endpoints {
-		fmt.Printf("  [%d] %s url=%s key=%s\n", i+1, ep.Name, ep.APIURL, ep.KeyStatus)
-	}
 	fmt.Printf("Jina:   url=%s key=%s\n", out.JinaAPIURL, out.JinaKey)
 	fmt.Printf("TinyFish: enabled=%v search=%s fetch=%s keys=%s\n",
 		out.TinyFishEnabled, out.TinyFishSearchURL, out.TinyFishFetchURL, formatNamedKeyStatuses(out.TinyFishKeys))
@@ -537,17 +505,6 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		out.TinyFishKeys = append(out.TinyFishKeys, configNamedKeyOutput{
 			Name:      key.Name,
 			KeyStatus: keyStatus(key.APIKey),
-		})
-	}
-	for _, ep := range cfg.Context7Endpoints {
-		out.Context7Endpoints = append(out.Context7Endpoints, configContext7Output{
-			Name:            ep.Name,
-			APIURL:          ep.APIURL,
-			KeyStatus:       keyStatus(ep.APIKey),
-			Priority:        ep.Priority,
-			LibraryScopes:   ep.LibraryScopes,
-			MonthlyBudget:   ep.MonthlyBudget,
-			CooldownSeconds: ep.CooldownSeconds,
 		})
 	}
 	return out

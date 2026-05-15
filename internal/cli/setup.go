@@ -19,7 +19,6 @@ type setupConfigFile struct {
 	GrokEndpoints      []engine.GrokEndpoint `json:"grokEndpoints"`
 	Tavily             *setupServiceConfig   `json:"tavily,omitempty"`
 	Exa                *setupServiceConfig   `json:"exa,omitempty"`
-	Context7           *setupServiceConfig   `json:"context7,omitempty"`
 	Jina               *setupServiceConfig   `json:"jina,omitempty"`
 	TinyFish           *setupTinyFishConfig  `json:"tinyfish,omitempty"`
 	GrokPoolTimeoutSec int                   `json:"grokPoolTimeoutSec,omitempty"`
@@ -44,7 +43,6 @@ type setupOutput struct {
 	Endpoint     configEndpointOutput   `json:"endpoint"`
 	TavilyKey    string                 `json:"tavily_key_status,omitempty"`
 	ExaKey       string                 `json:"exa_key_status,omitempty"`
-	Context7Key  string                 `json:"context7_key_status,omitempty"`
 	JinaKey      string                 `json:"jina_key_status,omitempty"`
 	TinyFishKeys []configNamedKeyOutput `json:"tinyfish_keys,omitempty"`
 	NextSteps    []string               `json:"next_steps"`
@@ -65,7 +63,6 @@ type setupOptions struct {
 
 	TavilyKey     string
 	ExaKey        string
-	Context7Key   string
 	JinaKey       string
 	TinyFishKeys  string
 	TinyFishNames string
@@ -87,7 +84,6 @@ func runSetup(args []string) int {
 	fs.StringVar(&opts.ResponseTools, "response-tools", "", "Comma-separated Responses API tools, e.g. web_search,x_search")
 	fs.StringVar(&opts.TavilyKey, "tavily-key", "", "Optional Tavily API key")
 	fs.StringVar(&opts.ExaKey, "exa-key", "", "Optional Exa API key")
-	fs.StringVar(&opts.Context7Key, "context7-key", "", "Optional Context7 API key")
 	fs.StringVar(&opts.JinaKey, "jina-key", "", "Optional Jina API key")
 	fs.StringVar(&opts.TinyFishKeys, "tinyfish-keys", "", "Optional comma-separated TinyFish API keys")
 	fs.StringVar(&opts.TinyFishNames, "tinyfish-key-names", "", "Optional comma-separated TinyFish key display names")
@@ -112,9 +108,6 @@ func runSetup(args []string) int {
 	fmt.Fprintf(os.Stdout, "Wrote config: %s\n", out.ConfigFile)
 	fmt.Fprintf(os.Stdout, "Endpoint: %s (%s, %s, key=%s)\n",
 		out.Endpoint.Name, out.Endpoint.BaseURL, out.Endpoint.Model, out.Endpoint.KeyStatus)
-	if out.Context7Key != "" {
-		fmt.Fprintf(os.Stdout, "Context7: key=%s\n", out.Context7Key)
-	}
 	for _, step := range out.NextSteps {
 		fmt.Fprintf(os.Stdout, "- %s\n", step)
 	}
@@ -194,10 +187,6 @@ func promptSetupOptions(opts *setupOptions, in io.Reader, out io.Writer) error {
 	}
 	fmt.Fprintln(out, "\nDocs provider keys (optional)")
 	opts.ExaKey, err = promptString(reader, out, "Exa API key", opts.ExaKey, false)
-	if err != nil {
-		return err
-	}
-	opts.Context7Key, err = promptString(reader, out, "Context7 API key", opts.Context7Key, false)
 	if err != nil {
 		return err
 	}
@@ -321,10 +310,6 @@ func buildSetupConfig(opts setupOptions) setupConfigFile {
 		enabled := true
 		cfg.Exa = &setupServiceConfig{APIURL: "https://api.exa.ai", APIKey: key, Enabled: &enabled}
 	}
-	if key := strings.TrimSpace(opts.Context7Key); key != "" {
-		enabled := true
-		cfg.Context7 = &setupServiceConfig{APIURL: engine.DefaultContext7APIURL, APIKey: key, Enabled: &enabled}
-	}
 	if key := strings.TrimSpace(opts.JinaKey); key != "" {
 		cfg.Jina = &setupServiceConfig{APIURL: "https://r.jina.ai", APIKey: key}
 	}
@@ -393,9 +378,6 @@ func buildSetupOutput(path string, cfg setupConfigFile) setupOutput {
 	}
 	if cfg.Exa != nil {
 		out.ExaKey = keyStatus(cfg.Exa.APIKey)
-	}
-	if cfg.Context7 != nil {
-		out.Context7Key = keyStatus(cfg.Context7.APIKey)
 	}
 	if cfg.Jina != nil {
 		out.JinaKey = keyStatus(cfg.Jina.APIKey)

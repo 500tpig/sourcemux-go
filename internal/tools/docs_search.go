@@ -17,9 +17,8 @@ import (
 const mcpDocsSearchExcerptRunes = 1600
 
 type DocsSearchClients struct {
-	Context7 []*engine.Context7Client
-	Exa      *engine.ExaClient
-	Cache    SourceCacher
+	Exa   *engine.ExaClient
+	Cache SourceCacher
 }
 
 type DocsSearchResult struct {
@@ -34,34 +33,21 @@ type DocsSearchResult struct {
 	RouteTrace   router.RouteTrace `json:"route_trace,omitempty"`
 }
 
-func RegisterDocsSearch(s *mcpserver.MCPServer, context7 []*engine.Context7Client, exa *engine.ExaClient, cache SourceCacher) {
+func RegisterDocsSearch(s *mcpserver.MCPServer, exa *engine.ExaClient, cache SourceCacher) {
 	tool := mcp.NewTool("docs_search",
-		mcp.WithDescription("Search documentation sources. Explicit library_id or library_name requests try Context7 first, then fall back to Exa docs search when configured."),
+		mcp.WithDescription("Search documentation sources through the configured Exa docs/web search fallback."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Documentation question or task")),
-		mcp.WithString("library_id", mcp.Description("Optional Context7-compatible library ID, e.g. /vercel/next.js")),
-		mcp.WithString("library_name", mcp.Description("Optional library name to resolve with Context7, e.g. next.js")),
-		mcp.WithString("provider", mcp.Description("Optional named Context7 provider instance")),
-		mcp.WithBoolean("fast", mcp.Description("Use Context7 fast mode when Context7 is applicable")),
 		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
 	)
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query, _ := req.Params.Arguments["query"].(string)
-		libraryID, _ := req.Params.Arguments["library_id"].(string)
-		libraryName, _ := req.Params.Arguments["library_name"].(string)
-		provider, _ := req.Params.Arguments["provider"].(string)
-		fast := boolArgOr(req.Params.Arguments, "fast", false)
 		includeTrace := boolArgOr(req.Params.Arguments, "include_trace", false)
 
 		res, err := RunDocsSearch(ctx, DocsSearchClients{
-			Context7: context7,
-			Exa:      exa,
-			Cache:    cache,
+			Exa:   exa,
+			Cache: cache,
 		}, DocsSearchOptions{
-			Query:       query,
-			LibraryID:   libraryID,
-			LibraryName: libraryName,
-			Provider:    provider,
-			Fast:        fast,
+			Query: query,
 		})
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -77,11 +63,7 @@ func RegisterDocsSearch(s *mcpserver.MCPServer, context7 []*engine.Context7Clien
 }
 
 type DocsSearchOptions struct {
-	Query       string
-	LibraryID   string
-	LibraryName string
-	Provider    string
-	Fast        bool
+	Query string
 }
 
 func RunDocsSearch(ctx context.Context, clients DocsSearchClients, opts DocsSearchOptions) (*DocsSearchResult, error) {
@@ -92,12 +74,6 @@ func RunDocsSearch(ctx context.Context, clients DocsSearchClients, opts DocsSear
 	r := router.New(docsSearchProviders(clients)...)
 	res, trace := r.Run(ctx, capability.DocsSearch, capability.Request{
 		Query: query,
-		Options: map[string]any{
-			"library_id":   strings.TrimSpace(opts.LibraryID),
-			"library_name": strings.TrimSpace(opts.LibraryName),
-			"provider":     strings.TrimSpace(opts.Provider),
-			"fast":         opts.Fast,
-		},
 	})
 	if strings.TrimSpace(res.Content) == "" {
 		if detail := firstFailureDetail(trace); detail != "" {
@@ -151,9 +127,6 @@ func FormatDocsSearchResult(res *DocsSearchResult) string {
 
 func docsSearchProviders(clients DocsSearchClients) []capability.Provider {
 	var providers []capability.Provider
-	if len(clients.Context7) > 0 {
-		providers = append(providers, adapters.NewContext7Docs(clients.Context7))
-	}
 	if clients.Exa != nil {
 		providers = append(providers, adapters.NewExaDocsSearch(clients.Exa))
 	}

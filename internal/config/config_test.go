@@ -285,9 +285,7 @@ func TestLoadFile_V2CapabilitiesDeriveFlatView(t *testing.T) {
 	    },
 	    "docs_search": {
 	      "providers": [
-	        {"type": "exa", "name": "exa-main", "apiURL": "https://exa.test", "apiKey": "exa-test"},
-	        {"type": "context7", "name": "context7-main", "apiURL": "https://context7.test", "apiKey": "ctx7-test", "library_scopes": ["/vercel/*"]},
-	        {"type": "context7", "name": "context7-empty", "apiURL": "https://context7-empty.test", "apiKey": ""}
+	        {"type": "exa", "name": "exa-main", "apiURL": "https://exa.test", "apiKey": "exa-test"}
 	      ]
 	    },
 	    "web_fetch": {
@@ -313,12 +311,6 @@ func TestLoadFile_V2CapabilitiesDeriveFlatView(t *testing.T) {
 	}
 	if cfg.ExaAPIURL != "https://exa.test" || cfg.ExaAPIKey != "exa-test" {
 		t.Fatalf("exa = %q %q", cfg.ExaAPIURL, cfg.ExaAPIKey)
-	}
-	if len(cfg.Context7Endpoints) != 1 || cfg.Context7Endpoints[0].Name != "context7-main" || cfg.Context7Endpoints[0].APIKey != "ctx7-test" {
-		t.Fatalf("context7 = %+v", cfg.Context7Endpoints)
-	}
-	if len(cfg.Context7Endpoints[0].LibraryScopes) != 1 || cfg.Context7Endpoints[0].LibraryScopes[0] != "/vercel/*" {
-		t.Fatalf("context7 scopes = %+v", cfg.Context7Endpoints[0].LibraryScopes)
 	}
 	if cfg.JinaAPIURL != "https://jina.test" {
 		t.Fatalf("jina = %q", cfg.JinaAPIURL)

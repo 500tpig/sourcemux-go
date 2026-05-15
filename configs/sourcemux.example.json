@@ -18,11 +18,6 @@
     "apiKey": "exa-your-key",
     "enabled": true
   },
-  "context7": {
-    "apiURL": "https://context7.com",
-    "apiKey": "ctx7sk-your-key",
-    "enabled": true
-  },
   "jina": {
     "apiURL": "https://r.jina.ai",
     "apiKey": ""
