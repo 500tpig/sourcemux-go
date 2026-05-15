@@ -12,6 +12,12 @@
 *.out
 coverage.txt
 
+# Release artifacts
+/dist/
+sourcemux_*.tar.gz
+grok-search_*.tar.gz
+checksums.txt
+
 # IDE
 .idea/
 .vscode/
