@@ -44,7 +44,7 @@ go build ./...
 
 ```bash
 go build -o sourcemux ./cmd/sourcemux
-./sourcemux cli --config ./sourcemux.json config list --json
-./sourcemux cli --config ./sourcemux.json search "example query" --json
-./sourcemux cli --config ./sourcemux.json research "example research task" --depth standard --json
+./sourcemux --config ./sourcemux.json config list --json
+./sourcemux --config ./sourcemux.json search "example query" --json
+./sourcemux --config ./sourcemux.json research "example research task" --depth standard --json
 ```
