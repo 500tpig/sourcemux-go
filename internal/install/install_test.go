@@ -130,7 +130,7 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"name: sourcemux-routing",
 		"SourceMux routing",
 		"custom.sourcemux.json",
-		"cli --config",
+		"--config",
 		"Capability routing",
 		"Evidence policy",
 		"search \"query\" --platform Twitter --json",
@@ -671,6 +671,43 @@ func TestUninstallRefusesSkillWithoutManifest(t *testing.T) {
 	}
 	if string(data) != "user-authored skill" {
 		t.Fatalf("unmanaged skill changed to %q", data)
+	}
+}
+
+func TestUninstallForceBacksUpSkillWithoutManifest(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unmanaged := []byte("legacy generated skill without manifest")
+	if err := os.WriteFile(path, unmanaged, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if got := RunUninstall([]string{"codex", "--force", "--json"}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunUninstall(codex unmanaged --force) = %d, want 0", got)
+		}
+	})
+	var plan Plan
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, out)
+	}
+	action := findAction(plan.Actions, "codex", "remove_file")
+	if action == nil || action.Status != "removed-with-backup" || action.Backup == "" {
+		t.Fatalf("force unmanaged remove action = %+v", action)
+	}
+	backupData, err := os.ReadFile(action.Backup)
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if string(backupData) != string(unmanaged) {
+		t.Fatalf("backup = %q, want unmanaged skill", backupData)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unmanaged skill should be removed after force backup: %v", err)
 	}
 }
 

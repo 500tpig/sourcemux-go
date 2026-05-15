@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,6 +74,60 @@ func TestRunTopLevelInstallDryRun(t *testing.T) {
 	})
 	if !json.Valid([]byte(out)) {
 		t.Fatalf("install output is not JSON: %s", out)
+	}
+	if _, err := os.Stat(".agents/skills/sourcemux-routing/SKILL.md"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote skill file: %v", err)
+	}
+}
+
+func TestRunTopLevelSetupHelpDoesNotLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if got := Run([]string{"setup", "--help"}); got != 0 {
+		t.Fatalf("Run(setup --help) = %d, want 0", got)
+	}
+}
+
+func TestRunTopLevelConfigPathUsesGlobalConfig(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	path := filepath.Join(dir, "custom.sourcemux.json")
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "config", "path", "--json"}); got != 0 {
+			t.Fatalf("Run(--config path config path --json) = %d, want 0", got)
+		}
+	})
+	if !strings.Contains(out, path) {
+		t.Fatalf("config path output missing %q in %s", path, out)
+	}
+}
+
+func TestRunTopLevelSearchRoutesToCLI(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"search", "hello", "--json"}); got != 1 {
+			t.Fatalf("Run(search hello --json) = %d, want 1 for missing config", got)
+		}
+	})
+	if !strings.Contains(out, "config file not found") {
+		t.Fatalf("search output did not come from CLI config handling: %s", out)
+	}
+}
+
+func TestRunTopLevelBootstrapDryRun(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"bootstrap", "codex", "--dry-run", "--json"}); got != 0 {
+			t.Fatalf("Run(bootstrap codex --dry-run --json) = %d, want 0", got)
+		}
+	})
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("bootstrap output is not JSON: %s", out)
+	}
+	if !strings.Contains(out, `"target": "codex"`) {
+		t.Fatalf("bootstrap output missing codex action: %s", out)
 	}
 	if _, err := os.Stat(".agents/skills/sourcemux-routing/SKILL.md"); !os.IsNotExist(err) {
 		t.Fatalf("dry-run wrote skill file: %v", err)

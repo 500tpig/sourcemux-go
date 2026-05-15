@@ -12,7 +12,7 @@ import (
 	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
-const configUsage = `Usage: sourcemux cli config <command> [flags]
+const configUsage = `Usage: sourcemux config <command> [flags]
 
 Commands:
   path               Show the active config file path.
@@ -25,10 +25,10 @@ Flags:
   --help, -h         Show this usage.
 
 Examples:
-  sourcemux cli config path
-  sourcemux cli --config ./prod.sourcemux.json config path --json
-  sourcemux cli config files --json
-  sourcemux cli config list --json
+  sourcemux config path
+  sourcemux --config ./prod.sourcemux.json config path --json
+  sourcemux config files --json
+  sourcemux config list --json
 `
 
 type configPathOutput struct {
@@ -534,9 +534,9 @@ func reportConfigErr(jsonOut bool, message string) int {
 
 func scopedConfigCLICommand(path, command string) string {
 	if strings.TrimSpace(path) == "" || path == cfgpkg.DefaultConfigPath() {
-		return "sourcemux cli " + command
+		return "sourcemux " + command
 	}
-	return "sourcemux cli --config " + shellQuote(path) + " " + command
+	return "sourcemux --config " + shellQuote(path) + " " + command
 }
 
 func formatNamedKeyStatuses(keys []configNamedKeyOutput) string {

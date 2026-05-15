@@ -4,7 +4,7 @@ This document is for maintainers deploying the binary or connecting MCP clients.
 
 ## Runtime modes
 
-- CLI mode: `sourcemux cli <command>`
+- CLI mode: `sourcemux <command>`; `sourcemux cli <command>` remains a compatibility path.
 - MCP server mode: `sourcemux` over stdio
 
 Both modes use the same engine code and the same single config file.
@@ -100,10 +100,10 @@ claude mcp add-json sourcemux '{
 CLI:
 
 ```bash
-./sourcemux cli --config /path/to/sourcemux.json config list --json
-./sourcemux cli --config /path/to/sourcemux.json doctor --json
-./sourcemux cli --config /path/to/sourcemux.json search "What is today's date?" --json
-./sourcemux cli --config /path/to/sourcemux.json fetch "https://example.com" --json
+./sourcemux --config /path/to/sourcemux.json config list --json
+./sourcemux --config /path/to/sourcemux.json doctor --json
+./sourcemux --config /path/to/sourcemux.json search "What is today's date?" --json
+./sourcemux --config /path/to/sourcemux.json fetch "https://example.com" --json
 ```
 
 MCP:
@@ -131,7 +131,7 @@ Expected behavior:
 Check the active path:
 
 ```bash
-./sourcemux cli --config /path/to/sourcemux.json config path
+./sourcemux --config /path/to/sourcemux.json config path
 ```
 
 Create the file with `setup` or copy an example config.
@@ -141,7 +141,7 @@ Create the file with `setup` or copy an example config.
 The active config has no search-capable endpoint. Check:
 
 ```bash
-./sourcemux cli --config /path/to/sourcemux.json config list --json
+./sourcemux --config /path/to/sourcemux.json config list --json
 ```
 
 Provider-only configs can still support some direct provider commands, but `web_search` needs a configured search route or fallback provider keys.

@@ -20,7 +20,11 @@ const (
 	skillName    = "sourcemux-routing"
 )
 
-const installUsage = `Usage: sourcemux install <target...> [flags]
+const installUsage = `Usage: sourcemux bootstrap <target...> [flags]
+       sourcemux bootstrap update <target...> [flags]
+       sourcemux bootstrap list-agents [--json]
+       sourcemux bootstrap status [target...] [--scope project|user] [--config-status] [--json]
+       sourcemux install <target...> [flags]
        sourcemux install update <target...> [flags]
        sourcemux install list-agents [--json]
        sourcemux install status [target...] [--scope project|user] [--config-status] [--json]
@@ -41,11 +45,11 @@ Flags:
   --help, -h          Show this usage.
 
 Examples:
-  sourcemux install list-agents
-  sourcemux install codex claude-code --scope user --config ~/.config/sourcemux/sourcemux.json
-  sourcemux install update codex --config ~/.config/sourcemux/sourcemux.json
-  sourcemux install --agent codex --agent opencode --dry-run --json
-  sourcemux install --all --dry-run
+  sourcemux bootstrap list-agents
+  sourcemux bootstrap codex claude-code --scope user --config ~/.config/sourcemux/sourcemux.json
+  sourcemux bootstrap update codex --config ~/.config/sourcemux/sourcemux.json
+  sourcemux bootstrap --agent codex --agent opencode --dry-run --json
+  sourcemux bootstrap --all --dry-run
 `
 
 const uninstallUsage = `Usage: sourcemux uninstall <target...> [flags]
@@ -56,9 +60,15 @@ Flags:
   --scope <scope>     Install scope: project or user (default: project).
   --write-config      Safely remove supported SourceMux MCP config entries.
   --dry-run           Print planned removals without deleting files.
-  --force             Back up and remove modified SourceMux-managed generated skill files.
+  --force             Back up and remove modified or unmanaged generated skill files.
   --json              Emit machine-readable JSON.
   --help, -h          Show this usage.
+
+Examples:
+  sourcemux uninstall --all --scope user --write-config --dry-run
+  sourcemux uninstall --all --scope user --write-config --force
+  sourcemux uninstall codex --scope project --write-config
+  sourcemux uninstall codex --scope project --force
 `
 
 type SupportLevel string
@@ -1121,14 +1131,14 @@ Use SourceMux as the default web research capability.
 
 ## CLI examples
 
-%s cli %s search "query" --json
-%s cli %s search "query" --platform Twitter --json
-%s cli %s fetch "https://example.com" --json
-%s cli %s docs-search "library or API question" --json
-%s cli %s exa-search "official docs API reference" --type deep --json
-%s cli %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-%s cli %s plan "research question" --depth standard
-%s cli %s research "topic" --depth standard --json
+%s %s search "query" --json
+%s %s search "query" --platform Twitter --json
+%s %s fetch "https://example.com" --json
+%s %s docs-search "library or API question" --json
+%s %s exa-search "official docs API reference" --type deep --json
+%s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+%s %s plan "research question" --depth standard
+%s %s research "topic" --depth standard --json
 `, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
 }
 
@@ -1190,6 +1200,14 @@ func removeGeneratedSkill(path, target string, force bool) (string, string, erro
 		if errors.Is(err, os.ErrNotExist) {
 			if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 				return "missing", "", nil
+			}
+			if force {
+				backup := plannedBackupPath(path)
+				if err := os.Rename(path, backup); err != nil {
+					return "", "", fmt.Errorf("backup %s: %w", path, err)
+				}
+				_ = os.Remove(filepath.Dir(path))
+				return "removed-with-backup", backup, nil
 			}
 			return "", "", fmt.Errorf("refusing to remove %s without SourceMux manifest", path)
 		}

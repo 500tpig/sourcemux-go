@@ -356,9 +356,9 @@ func buildSetupOutput(path string, cfg setupConfigFile) setupOutput {
 	out := setupOutput{
 		ConfigFile: path,
 		NextSteps: []string{
-			fmt.Sprintf("Run `sourcemux cli%s config list --json` to inspect masked effective config.", configFlag),
-			fmt.Sprintf("Run `sourcemux cli%s doctor --json` to verify local config structure without provider requests.", configFlag),
-			fmt.Sprintf("Run `sourcemux cli%s search \"test query\" --json` to test search.", configFlag),
+			fmt.Sprintf("Run `sourcemux%s config list --json` to inspect masked effective config.", configFlag),
+			fmt.Sprintf("Run `sourcemux%s doctor --json` to verify local config structure without provider requests.", configFlag),
+			fmt.Sprintf("Run `sourcemux%s search \"test query\" --json` to test search.", configFlag),
 		},
 	}
 	if len(cfg.GrokEndpoints) > 0 {
@@ -410,14 +410,14 @@ func reportSetupErr(jsonOut bool, message string) int {
 		_ = enc.Encode(map[string]any{
 			"error": message,
 			"next_steps": []string{
-				"Run `sourcemux cli setup --help` for available flags.",
-				"Run `sourcemux cli config path` to inspect the target path.",
+				"Run `sourcemux setup --help` for available flags.",
+				"Run `sourcemux config path` to inspect the target path.",
 			},
 		})
 		return 1
 	}
 	fmt.Fprintln(os.Stderr, message)
-	fmt.Fprintln(os.Stderr, "- Run `sourcemux cli setup --help` for available flags.")
-	fmt.Fprintln(os.Stderr, "- Run `sourcemux cli config path` to inspect the target path.")
+	fmt.Fprintln(os.Stderr, "- Run `sourcemux setup --help` for available flags.")
+	fmt.Fprintln(os.Stderr, "- Run `sourcemux config path` to inspect the target path.")
 	return 1
 }

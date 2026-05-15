@@ -206,7 +206,7 @@ func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
 		t.Fatalf("notes = %+v", parsed.Notes)
 	}
 	notes := strings.Join(parsed.Notes, "\n")
-	if !strings.Contains(notes, "sourcemux cli --config") || !strings.Contains(notes, path) {
+	if !strings.Contains(notes, "sourcemux --config") || !strings.Contains(notes, path) {
 		t.Fatalf("custom-path setup note missing: %+v", parsed.Notes)
 	}
 }
@@ -322,7 +322,7 @@ func TestConfigListMissingConfigReportsNextSteps(t *testing.T) {
 			t.Fatalf("Run(config list --json) = %d, want 1", got)
 		}
 	})
-	for _, want := range []string{`"error"`, `"next_steps"`, "config file not found", "sourcemux cli --config", path, "setup"} {
+	for _, want := range []string{`"error"`, `"next_steps"`, "config file not found", "sourcemux --config", path, "setup"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %s", want, out)
 		}

@@ -48,6 +48,15 @@ It also publishes:
 * Homebrew cask in `500tpig/homebrew-tap`
 * Scoop manifest in `500tpig/scoop-bucket`
 
+Until this release exists and the tap is updated, users should build from
+source. `brew install sourcemux` only works if SourceMux is later accepted into
+Homebrew core; the release tap path is:
+
+```bash
+brew tap 500tpig/tap
+brew install --cask sourcemux
+```
+
 ## Local validation
 
 If GoReleaser is installed:

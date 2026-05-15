@@ -24,6 +24,9 @@ brew tap 500tpig/tap
 brew install --cask sourcemux
 ```
 
+Do not use plain `brew install sourcemux` unless SourceMux has also been
+accepted into Homebrew core; the project release path is the tap/cask above.
+
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
@@ -39,12 +42,15 @@ If you are migrating from `grok-search`, use `sourcemux` for new commands and
 rename `grok-search.json` to `sourcemux.json` or pass the old file explicitly
 with `--config`.
 
+If you previously installed SourceMux agent skills or MCP config entries, see
+[`UNINSTALL.md`](UNINSTALL.md) for the cleanup and reinstall flow.
+
 ## 2. Create config
 
 The recommended path is the setup command:
 
 ```bash
-./sourcemux cli setup --non-interactive \
+./sourcemux setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -54,7 +60,7 @@ The recommended path is the setup command:
 For a native xAI Responses API endpoint with both web and X search tools:
 
 ```bash
-./sourcemux cli setup --non-interactive \
+./sourcemux setup --non-interactive \
   --api-url "https://api.x.ai/v1" \
   --api-key "sk-your-xai-key" \
   --model "grok-4.20-fast" \
@@ -76,9 +82,9 @@ Then edit placeholders. Never commit `sourcemux.json`.
 ## 3. Verify config
 
 ```bash
-./sourcemux cli config path
-./sourcemux cli config list --json
-./sourcemux cli doctor --json
+./sourcemux config path
+./sourcemux config list --json
+./sourcemux doctor --json
 ```
 
 `config list` masks secrets and does not probe the network. `doctor` is local-only by default; use `doctor --probe` or `probe` only when you explicitly want live provider checks.
@@ -86,14 +92,14 @@ Then edit placeholders. Never commit `sourcemux.json`.
 ## 4. Run CLI commands
 
 ```bash
-./sourcemux cli search "latest Go release notes" --json
-./sourcemux cli search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
-./sourcemux cli docs-search "next.js middleware auth" --json
-./sourcemux cli exa-search "OpenAI Responses API reference" --type deep --json
-./sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-./sourcemux cli fetch "https://example.com" --json
-./sourcemux cli plan "Evaluate current Go module proxy behavior" --depth standard
-./sourcemux cli research "Evaluate the current status of Go modules" --depth standard --json
+./sourcemux search "latest Go release notes" --json
+./sourcemux search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
+./sourcemux docs-search "next.js middleware auth" --json
+./sourcemux exa-search "OpenAI Responses API reference" --type deep --json
+./sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+./sourcemux fetch "https://example.com" --json
+./sourcemux plan "Evaluate current Go module proxy behavior" --depth standard
+./sourcemux research "Evaluate the current status of Go modules" --depth standard --json
 ```
 
 Use `search --platform Twitter` for freshness/community discovery, `docs-search`
@@ -108,12 +114,12 @@ MCP setup guidance only when you pass `--write-config` or explicitly select
 `mcp-json` / `stdio`:
 
 ```bash
-./sourcemux install list-agents
-./sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
-./sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux install status --config-status
+./sourcemux bootstrap list-agents
+./sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux bootstrap status --config-status
 ```
 
 Without `--write-config`, generated CLI examples include the configured
@@ -140,10 +146,11 @@ removes only the `sourcemux` MCP entry and never deletes the whole client
 config file.
 
 Generated skills include a `.sourcemux-install.json` manifest with a content
-hash. `sourcemux install update <target>` refreshes unmodified generated skills.
+hash. `sourcemux bootstrap update <target>` refreshes unmodified generated skills.
 `sourcemux uninstall <target>` removes only files that still match that
 manifest; if you edited the generated skill, uninstall refuses to delete it
-unless you pass `--force`, which backs up the modified skill first.
+unless you pass `--force`, which backs up the modified or pre-manifest skill
+first.
 
 For first-tier targets, the dry-run/install plan also prints the official MCP
 setup command or config snippet:

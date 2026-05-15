@@ -23,8 +23,16 @@ var buildInfo = VersionInfo{Version: "dev", Commit: "none", Date: "unknown"}
 const usage = `Usage: sourcemux [--config <path>] <command>
 
 Commands:
-  cli <command>       Run one-shot CLI commands.
-  install <target>    Install or update generated agent skills/MCP config.
+  setup               Create sourcemux.json without hand-editing JSON.
+  doctor              Check config locally; use --probe for live provider probes.
+  search <query>      Run a web search through configured fallbacks.
+  fetch <url>         Fetch a URL as Markdown through configured fallbacks.
+  docs-search <query> Search documentation/source pages.
+  research <query>    Run a bounded research workflow.
+  config <command>    Inspect the active config path or masked config.
+  bootstrap <target>  Install or update generated agent skills/MCP config.
+  cli <command>       Compatibility path for one-shot CLI commands.
+  install <target>    Compatibility path for bootstrap.
   uninstall <target>  Remove generated SourceMux skills/MCP config.
   version             Print version information.
 
@@ -55,6 +63,12 @@ func Run(args []string) int {
 	if len(args) > 0 && args[0] == "cli" {
 		return cli.RunWithConfig(args[1:], configPath)
 	}
+	if len(args) > 0 && isTopLevelCLICommand(args[0]) {
+		return cli.RunWithConfig(args, configPath)
+	}
+	if len(args) > 0 && args[0] == "bootstrap" {
+		return install.RunInstall(args[1:], configPath)
+	}
 	if len(args) > 0 && args[0] == "install" {
 		return install.RunInstall(args[1:], configPath)
 	}
@@ -76,6 +90,30 @@ func Run(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func isTopLevelCLICommand(cmd string) bool {
+	switch cmd {
+	case "search",
+		"docs-search",
+		"fetch",
+		"exa-search",
+		"exa-contents",
+		"map",
+		"crawl",
+		"doctor",
+		"probe",
+		"config",
+		"setup",
+		"smoke",
+		"plan",
+		"research",
+		"smart-answer",
+		"tinyfish-bench":
+		return true
+	default:
+		return false
+	}
 }
 
 func printVersion(args []string) int {

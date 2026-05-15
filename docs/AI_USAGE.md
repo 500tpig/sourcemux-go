@@ -71,15 +71,15 @@ Use CLI when the workflow should be reproducible or the result may be large:
 Typical commands:
 
 ```bash
-sourcemux cli search "query" --json
-sourcemux cli search "query" --platform Twitter --json
-sourcemux cli docs-search "library or API question" --json
-sourcemux cli exa-search "official docs API reference" --type deep --json
-sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-sourcemux cli fetch "https://example.com" --json
-sourcemux cli plan "research question" --depth standard
-sourcemux cli research "topic" --depth standard --json
-sourcemux cli smart-answer "question" --depth standard --json
+sourcemux search "query" --json
+sourcemux search "query" --platform Twitter --json
+sourcemux docs-search "library or API question" --json
+sourcemux exa-search "official docs API reference" --type deep --json
+sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+sourcemux fetch "https://example.com" --json
+sourcemux plan "research question" --depth standard
+sourcemux research "topic" --depth standard --json
+sourcemux smart-answer "question" --depth standard --json
 ```
 
 ### Capability selection for generated skills
@@ -109,12 +109,12 @@ Evidence policy:
 Use the installer first when possible:
 
 ```bash
-sourcemux install list-agents
-sourcemux install codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
-sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install status --config-status
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
+sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap status --config-status
 ```
 
 Pass `--binary` when running from a source checkout or through `go run`. The
@@ -123,10 +123,10 @@ examples. Without `--write-config`, generated skills are CLI-first and should
 not tell the host to call SourceMux MCP tools.
 
 Each generated skill directory gets a `.sourcemux-install.json` manifest. The
-manifest records the target and content hash, so `install status` can report
-managed/modified state, `install update` can refresh unmodified generated
-skills, and `uninstall` can refuse to remove user-edited files unless `--force`
-backs them up first.
+manifest records the target and content hash, so `bootstrap status` can report
+managed/modified state, `bootstrap update` can refresh unmodified generated
+skills, and `uninstall` can refuse to remove user-edited or pre-manifest files
+unless `--force` backs them up first.
 Pass `--write-config` to safely merge supported MCP client config files for
 Codex, Gemini, and OpenCode without invoking external agent CLIs. Existing
 matching `sourcemux` entries are reported as unchanged; drifted entries may be

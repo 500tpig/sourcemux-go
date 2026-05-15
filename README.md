@@ -24,11 +24,11 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索
 
 | 能力 / 命令 | 默认路线 |
 | --- | --- |
-| `web_search` / `sourcemux cli search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
-| `web_fetch` / `sourcemux cli fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
-| `docs_search` / `sourcemux cli docs-search` | Exa docs/web search fallback |
-| `research_run` / `sourcemux cli research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面 |
-| `smart_answer` / `sourcemux cli smart-answer` | 先跑 bounded research，再交给配置好的 reasoning endpoint 综合回答 |
+| `web_search` / `sourcemux search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
+| `web_fetch` / `sourcemux fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
+| `docs_search` / `sourcemux docs-search` | Exa docs/web search fallback |
+| `research_run` / `sourcemux research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面 |
+| `smart_answer` / `sourcemux smart-answer` | 先跑 bounded research，再交给配置好的 reasoning endpoint 综合回答 |
 
 ### 安装
 
@@ -49,6 +49,9 @@ brew tap 500tpig/tap
 brew install --cask sourcemux
 ```
 
+不要直接用 `brew install sourcemux`，除非 SourceMux 之后也进入了 Homebrew
+core；本项目发布路径是上面的 tap/cask。
+
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
@@ -62,7 +65,7 @@ go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 
 ```bash
 sourcemux version
-sourcemux cli config path
+sourcemux config path
 ```
 
 ### 快速开始
@@ -70,7 +73,7 @@ sourcemux cli config path
 生成本地配置：
 
 ```bash
-sourcemux cli setup --non-interactive \
+sourcemux setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -80,32 +83,32 @@ sourcemux cli setup --non-interactive \
 检查配置，输出会遮蔽 key：
 
 ```bash
-sourcemux cli config list --json
-sourcemux cli doctor --json
+sourcemux config list --json
+sourcemux doctor --json
 ```
 
 跑一次搜索：
 
 ```bash
-sourcemux cli search "今天 Go 生态有哪些重要更新？" --json
+sourcemux search "今天 Go 生态有哪些重要更新？" --json
 ```
 
 抓取网页正文：
 
 ```bash
-sourcemux cli fetch "https://example.com" --json
+sourcemux fetch "https://example.com" --json
 ```
 
 查库 / 框架 / SDK 文档：
 
 ```bash
-sourcemux cli docs-search "next.js middleware auth" --json
+sourcemux docs-search "next.js middleware auth" --json
 ```
 
 生成研究包：
 
 ```bash
-sourcemux cli research "Evaluate the current status of Go modules" --depth standard --json
+sourcemux research "Evaluate the current status of Go modules" --depth standard --json
 ```
 
 ### 配置文件
@@ -113,8 +116,8 @@ sourcemux cli research "Evaluate the current status of Go modules" --depth stand
 SourceMux 只读取一个显式 JSON 配置文件：
 
 - 默认：`./sourcemux.json`
-- 显式：`sourcemux --config /path/to/sourcemux.json`
-- CLI 显式：`sourcemux cli --config /path/to/sourcemux.json <command>`
+- 显式：`sourcemux --config /path/to/sourcemux.json <command>`
+- 兼容旧写法：`sourcemux cli --config /path/to/sourcemux.json <command>`
 
 它不会读取环境变量配置链、`~/.config/sourcemux/*` 或旧的 `endpoints.json`。如果你已有旧版 `grok-search.json`，可以改名：
 
@@ -125,7 +128,7 @@ mv grok-search.json sourcemux.json
 也可以继续显式指定旧文件：
 
 ```bash
-sourcemux cli --config ./grok-search.json config list --json
+sourcemux --config ./grok-search.json config list --json
 ```
 
 最小配置示例：
@@ -155,17 +158,17 @@ sourcemux cli --config ./grok-search.json config list --json
 
 | 命令 | 用途 |
 | --- | --- |
-| `sourcemux cli search <query>` | 按 fallback route 做一次网页搜索 |
-| `sourcemux cli docs-search <query>` | 文档搜索；使用 Exa docs/web search fallback |
-| `sourcemux cli fetch <url>` | 抓取一个 URL 的正文 |
-| `sourcemux cli map <url>` | 用 Tavily 发现站点 URL |
-| `sourcemux cli crawl <url>` | 用 Tavily 抓取站点内容 |
-| `sourcemux cli research <query>` | 生成 bounded research pack |
-| `sourcemux cli smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
-| `sourcemux cli config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
-| `sourcemux cli setup` | 生成本地配置，不必手写 JSON |
-| `sourcemux cli doctor` / `probe` | 本地配置检查 / 显式 live probe |
-| `sourcemux install list-agents/status` | 安装或检查 AI Agent 路由 skill 与 MCP 配置片段 |
+| `sourcemux search <query>` | 按 fallback route 做一次网页搜索 |
+| `sourcemux docs-search <query>` | 文档搜索；使用 Exa docs/web search fallback |
+| `sourcemux fetch <url>` | 抓取一个 URL 的正文 |
+| `sourcemux map <url>` | 用 Tavily 发现站点 URL |
+| `sourcemux crawl <url>` | 用 Tavily 抓取站点内容 |
+| `sourcemux research <query>` | 生成 bounded research pack |
+| `sourcemux smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
+| `sourcemux config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
+| `sourcemux setup` | 生成本地配置，不必手写 JSON |
+| `sourcemux doctor` / `probe` | 本地配置检查 / 显式 live probe |
+| `sourcemux bootstrap list-agents/status` | 安装或检查 AI Agent 路由 skill 与 MCP 配置片段 |
 
 ### MCP 接入
 
@@ -193,12 +196,12 @@ claude mcp add-json sourcemux '{
 `--write-config` 或选择 `mcp-json` / `stdio` 目标时才输出 MCP 配置指导：
 
 ```bash
-sourcemux install list-agents
-sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
-sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install status --config-status
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
+sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap status --config-status
 ```
 
 未传 `--write-config` 时，生成的 skill 会要求使用 CLI，并在每个 CLI 示例中带上
@@ -217,9 +220,10 @@ Gemini（`.gemini/settings.json` / `~/.gemini/settings.json`）和 OpenCode
 OpenCode JSONC；注释和原始排版不保证保留，备份文件是回滚路径。
 `sourcemux uninstall <target> --write-config` 只删除 `sourcemux` 条目，
 不删除整个配置文件。
-生成的 skill 目录会带 `.sourcemux-install.json` manifest；`install update`
+生成的 skill 目录会带 `.sourcemux-install.json` manifest；`bootstrap update`
 会自动刷新未被用户修改的旧生成 skill。`uninstall` 默认只删除 manifest hash
-仍匹配的生成文件；如果用户改过生成 skill，可传 `--force` 先备份再移除。
+仍匹配的生成文件；如果用户改过生成 skill，或旧安装没有 manifest，可传
+`--force` 先备份再移除。
 
 MCP 侧常用工具：
 
@@ -263,11 +267,11 @@ SourceMux is an MCP-native search, fetch, docs, and research tool with a peer CL
 
 The default routing is:
 
-- `web_search` / `cli search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
-- `web_fetch` / `cli fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
-- `docs_search` / `cli docs-search`: Exa docs/web search fallback
-- `research_run` / `cli research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages
-- `smart_answer` / `cli smart-answer`: run bounded research, then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
+- `web_search` / `sourcemux search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
+- `web_fetch` / `sourcemux fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
+- `docs_search` / `sourcemux docs-search`: Exa docs/web search fallback
+- `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages
+- `smart_answer` / `sourcemux smart-answer`: run bounded research, then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
 
 ## Features
 
@@ -299,6 +303,9 @@ brew tap 500tpig/tap
 brew install --cask sourcemux
 ```
 
+Do not use plain `brew install sourcemux` unless SourceMux is later accepted
+into Homebrew core; this project publishes through the tap/cask path above.
+
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
@@ -322,7 +329,7 @@ Verify the command:
 
 ```bash
 sourcemux version
-sourcemux cli config path
+sourcemux config path
 ```
 
 Or build from source:
@@ -340,7 +347,7 @@ The examples below assume `sourcemux` is installed on your `PATH`. If you built 
 1. Create a local config. The generated file may contain secrets and is ignored by Git.
 
 ```bash
-sourcemux cli setup --non-interactive \
+sourcemux setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -350,17 +357,18 @@ sourcemux cli setup --non-interactive \
 2. Inspect the active config without printing secrets.
 
 ```bash
-sourcemux cli config list --json
+sourcemux config list --json
 ```
 
 3. Run a search.
 
 ```bash
-sourcemux cli search "What changed in the latest Go release?" --json
+sourcemux search "What changed in the latest Go release?" --json
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
 AI agent integration guidance is in [`docs/AI_USAGE.md`](docs/AI_USAGE.md).
+Uninstall and migration guidance is in [`docs/UNINSTALL.md`](docs/UNINSTALL.md).
 Release automation notes are in [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Configuration
@@ -368,7 +376,8 @@ Release automation notes are in [`docs/RELEASE.md`](docs/RELEASE.md).
 The runtime reads exactly one config file:
 
 - Default: `./sourcemux.json`
-- Explicit: `sourcemux --config /path/to/sourcemux.json` or `sourcemux cli --config /path/to/sourcemux.json ...`
+- Explicit: `sourcemux --config /path/to/sourcemux.json <command>`
+- Compatibility form: `sourcemux cli --config /path/to/sourcemux.json <command>`
 
 It does not read environment-variable config chains, `~/.config/sourcemux/*`, or legacy `endpoints.json` files.
 If you already have `grok-search.json`, rename it to `sourcemux.json` or pass it explicitly with `--config`.
@@ -420,17 +429,17 @@ See:
 ## CLI usage
 
 ```bash
-./sourcemux cli config path
-./sourcemux cli config files --json
-./sourcemux cli config list --json
-./sourcemux cli doctor --json
+./sourcemux config path
+./sourcemux config files --json
+./sourcemux config list --json
+./sourcemux doctor --json
 
-./sourcemux cli search "latest Go release notes" --json
-./sourcemux cli fetch "https://example.com" --json
-./sourcemux cli plan "Evaluate a new open-source project" --depth deep
-./sourcemux cli research "Evaluate a new open-source project" \
+./sourcemux search "latest Go release notes" --json
+./sourcemux fetch "https://example.com" --json
+./sourcemux plan "Evaluate a new open-source project" --depth deep
+./sourcemux research "Evaluate a new open-source project" \
   --depth deep --domain github.com --max-fetches 6 --json
-./sourcemux cli smart-answer "Should I use project X?" \
+./sourcemux smart-answer "Should I use project X?" \
   --depth standard --reasoning-endpoint deepseek-flash --json
 ```
 
@@ -451,7 +460,7 @@ Main subcommands:
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
 | `doctor` / `probe` | Local config overview; opt-in live provider probes. |
-| `install list-agents/status` | Install or inspect AI agent routing skills and MCP snippets. |
+| `bootstrap list-agents/status` | Install or inspect AI agent routing skills and MCP snippets. |
 | `tinyfish-bench` | Local TinyFish Search / Fetch / Agent benchmark. |
 
 ## MCP usage
@@ -483,12 +492,12 @@ prints MCP setup guidance only when you pass `--write-config` or explicitly
 select the `mcp-json` / `stdio` targets:
 
 ```bash
-sourcemux install list-agents
-sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
-sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux install status --config-status
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
+sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux bootstrap status --config-status
 ```
 
 Without `--write-config`, the generated skill tells agents to use the CLI and
@@ -511,10 +520,10 @@ Gemini JSON, and OpenCode JSONC; comments and original formatting are not
 guaranteed to be preserved, so backups are the rollback path. `sourcemux uninstall <target> --write-config`
 removes only the `sourcemux` entry and never deletes the whole config file.
 Generated skill directories include a `.sourcemux-install.json` manifest;
-`install update` refreshes old generated skills that still match their manifest.
+`bootstrap update` refreshes old generated skills that still match their manifest.
 `uninstall` removes only generated files whose content still matches the
-manifest hash by default; pass `--force` to back up and remove a modified
-SourceMux-managed generated skill.
+manifest hash by default; pass `--force` to back up and remove a modified or
+pre-manifest generated skill.
 
 MCP tools:
 

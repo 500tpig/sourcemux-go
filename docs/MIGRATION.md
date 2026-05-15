@@ -34,7 +34,7 @@ Or kept in place by passing it explicitly:
 
 ```bash
 sourcemux --config ./grok-search.json
-sourcemux cli --config ./grok-search.json config list --json
+sourcemux --config ./grok-search.json config list --json
 ```
 
 The runtime still reads one explicit config file only; it does not auto-scan
@@ -116,7 +116,7 @@ Keep Exa configured for the required `docs_search` provider when
 Run:
 
 ```bash
-sourcemux cli config migrate --json
+sourcemux config migrate --json
 ```
 
 The command:
@@ -128,6 +128,6 @@ The command:
 - sets migrated configs to `minimum_profile: "off"` to preserve existing
   behavior.
 
-Use `sourcemux cli doctor --json` after migration for local-only structural
+Use `sourcemux doctor --json` after migration for local-only structural
 validation. `doctor` does not contact providers unless `--probe` is explicitly
 passed.

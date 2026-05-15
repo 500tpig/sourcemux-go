@@ -42,7 +42,7 @@ func runDoctor(args []string) int {
 		MinimumProfile: "off",
 		Notes: []string{
 			"doctor is local-only and sends zero provider requests by default",
-			"use `sourcemux cli doctor --probe` or `sourcemux cli probe` to opt in to live probes",
+			"use `sourcemux doctor --probe` or `sourcemux probe` to opt in to live probes",
 		},
 	}
 	if err != nil {
