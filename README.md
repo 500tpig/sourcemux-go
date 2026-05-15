@@ -8,7 +8,7 @@
 
 ## 中文
 
-SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索、网页抓取、文档检索与轻量研究工具。你可以把它理解成一个“多来源研究路由器”：用同一个二进制同时提供 stdio MCP server 和 CLI，把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina、Context7 等能力接到统一的 fallback route 里。
+SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索、网页抓取、文档检索与轻量研究工具。你可以把它理解成一个“多来源研究路由器”：用同一个二进制同时提供 stdio MCP server 和 CLI，把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力接到统一的 fallback route 里。
 
 仓库默认只保存安全示例配置。真实 API key 只应该放在本地 `sourcemux.json`，或用 `--config /path/to/sourcemux.json` 显式指定的本地配置文件里。不要提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
@@ -16,7 +16,7 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索
 
 - 你希望 AI 助手联网搜索当前信息，但要保留可复现的 CLI 命令和 JSON 输出。
 - 你想抓取一个 URL 正文，或把网页内容交给后续 Agent / 脚本处理。
-- 你想查官方文档、API、SDK、框架用法，并在 Context7 / Exa 之间做文档能力路由。
+- 你想查官方文档、API、SDK、框架用法，并通过 Exa 做文档 / web 搜索。
 - 你想生成一个可审计的轻量 research pack：先规划搜索，再收集来源，最后抓取关键页面。
 - 你想把同一套搜索能力接入 Codex、Claude Code、Cherry Studio 等 MCP 客户端。
 
@@ -26,7 +26,7 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索
 | --- | --- |
 | `web_search` / `sourcemux cli search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
 | `web_fetch` / `sourcemux cli fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
-| `docs_search` / `sourcemux cli docs-search` | 显式 Context7 library-docs -> Exa docs/web search fallback |
+| `docs_search` / `sourcemux cli docs-search` | Exa docs/web search fallback |
 | `research_run` / `sourcemux cli research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面 |
 | `smart_answer` / `sourcemux cli smart-answer` | 先跑 bounded research，再交给配置好的 reasoning endpoint 综合回答 |
 
@@ -74,7 +74,6 @@ sourcemux cli setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
-  --context7-key "ctx7sk-your-key" \
   --json
 ```
 
@@ -100,9 +99,7 @@ sourcemux cli fetch "https://example.com" --json
 查库 / 框架 / SDK 文档：
 
 ```bash
-sourcemux cli docs-search "middleware auth" --library-id /vercel/next.js --json
-sourcemux cli context7-library next.js "middleware auth" --json
-sourcemux cli context7-docs /vercel/next.js "middleware auth" --json
+sourcemux cli docs-search "next.js middleware auth" --json
 ```
 
 生成研究包：
@@ -159,10 +156,8 @@ sourcemux cli --config ./grok-search.json config list --json
 | 命令 | 用途 |
 | --- | --- |
 | `sourcemux cli search <query>` | 按 fallback route 做一次网页搜索 |
-| `sourcemux cli docs-search <query>` | 文档搜索；显式 library 时优先 Context7 |
+| `sourcemux cli docs-search <query>` | 文档搜索；使用 Exa docs/web search fallback |
 | `sourcemux cli fetch <url>` | 抓取一个 URL 的正文 |
-| `sourcemux cli context7-library <name> <query>` | 解析 Context7 library name 并取相关文档 |
-| `sourcemux cli context7-docs <id> <query>` | 按 Context7 library ID 取文档 |
 | `sourcemux cli map <url>` | 用 Tavily 发现站点 URL |
 | `sourcemux cli crawl <url>` | 用 Tavily 抓取站点内容 |
 | `sourcemux cli research <query>` | 生成 bounded research pack |
@@ -194,17 +189,21 @@ claude mcp add-json sourcemux '{
 }'
 ```
 
-也可以先用内置安装器生成 `sourcemux-routing` skill 和 MCP JSON 片段：
+也可以先用内置安装器生成 CLI-first 的 `sourcemux-routing` skill；只有显式传
+`--write-config` 或选择 `mcp-json` / `stdio` 目标时才输出 MCP 配置指导：
 
 ```bash
 sourcemux install list-agents
 sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install status --config-status
 ```
 
-第一批目标会输出更具体的官方 MCP 接入方式：Codex 的
+未传 `--write-config` 时，生成的 skill 会要求使用 CLI，并在每个 CLI 示例中带上
+安装时配置的 `--config` 路径。传 `--write-config` 后，支持安全写入的目标会生成
+MCP-aware skill，并输出更具体的官方 MCP 接入方式：Codex 的
 `codex mcp add` / `config.toml`、Claude Code 的
 `claude mcp add --transport stdio`、Gemini CLI 的 `gemini mcp add` /
 `settings.json`，以及 OpenCode 的 `opencode.json` 配置片段。
@@ -218,15 +217,16 @@ Gemini（`.gemini/settings.json` / `~/.gemini/settings.json`）和 OpenCode
 OpenCode JSONC；注释和原始排版不保证保留，备份文件是回滚路径。
 `sourcemux uninstall <target> --write-config` 只删除 `sourcemux` 条目，
 不删除整个配置文件。
-生成的 skill 目录会带 `.sourcemux-install.json` manifest；`uninstall`
-只删除 manifest hash 仍匹配的生成文件，避免误删用户改过的 skill。
+生成的 skill 目录会带 `.sourcemux-install.json` manifest；`install update`
+会自动刷新未被用户修改的旧生成 skill。`uninstall` 默认只删除 manifest hash
+仍匹配的生成文件；如果用户改过生成 skill，可传 `--force` 先备份再移除。
 
 MCP 侧常用工具：
 
 | 工具 | 用途 |
 | --- | --- |
 | `web_search` | 紧凑搜索摘要，带 provider fallback 和来源提取 |
-| `docs_search` | 文档搜索；显式 `library_id` / `library_name` 时尝试 Context7 |
+| `docs_search` | 文档搜索；使用 Exa docs/web search fallback |
 | `get_sources` | 返回上一次 `web_search` 的 URL 列表 |
 | `web_fetch` | 抓取网页正文摘要 |
 | `web_map` / `web_crawl` | 站点 URL 发现 / 站点抓取 |
@@ -265,7 +265,7 @@ The default routing is:
 
 - `web_search` / `cli search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
 - `web_fetch` / `cli fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
-- `docs_search` / `cli docs-search`: explicit Context7 library-docs lookup -> Exa docs/web search fallback
+- `docs_search` / `cli docs-search`: Exa docs/web search fallback
 - `research_run` / `cli research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages
 - `smart_answer` / `cli smart-answer`: run bounded research, then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
 
@@ -275,7 +275,7 @@ The default routing is:
 - MCP text responses stay compact; CLI text/JSON remain the canonical full-output surfaces.
 - Single explicit JSON config file: `./sourcemux.json` by default, or `--config /path/to/sourcemux.json`.
 - Grok/OpenAI-compatible endpoint pool with priority fallback.
-- Optional TinyFish, Exa, Tavily, Jina, and Context7 integrations.
+- Optional TinyFish, Exa, Tavily, and Jina integrations.
 - Source caching via `get_sources` for MCP workflows.
 - Bounded research packs for reproducible downstream reasoning.
 - Separate `reasoningEndpoints[]` for synthesis models such as DeepSeek Flash/Pro.
@@ -344,7 +344,6 @@ sourcemux cli setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
-  --context7-key "ctx7sk-your-key" \
   --json
 ```
 
@@ -440,10 +439,8 @@ Main subcommands:
 | Command | Purpose |
 | --- | --- |
 | `search <query>` | One search through the fallback route. |
-| `docs-search <query>` | Documentation search; Context7 is used only with `--library-id` or `--library-name`, then Exa can fallback. |
+| `docs-search <query>` | Documentation search through Exa docs/web search fallback. |
 | `fetch <url>` | Fetch one URL through the fallback route. |
-| `context7-library <name> <query>` | Resolve a Context7 library name and fetch matching docs. |
-| `context7-docs <id> <query>` | Fetch Context7 docs for an explicit library ID. |
 | `exa-search <query>` | Direct advanced Exa Search call. |
 | `exa-contents <url>` | Direct advanced Exa Contents call. |
 | `map <url>` | Tavily URL discovery. |
@@ -481,17 +478,23 @@ claude mcp add-json sourcemux '{
 }'
 ```
 
-The installer can generate the `sourcemux-routing` skill and MCP JSON snippets:
+The installer generates a CLI-first `sourcemux-routing` skill by default. It
+prints MCP setup guidance only when you pass `--write-config` or explicitly
+select the `mcp-json` / `stdio` targets:
 
 ```bash
 sourcemux install list-agents
 sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install status --config-status
 ```
 
-First-tier targets emit more specific official MCP setup guidance: Codex
+Without `--write-config`, the generated skill tells agents to use the CLI and
+every CLI example includes the installed `--config` path. With `--write-config`,
+safe-writer targets get an MCP-aware skill and emit more specific official MCP
+setup guidance: Codex
 `codex mcp add` / `config.toml`, Claude Code
 `claude mcp add --transport stdio`, Gemini CLI `gemini mcp add` /
 `settings.json`, and OpenCode `opencode.json` snippets.
@@ -508,15 +511,17 @@ Gemini JSON, and OpenCode JSONC; comments and original formatting are not
 guaranteed to be preserved, so backups are the rollback path. `sourcemux uninstall <target> --write-config`
 removes only the `sourcemux` entry and never deletes the whole config file.
 Generated skill directories include a `.sourcemux-install.json` manifest;
+`install update` refreshes old generated skills that still match their manifest.
 `uninstall` removes only generated files whose content still matches the
-manifest hash.
+manifest hash by default; pass `--force` to back up and remove a modified
+SourceMux-managed generated skill.
 
 MCP tools:
 
 | Tool | Purpose |
 | --- | --- |
 | `web_search` | Compact MCP search summary with source extraction and provider fallback. |
-| `docs_search` | Documentation search; explicit `library_id` / `library_name` requests try Context7 first. |
+| `docs_search` | Documentation search through Exa docs/web search fallback. |
 | `get_sources` | Return URLs from a previous `web_search` session. |
 | `web_fetch` | Compact MCP fetch excerpt with provider fallback. |
 | `exa_search_advanced` | Direct Exa Search advanced options. |

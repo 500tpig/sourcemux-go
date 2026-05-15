@@ -1,4 +1,4 @@
-# Agent notes for grok-search-go
+# Agent notes for sourcemux-go
 
 This repository is a Go MCP server and CLI for search, fetch, research, and reasoning synthesis workflows.
 
@@ -21,7 +21,7 @@ This repository is a Go MCP server and CLI for search, fetch, research, and reas
 ## Development rules
 
 - Prefer `rg` and `rg --files` for searching.
-- Keep runtime config single-file based: default `./grok-search.json`, or one explicit `--config` path.
+- Keep runtime config single-file based: default `./sourcemux.json`, or one explicit `--config` path.
 - Do not add environment-variable config chains, hidden home config fallbacks, or legacy `endpoints.json` loading.
 - Never commit real API keys, private endpoints, provider dashboard exports, or local credential files.
 - Example configs must use placeholder secrets and safe example endpoints.
@@ -43,8 +43,8 @@ go build ./...
 ## Useful commands
 
 ```bash
-go build -o grok-search .
-./grok-search cli config list --json
-./grok-search cli search "example query" --json
-./grok-search cli research "example research task" --depth standard --json
+go build -o sourcemux ./cmd/sourcemux
+./sourcemux cli --config ./sourcemux.json config list --json
+./sourcemux cli --config ./sourcemux.json search "example query" --json
+./sourcemux cli --config ./sourcemux.json research "example research task" --depth standard --json
 ```
