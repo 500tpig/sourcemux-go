@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,19 @@ func TestRunVersionJSON(t *testing.T) {
 	}
 	if decoded.Version != "v1.2.3" || decoded.Commit != "abc123" {
 		t.Fatalf("decoded = %+v", decoded)
+	}
+}
+
+func TestRunTopLevelHelpDoesNotLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--help"}); got != 0 {
+			t.Fatalf("Run(--help) = %d, want 0", got)
+		}
+	})
+	if !strings.Contains(out, "Usage: sourcemux") || !strings.Contains(out, "cli <command>") {
+		t.Fatalf("unexpected help output: %s", out)
 	}
 }
 

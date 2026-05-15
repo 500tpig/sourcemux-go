@@ -72,10 +72,37 @@ Typical commands:
 
 ```bash
 sourcemux cli search "query" --json
+sourcemux cli search "query" --platform Twitter --json
+sourcemux cli docs-search "library or API question" --json
+sourcemux cli exa-search "official docs API reference" --type deep --json
+sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 sourcemux cli fetch "https://example.com" --json
+sourcemux cli plan "research question" --depth standard
 sourcemux cli research "topic" --depth standard --json
 sourcemux cli smart-answer "question" --depth standard --json
 ```
+
+### Capability selection for generated skills
+
+Generated `sourcemux-routing` skills should route user intent to capabilities,
+not just list commands:
+
+| User intent | Preferred surface |
+| --- | --- |
+| Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --json` or `search --json` |
+| Official docs, SDK/API reference, product docs, pricing pages | `docs-search --json` |
+| Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
+| Known URL content extraction | `fetch --json` |
+| Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
+| Multi-source investigation with synthesis | `research --depth standard --json` or `research --depth deep --json` |
+| Planning/decomposition without executing provider calls | `plan --depth standard` or `plan --depth deep` |
+
+Evidence policy:
+
+1. Discover candidate URLs with `search`, `docs-search`, `exa-search`, or `research`.
+2. Fetch key URLs before high-risk, precise, or source-critical claims.
+3. Cite fetched or source URL evidence in the final answer.
+4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
 
 ## Recommended host setup
 
@@ -86,15 +113,20 @@ sourcemux install list-agents
 sourcemux install codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
 sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 sourcemux install status --config-status
 ```
 
-Pass `--binary` when running from a source checkout or through `go run`; the
-path is embedded into generated MCP commands/snippets.
+Pass `--binary` when running from a source checkout or through `go run`. The
+binary path and configured `--config` path are embedded into generated CLI
+examples. Without `--write-config`, generated skills are CLI-first and should
+not tell the host to call SourceMux MCP tools.
 
 Each generated skill directory gets a `.sourcemux-install.json` manifest. The
 manifest records the target and content hash, so `install status` can report
-managed/modified state and `uninstall` can refuse to remove user-edited files.
+managed/modified state, `install update` can refresh unmodified generated
+skills, and `uninstall` can refuse to remove user-edited files unless `--force`
+backs them up first.
 Pass `--write-config` to safely merge supported MCP client config files for
 Codex, Gemini, and OpenCode without invoking external agent CLIs. Existing
 matching `sourcemux` entries are reported as unchanged; drifted entries may be
@@ -112,8 +144,8 @@ The first implementation uses a two-tier support model:
 * full first-tier targets: `codex`, `claude-code`, `gemini`, `opencode`
 * skill/JSON/profile first targets: `copilot`, `cursor`, `trellis`, `mcp-json`, `stdio`
 
-For first-tier targets, the plan includes both the routing skill write and
-official MCP setup guidance:
+For first-tier targets, official MCP setup guidance is emitted only when
+`--write-config` is requested:
 
 | Target | MCP guidance emitted |
 | --- | --- |

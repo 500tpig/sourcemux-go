@@ -20,6 +20,18 @@ type VersionInfo struct {
 
 var buildInfo = VersionInfo{Version: "dev", Commit: "none", Date: "unknown"}
 
+const usage = `Usage: sourcemux [--config <path>] <command>
+
+Commands:
+  cli <command>       Run one-shot CLI commands.
+  install <target>    Install or update generated agent skills/MCP config.
+  uninstall <target>  Remove generated SourceMux skills/MCP config.
+  version             Print version information.
+
+Without a command, sourcemux starts the stdio MCP server and reads the selected
+config file. Use --config when the config is not ./sourcemux.json.
+`
+
 func SetVersionInfo(version, commit, date string) {
 	buildInfo = VersionInfo{
 		Version: stringOr(version, "dev"),
@@ -36,6 +48,10 @@ func Run(args []string) int {
 		return 2
 	}
 
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprint(os.Stdout, usage)
+		return 0
+	}
 	if len(args) > 0 && args[0] == "cli" {
 		return cli.RunWithConfig(args[1:], configPath)
 	}

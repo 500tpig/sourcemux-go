@@ -48,7 +48,6 @@ The recommended path is the setup command:
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
-  --context7-key "ctx7sk-your-key" \
   --json
 ```
 
@@ -88,28 +87,37 @@ Then edit placeholders. Never commit `sourcemux.json`.
 
 ```bash
 ./sourcemux cli search "latest Go release notes" --json
-./sourcemux cli docs-search "middleware auth" --library-id /vercel/next.js --json
-./sourcemux cli context7-library next.js "middleware auth" --json
-./sourcemux cli context7-docs /vercel/next.js "middleware auth" --json
+./sourcemux cli search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
+./sourcemux cli docs-search "next.js middleware auth" --json
+./sourcemux cli exa-search "OpenAI Responses API reference" --type deep --json
+./sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 ./sourcemux cli fetch "https://example.com" --json
+./sourcemux cli plan "Evaluate current Go module proxy behavior" --depth standard
 ./sourcemux cli research "Evaluate the current status of Go modules" --depth standard --json
 ```
 
-Context7 is optional and specialized for library/framework/API docs. It is used only when you pass an explicit Context7 `library-id` or `library-name`; general docs/web search remains Exa-oriented.
+Use `search --platform Twitter` for freshness/community discovery, `docs-search`
+or direct `exa-search` for source-first docs/API discovery, and `fetch` to
+verify key URLs before source-critical claims.
 
 ## 5. Install agent routing skill and MCP snippets
 
-SourceMux includes a top-level installer that writes a concise
-`sourcemux-routing` skill and prints copyable MCP stdio JSON where automatic
-client config is not yet verified:
+SourceMux includes a top-level installer that writes a concise CLI-first
+`sourcemux-routing` skill with capability routing and evidence rules. It prints
+MCP setup guidance only when you pass `--write-config` or explicitly select
+`mcp-json` / `stdio`:
 
 ```bash
 ./sourcemux install list-agents
 ./sourcemux install codex claude-code --scope project --config ./sourcemux.json --dry-run
 ./sourcemux install codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 ./sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
+./sourcemux install update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
 ./sourcemux install status --config-status
 ```
+
+Without `--write-config`, generated CLI examples include the configured
+`--config` path and do not tell agents to call MCP tools.
 
 Use `--json` for automation and `--force` to back up and replace an existing
 generated skill. The installer does not write provider API keys into agent
@@ -132,8 +140,10 @@ removes only the `sourcemux` MCP entry and never deletes the whole client
 config file.
 
 Generated skills include a `.sourcemux-install.json` manifest with a content
-hash. `sourcemux uninstall <target>` removes only files that still match that
-manifest; if you edited the generated skill, uninstall refuses to delete it.
+hash. `sourcemux install update <target>` refreshes unmodified generated skills.
+`sourcemux uninstall <target>` removes only files that still match that
+manifest; if you edited the generated skill, uninstall refuses to delete it
+unless you pass `--force`, which backs up the modified skill first.
 
 For first-tier targets, the dry-run/install plan also prints the official MCP
 setup command or config snippet:

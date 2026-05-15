@@ -21,6 +21,7 @@ const (
 )
 
 const installUsage = `Usage: sourcemux install <target...> [flags]
+       sourcemux install update <target...> [flags]
        sourcemux install list-agents [--json]
        sourcemux install status [target...] [--scope project|user] [--config-status] [--json]
 
@@ -42,6 +43,7 @@ Flags:
 Examples:
   sourcemux install list-agents
   sourcemux install codex claude-code --scope user --config ~/.config/sourcemux/sourcemux.json
+  sourcemux install update codex --config ~/.config/sourcemux/sourcemux.json
   sourcemux install --agent codex --agent opencode --dry-run --json
   sourcemux install --all --dry-run
 `
@@ -54,6 +56,7 @@ Flags:
   --scope <scope>     Install scope: project or user (default: project).
   --write-config      Safely remove supported SourceMux MCP config entries.
   --dry-run           Print planned removals without deleting files.
+  --force             Back up and remove modified SourceMux-managed generated skill files.
   --json              Emit machine-readable JSON.
   --help, -h          Show this usage.
 `
@@ -88,6 +91,7 @@ type TargetStatus struct {
 	Installed    bool          `json:"installed"`
 	Managed      bool          `json:"managed"`
 	Modified     bool          `json:"modified"`
+	InstallMode  string        `json:"install_mode,omitempty"`
 	Notes        []string      `json:"notes,omitempty"`
 	ConfigStatus *ConfigStatus `json:"config_status,omitempty"`
 }
@@ -126,6 +130,7 @@ type PlanAction struct {
 	Backup    string   `json:"backup,omitempty"`
 	Message   string   `json:"message,omitempty"`
 	Sensitive bool     `json:"sensitive,omitempty"`
+	MCPMode   bool     `json:"mcp_mode,omitempty"`
 }
 
 type options struct {
@@ -148,6 +153,7 @@ type installManifest struct {
 	SkillPath     string `json:"skill_path"`
 	Binary        string `json:"binary"`
 	ConfigFile    string `json:"config_file"`
+	MCPMode       bool   `json:"mcp_mode,omitempty"`
 	ContentSHA256 string `json:"content_sha256"`
 	InstalledAt   string `json:"installed_at"`
 }
@@ -159,7 +165,7 @@ var targets = []Target{
 		Tier:        1,
 		Description: "Codex skill plus SourceMux MCP stdio JSON/command guidance.",
 		ProjectRoot: ".agents/skills",
-		UserRoot:    "~/.agents/skills",
+		UserRoot:    "~/.codex/skills",
 		Skill:       true,
 		MCP:         "codex mcp add + config.toml",
 	},
@@ -256,8 +262,14 @@ func RunInstall(args []string, configPath string) int {
 		return runListAgents(args[1:])
 	case "status":
 		return runStatus(args[1:], configPath)
+	case "update":
+		return runInstallMode("update", args[1:], configPath)
 	}
 
+	return runInstallMode("install", args, configPath)
+}
+
+func runInstallMode(mode string, args []string, configPath string) int {
 	opts, err := parseOptions(args, configPath, false)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -267,15 +279,15 @@ func RunInstall(args []string, configPath string) int {
 		fmt.Fprintf(os.Stderr, "install argument error: %v\n", err)
 		return 2
 	}
-	plan, err := BuildPlan("install", opts)
+	plan, err := BuildPlan(mode, opts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "install error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s error: %v\n", mode, err)
 		return 2
 	}
 	if !opts.DryRun {
 		printPreApplyBackupNotice(plan)
 		if err := ApplyPlan(plan, opts); err != nil {
-			fmt.Fprintf(os.Stderr, "install error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s error: %v\n", mode, err)
 			return 1
 		}
 	}
@@ -388,7 +400,11 @@ func runStatus(args []string, configPath string) int {
 		if s.SkillPath == "" {
 			fmt.Fprintf(os.Stdout, "%s: %s (%s)\n", s.Name, s.Support, strings.Join(s.Notes, "; "))
 		} else {
-			fmt.Fprintf(os.Stdout, "%s: %s at %s [%s]\n", s.Name, state, s.SkillPath, s.Support)
+			mode := s.InstallMode
+			if mode == "" {
+				mode = "unknown"
+			}
+			fmt.Fprintf(os.Stdout, "%s: %s at %s [%s, %s]\n", s.Name, state, s.SkillPath, s.Support, mode)
 		}
 		if s.ConfigStatus != nil {
 			cs := s.ConfigStatus
@@ -436,15 +452,15 @@ func BuildPlan(mode string, opts options) (Plan, error) {
 	}
 	for _, target := range selected {
 		switch mode {
-		case "install":
-			addInstallActions(&plan, target, opts.Scope)
+		case "install", "update":
+			addInstallActions(&plan, target, opts.Scope, opts.WriteConfig)
 			if opts.WriteConfig {
 				if err := addConfigWriteAction(&plan, target, opts.Scope); err != nil {
 					return Plan{}, err
 				}
 			}
 		case "uninstall":
-			addUninstallActions(&plan, target, opts.Scope, opts.WriteConfig)
+			addUninstallActions(&plan, target, opts.Scope, opts.WriteConfig, opts.Force)
 			if opts.WriteConfig {
 				if err := addConfigRemoveAction(&plan, target, opts.Scope); err != nil {
 					return Plan{}, err
@@ -465,7 +481,7 @@ func ApplyPlan(plan Plan, opts options) error {
 		action := &plan.Actions[i]
 		switch action.Type {
 		case "write_file":
-			content := []byte(routingSkill(plan.Binary, plan.ConfigFile))
+			content := []byte(routingSkill(plan.Binary, plan.ConfigFile, action.MCPMode))
 			manifest := installManifest{
 				Version:       1,
 				Generator:     "sourcemux install",
@@ -473,6 +489,7 @@ func ApplyPlan(plan Plan, opts options) error {
 				SkillPath:     action.Path,
 				Binary:        plan.Binary,
 				ConfigFile:    plan.ConfigFile,
+				MCPMode:       action.MCPMode,
 				ContentSHA256: contentSHA256(content),
 				InstalledAt:   time.Now().UTC().Format(time.RFC3339),
 			}
@@ -483,11 +500,12 @@ func ApplyPlan(plan Plan, opts options) error {
 			action.Status = status
 			action.Backup = backup
 		case "remove_file":
-			status, err := removeGeneratedSkill(action.Path, action.Target)
+			status, backup, err := removeGeneratedSkill(action.Path, action.Target, opts.Force)
 			if err != nil {
 				return err
 			}
 			action.Status = status
+			action.Backup = backup
 		case "merge_config":
 			status, backup, err := writeMCPConfig(action.Target, action.Path, plan.Binary, plan.ConfigFile, action.Backup)
 			if err != nil {
@@ -564,9 +582,6 @@ func parseOptions(args []string, configPath string, uninstall bool) (options, er
 		case arg == "--dry-run":
 			opts.DryRun = true
 		case arg == "--force":
-			if uninstall {
-				return opts, fmt.Errorf("--force is not supported for uninstall")
-			}
 			opts.Force = true
 		case arg == "--write-config":
 			opts.WriteConfig = true
@@ -638,7 +653,8 @@ func lookupTarget(name string) (Target, bool) {
 	return Target{}, false
 }
 
-func addInstallActions(plan *Plan, target Target, scope string) {
+func addInstallActions(plan *Plan, target Target, scope string, writeConfig bool) {
+	mcpMode := targetMCPMode(target, writeConfig)
 	if target.Skill {
 		path, err := skillPath(target, scope)
 		if err != nil {
@@ -650,37 +666,72 @@ func addInstallActions(plan *Plan, target Target, scope string) {
 				Path:     path,
 				Manifest: manifestPath(path),
 				Status:   "planned",
-				Message:  "Install SourceMux routing skill.",
+				Message:  installSkillMessage(mcpMode),
+				MCPMode:  mcpMode,
 			})
 		}
 	}
+	if !writeConfig && target.Skill {
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: generated skill will be CLI-first; pass --write-config to request MCP setup guidance for supported clients.", target.Name))
+	}
 	switch target.Name {
 	case "codex":
-		plan.Actions = append(plan.Actions, codexCommandAction(*plan), codexConfigSnippetAction(*plan, scope))
+		if writeConfig {
+			plan.Actions = append(plan.Actions, codexCommandAction(*plan), codexConfigSnippetAction(*plan, scope))
+		}
 	case "claude-code":
-		plan.Actions = append(plan.Actions, claudeCommandAction(*plan, scope), mcpJSONAction(*plan, target.Name))
+		if writeConfig {
+			plan.Actions = append(plan.Actions, claudeCommandAction(*plan, scope), mcpJSONAction(*plan, target.Name))
+		}
 	case "gemini":
-		plan.Actions = append(plan.Actions, geminiCommandAction(*plan, scope), geminiConfigSnippetAction(*plan, scope))
+		if writeConfig {
+			plan.Actions = append(plan.Actions, geminiCommandAction(*plan, scope), geminiConfigSnippetAction(*plan, scope))
+		}
 	case "opencode":
-		plan.Actions = append(plan.Actions, opencodeConfigSnippetAction(*plan, scope))
+		if writeConfig {
+			plan.Actions = append(plan.Actions, opencodeConfigSnippetAction(*plan, scope))
+		}
 	case "stdio":
 		plan.Actions = append(plan.Actions, stdioAction(*plan, target.Name))
 	case "mcp-json":
 		plan.Actions = append(plan.Actions, mcpJSONAction(*plan, target.Name))
 	default:
-		if target.MCP == "mcp-json" {
+		if writeConfig && target.MCP == "mcp-json" {
 			plan.Actions = append(plan.Actions, mcpJSONAction(*plan, target.Name))
 		}
 	}
 	switch target.Support {
 	case SupportSkillFirst:
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: MCP config is emitted as JSON for manual copy in this MVP.", target.Name))
+		if writeConfig {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: MCP config is emitted as JSON for manual copy in this MVP.", target.Name))
+		} else {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: no MCP JSON is emitted unless --write-config is passed.", target.Name))
+		}
 	case SupportProfile:
 		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: Trellis is a profile, not a separate runtime agent.", target.Name))
 	}
 }
 
-func addUninstallActions(plan *Plan, target Target, scope string, writeConfig bool) {
+func installSkillMessage(mcpMode bool) string {
+	if mcpMode {
+		return "Install SourceMux routing skill with MCP-aware routing because supported MCP config is requested."
+	}
+	return "Install SourceMux CLI-first routing skill."
+}
+
+func targetMCPMode(target Target, writeConfig bool) bool {
+	if !writeConfig {
+		return false
+	}
+	switch strings.TrimSpace(target.MCP) {
+	case "", "none":
+		return false
+	default:
+		return true
+	}
+}
+
+func addUninstallActions(plan *Plan, target Target, scope string, writeConfig bool, force bool) {
 	if !target.Skill {
 		plan.Actions = append(plan.Actions, PlanAction{
 			Type:    "note",
@@ -703,6 +754,11 @@ func addUninstallActions(plan *Plan, target Target, scope string, writeConfig bo
 		Status:   "planned",
 		Message:  "Remove SourceMux routing skill file if manifest and hash prove it is generated by SourceMux.",
 	})
+	if force {
+		last := &plan.Actions[len(plan.Actions)-1]
+		last.Backup = plannedBackupPath(path)
+		last.Message = "Remove SourceMux-managed routing skill; if modified, back up the skill before removal."
+	}
 	if !writeConfig {
 		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: MCP client config is not removed unless --write-config is passed.", target.Name))
 	}
@@ -772,6 +828,11 @@ func statusFor(target Target, scope string, includeConfig bool, binary string, c
 	}
 	if manifestErr == nil {
 		status.Managed = true
+		if manifest.MCPMode {
+			status.InstallMode = "mcp-configured"
+		} else {
+			status.InstallMode = "cli-only"
+		}
 		if manifest.Target != target.Name {
 			status.Notes = append(status.Notes, fmt.Sprintf("manifest target is %q", manifest.Target))
 		}
@@ -786,6 +847,7 @@ func statusFor(target Target, scope string, includeConfig bool, binary string, c
 		}
 	} else if errors.Is(manifestErr, os.ErrNotExist) {
 		if status.Installed {
+			status.InstallMode = "unmanaged"
 			status.Notes = append(status.Notes, "skill file exists without SourceMux manifest; uninstall will refuse to remove it")
 		}
 	} else {
@@ -1004,10 +1066,24 @@ func marshalSnippet(payload any) string {
 	return string(data)
 }
 
-func routingSkill(binary, configPath string) string {
+func routingSkill(binary, configPath string, mcpMode bool) string {
+	configFlag := "--config " + shellQuote(configPath)
+	cliPolicy := `- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
+- Every SourceMux CLI command must include the configured --config path shown below.
+- Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
+- Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
+	if mcpMode {
+		cliPolicy = `- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
+- Use the SourceMux CLI for deep research, reproducible JSON, large outputs, shell/script chaining, or saved artifacts.
+- Every SourceMux CLI command must include the configured --config path shown below.
+- Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
+- Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
+	}
 	return fmt.Sprintf(`---
 name: sourcemux-routing
-description: Route web research and source fetching through SourceMux MCP or CLI.
+description: Route web research and source fetching through SourceMux.
 ---
 
 # SourceMux routing
@@ -1016,11 +1092,27 @@ Use SourceMux as the default web research capability.
 
 ## Routing policy
 
-- Use MCP tools for quick interactive search, fetch, source verification, URL mapping, and compact research.
-- Use the SourceMux CLI for deep research, reproducible JSON, large outputs, shell/script chaining, or saved artifacts.
-- Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
-- Do not bypass SourceMux provider fallback routing unless the user explicitly asks.
-- Never print API keys, provider dashboard exports, private endpoints, or local credential files.
+%s
+
+## Capability routing
+
+| User intent | Prefer | Why |
+| --- | --- | --- |
+| Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | search --platform Twitter --json or search --json | Grok search is the freshness/community-first route and preserves SourceMux fallback tracing. |
+| Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | docs-search --json | Uses the configured source-first docs search path. |
+| Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | exa-search --type deep --json | Calls Exa directly when Exa-specific controls matter. |
+| Known URL page extraction | fetch --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
+| Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
+| Multi-source investigation with synthesis | research --depth standard --json or research --depth deep --json | Runs the composable SourceMux research workflow. |
+| Planning/decomposition without executing the research | plan --depth standard or plan --depth deep | Produces a deterministic search plan before running provider calls. |
+
+## Evidence policy
+
+- For source-critical claims, do not rely on a search summary alone.
+- First discover candidate URLs with search, docs-search, exa-search, or research.
+- Then fetch 1-3 key URLs with fetch --json before making high-risk or precise claims.
+- In final answers, cite fetched or source URL evidence and mention the engine/provider when it matters.
+- A fetch result may show a provider such as Jina Reader; that verifies the URL content and does not mean Jina performed the original search.
 
 ## Local installation
 
@@ -1029,10 +1121,15 @@ Use SourceMux as the default web research capability.
 
 ## CLI examples
 
-%s cli search "query" --json
-%s cli fetch "https://example.com" --json
-%s cli research "topic" --depth standard --json
-`, binary, configPath, binary, binary, binary)
+%s cli %s search "query" --json
+%s cli %s search "query" --platform Twitter --json
+%s cli %s fetch "https://example.com" --json
+%s cli %s docs-search "library or API question" --json
+%s cli %s exa-search "official docs API reference" --type deep --json
+%s cli %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+%s cli %s plan "research question" --depth standard
+%s cli %s research "topic" --depth standard --json
+`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {
@@ -1045,10 +1142,20 @@ func writeGeneratedSkill(path string, content []byte, force bool, manifest insta
 			}
 			return status, "", nil
 		}
+		oldManifest, manifestErr := readManifest(manifestPath(path))
+		if manifestErr == nil && oldManifest.Target == manifest.Target && contentSHA256(existing) == oldManifest.ContentSHA256 {
+			if err := os.WriteFile(path, content, 0o644); err != nil {
+				return "", "", err
+			}
+			if err := writeManifest(manifestPath(path), manifest); err != nil {
+				return "", "", err
+			}
+			return "updated", "", nil
+		}
 		if !force {
 			return "", "", fmt.Errorf("%s already exists with different content; re-run with --force to back up and replace", path)
 		}
-		backup := fmt.Sprintf("%s.bak.%s", path, time.Now().UTC().Format("20060102T150405Z"))
+		backup := plannedBackupPath(path)
 		if err := os.Rename(path, backup); err != nil {
 			return "", "", fmt.Errorf("backup %s: %w", path, err)
 		}
@@ -1077,44 +1184,55 @@ func writeGeneratedSkill(path string, content []byte, force bool, manifest insta
 	return status, "", nil
 }
 
-func removeGeneratedSkill(path, target string) (string, error) {
+func removeGeneratedSkill(path, target string, force bool) (string, string, error) {
 	manifest, err := readManifest(manifestPath(path))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-				return "missing", nil
+				return "missing", "", nil
 			}
-			return "", fmt.Errorf("refusing to remove %s without SourceMux manifest", path)
+			return "", "", fmt.Errorf("refusing to remove %s without SourceMux manifest", path)
 		}
-		return "", err
+		return "", "", err
 	}
 	if manifest.Target != target {
-		return "", fmt.Errorf("refusing to remove %s: manifest target %q does not match %q", path, manifest.Target, target)
+		return "", "", fmt.Errorf("refusing to remove %s: manifest target %q does not match %q", path, manifest.Target, target)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if rmErr := os.Remove(manifestPath(path)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-				return "", rmErr
+				return "", "", rmErr
 			}
-			return "manifest-removed", nil
+			return "manifest-removed", "", nil
 		}
-		return "", err
+		return "", "", err
 	}
 	if got := contentSHA256(data); got != manifest.ContentSHA256 {
-		return "", fmt.Errorf("refusing to remove modified generated skill %s: manifest hash mismatch", path)
+		if !force {
+			return "", "", fmt.Errorf("refusing to remove modified generated skill %s: manifest hash mismatch", path)
+		}
+		backup := plannedBackupPath(path)
+		if err := os.Rename(path, backup); err != nil {
+			return "", "", fmt.Errorf("backup %s: %w", path, err)
+		}
+		if err := os.Remove(manifestPath(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", "", err
+		}
+		_ = os.Remove(filepath.Dir(path))
+		return "removed-with-backup", backup, nil
 	}
 	if err := os.Remove(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "missing", nil
+			return "missing", "", nil
 		}
-		return "", err
+		return "", "", err
 	}
 	if err := os.Remove(manifestPath(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
+		return "", "", err
 	}
 	_ = os.Remove(filepath.Dir(path))
-	return "removed", nil
+	return "removed", "", nil
 }
 
 func writeManifest(path string, manifest installManifest) error {

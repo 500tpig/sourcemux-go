@@ -727,21 +727,32 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 #### 2. Signatures
 
 - Install:
-  - `sourcemux install <target...> [--scope project|user] [--binary <path>] [--config <path>] [--write-config] [--dry-run] [--json]`
+  - `sourcemux install <target...> [--scope project|user] [--binary <path>] [--config <path>] [--write-config] [--dry-run] [--force] [--json]`
+  - `sourcemux install update <target...> [--scope project|user] [--binary <path>] [--config <path>] [--write-config] [--dry-run] [--force] [--json]`
 - Uninstall:
-  - `sourcemux uninstall <target...> [--scope project|user] [--write-config] [--dry-run] [--json]`
+  - `sourcemux uninstall <target...> [--scope project|user] [--write-config] [--dry-run] [--force] [--json]`
 - Status:
   - `sourcemux install status [target...] [--scope project|user] [--binary <path>] [--config <path>] [--config-status] [--json]`
 - First supported file writers:
   - Codex: project `.codex/config.toml`, user `~/.codex/config.toml`, entry `[mcp_servers.sourcemux]`
   - Gemini: project `.gemini/settings.json`, user `~/.gemini/settings.json`, entry `mcpServers.sourcemux`
   - OpenCode: project `opencode.json`, user `~/.config/opencode/opencode.json`, entry `mcp.sourcemux`
+- Generated skill roots:
+  - Codex: project `.agents/skills`, user `~/.codex/skills`
+  - Claude Code: project `.claude/skills`, user `~/.claude/skills`
+  - Gemini: project `.gemini/skills`, user `~/.gemini/skills`
+  - OpenCode: project `.opencode/skills`, user `~/.opencode/skills`
 
 #### 3. Contracts
 
 - Explicit opt-in:
-  - Without `--write-config`, install/uninstall may print snippets or warnings but must not modify MCP client config files.
+  - Without `--write-config`, install/uninstall may print warnings but must not modify MCP client config files or emit MCP-first routing guidance for generated skills.
   - With `--write-config`, only verified file-based writers are allowed. Unsupported targets must not invoke external agent CLIs as a fallback.
+- Generated skill routing:
+  - Default generated skills are CLI-first. They must tell agents to use SourceMux CLI commands and must not tell agents to call SourceMux MCP tools.
+  - MCP-aware generated skills are allowed only when MCP setup is explicitly requested (`--write-config`) or the selected target is an explicit MCP-print target such as `mcp-json` / `stdio`.
+  - Every generated CLI example must include the installed config path as `cli --config <path> <command> ...`; do not rely on project-local `./sourcemux.json` or environment variables.
+  - Generated skill manifests must record enough mode metadata (for example `mcp_mode`) for `install status` to distinguish `cli-only`, `mcp-configured`, and unmanaged skills.
 - Entry payload:
   - Codex/Gemini write only command and args: `command=<sourcemux binary>`, `args=["--config", <active config path>]`.
   - OpenCode writes local command form: `type="local"`, `command=[<sourcemux binary>, "--config", <active config path>]`, `enabled=true`.
@@ -753,18 +764,25 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
   - Parent MCP containers (`mcp_servers`, `mcpServers`, `mcp`) must be object/table shaped; do not overwrite a non-object parent.
 - Backup and output:
   - Before modifying an existing client config file, create a timestamped sibling backup.
+  - Before replacing an existing modified generated skill with `--force`, create a timestamped sibling backup with a high-resolution timestamp so rapid retries cannot collide.
   - Human and JSON plans must include backup path/intent plus a clear rewrite warning. Non-dry-run must print the backup/rewrite notice before applying writes; keep JSON stdout parseable by sending human notices to stderr.
   - `--dry-run` must show planned changes and backup intent without writing config files or backups.
   - Config writers preserve config semantics, unrelated keys, and unrelated MCP entries; they do not guarantee preserving comments or original formatting. Codex TOML and OpenCode JSONC may be reserialized/reformatted, OpenCode JSONC may be emitted as JSON, and Gemini JSON formatting may change. Backups are the rollback path for formatting/comment recovery.
 - Uninstall:
   - Remove only the `sourcemux` entry.
   - Never delete the whole client config file, even if the MCP parent becomes empty.
+  - Remove generated skill files only when the SourceMux manifest target and content hash match. If the skill was modified, default to refusing removal; `--force` may back up the modified skill and remove the manifest.
+- Update:
+  - `sourcemux install update` reuses the install plan, but may refresh an existing generated skill without `--force` only when the existing content still matches its manifest hash.
+  - If the generated skill was user-modified, update must refuse unless `--force` is passed.
 
 #### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 | --- | --- |
 | `--write-config` omitted | Do not write/remove client config files |
+| `--write-config` omitted on install | Generate CLI-first skill; no MCP guidance/actions except explicit print-only targets |
+| `--write-config` requested on supported MCP target | Generate MCP-aware skill and plan MCP config/snippet actions |
 | Unsupported target with `--write-config` | Emit informational action/warning; do not run external CLI |
 | Client config file missing | Create parent directory and config file with only the required `sourcemux` entry |
 | Existing matching `sourcemux` entry | Report `unchanged`; do not rewrite or create backup |
@@ -774,27 +792,39 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 | Parent MCP field is non-object | Return clear config-shape error; do not overwrite unrelated user data |
 | `sourcemux` child is non-object | Treat as drifted child; replacement/removal may affect only that child |
 | Uninstall with missing `sourcemux` entry | Report `unchanged`; do not delete file |
+| Uninstall modified generated skill without `--force` | Refuse and preserve the skill plus manifest |
+| Uninstall modified generated skill with `--force` | Back up the modified skill, remove the skill and manifest, preserve unrelated files |
+| Update unmodified generated skill | Rewrite skill and manifest to the current template/mode without backup |
+| Update modified generated skill without `--force` | Refuse and preserve the user-edited file |
 | Any JSON output path | Keep machine-readable JSON on stdout; human backup notices go to stderr |
 
 #### 5. Good/Base/Bad Cases
 
 - Good: `sourcemux install gemini --write-config --dry-run --json` reports a `merge_config` action with backup intent for an existing settings file and creates no files.
 - Base: `sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json` creates `.codex/config.toml` with `[mcp_servers.sourcemux]`.
-- Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, or calling `gemini mcp add` from tests.
+- Base: `sourcemux install codex --scope user --binary /usr/local/bin/sourcemux --config ~/.config/sourcemux/sourcemux.json` creates a CLI-first skill whose examples all include `--config ~/.config/sourcemux/sourcemux.json`.
+- Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, calling `gemini mcp add` from tests, or generating a CLI-only skill that says to use MCP tools.
 
 #### 6. Tests Required
 
 - Install:
   - Dry-run JSON does not write config or backups.
+  - CLI-only install emits only a generated skill action for normal skill targets and marks it non-MCP.
+  - Generated CLI examples include the configured `--config` path.
+  - `--write-config` install marks the generated skill MCP-aware and plans the appropriate supported MCP config action.
   - Missing config creates the supported file and entry.
   - Existing config preserves unrelated keys and unrelated MCP entries.
   - Drifted entries update with a visible backup and backup file containing the original content.
   - Matching entries are idempotent and do not create backups.
+  - `install update` refreshes unmodified generated skills and updates the manifest hash/mode.
 - Uninstall:
   - Removes only `sourcemux` and preserves the file plus unrelated config.
   - Missing `sourcemux` entry is `unchanged`.
+  - Modified generated skill refuses removal without `--force`.
+  - `--force` backs up and removes a modified generated skill.
 - Status:
   - `--config-status --json` reports supported/path/exists/entry_present/matches/drifted/status.
+  - Skill status reports managed/modified plus install mode (`cli-only`, `mcp-configured`, or unmanaged).
 - Error paths:
   - Malformed JSON/TOML/JSONC leaves file unchanged and creates no backup.
   - Non-object MCP parent leaves file unchanged and creates no backup.
@@ -819,6 +849,22 @@ if !ok && root["mcpServers"] != nil {
 	return fmt.Errorf("mcpServers must be an object")
 }
 parent["sourcemux"] = desired
+```
+
+Wrong:
+
+```markdown
+Use SourceMux MCP tools for quick searches.
+
+sourcemux cli search "query" --json
+```
+
+Correct:
+
+```markdown
+Use the SourceMux CLI by default.
+
+/usr/local/bin/sourcemux cli --config ~/.config/sourcemux/sourcemux.json search "query" --json
 ```
 
 ---

@@ -29,6 +29,9 @@ func TestRunListAgentsJSON(t *testing.T) {
 			if target.Support != SupportFull || !target.Skill {
 				t.Fatalf("codex target = %+v", target)
 			}
+			if target.UserRoot != "~/.codex/skills" {
+				t.Fatalf("codex user skill root = %q, want ~/.codex/skills", target.UserRoot)
+			}
 		}
 	}
 	if !foundCodex {
@@ -52,16 +55,15 @@ func TestInstallCodexDryRunJSONDoesNotWrite(t *testing.T) {
 	if !plan.DryRun || plan.Mode != "install" {
 		t.Fatalf("plan = %+v", plan)
 	}
-	if len(plan.Actions) < 2 {
-		t.Fatalf("actions = %+v, want skill and Codex MCP guidance", plan.Actions)
+	if len(plan.Actions) != 1 {
+		t.Fatalf("actions = %+v, want only CLI-first skill write", plan.Actions)
 	}
-	cmd := findAction(plan.Actions, "codex", "shell_command")
-	if cmd == nil || strings.Join(cmd.Command, " ") != "codex mcp add sourcemux -- "+plan.Binary+" --config "+plan.ConfigFile {
-		t.Fatalf("codex command action = %+v", cmd)
+	skill := findAction(plan.Actions, "codex", "write_file")
+	if skill == nil || skill.MCPMode {
+		t.Fatalf("codex skill action = %+v", skill)
 	}
-	snippet := findAction(plan.Actions, "codex", "config_snippet")
-	if snippet == nil || snippet.Path != ".codex/config.toml" || !strings.Contains(snippet.Snippet, "[mcp_servers.sourcemux]") {
-		t.Fatalf("codex config snippet = %+v", snippet)
+	if findAction(plan.Actions, "codex", "shell_command") != nil || findAction(plan.Actions, "codex", "config_snippet") != nil {
+		t.Fatalf("CLI-only install emitted MCP guidance: %+v", plan.Actions)
 	}
 	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -88,6 +90,10 @@ func TestInstallCodexWriteConfigDryRunJSONDoesNotWrite(t *testing.T) {
 	action := findAction(plan.Actions, "codex", "merge_config")
 	if action == nil {
 		t.Fatalf("missing codex merge_config action: %+v", plan.Actions)
+	}
+	skill := findAction(plan.Actions, "codex", "write_file")
+	if skill == nil || !skill.MCPMode {
+		t.Fatalf("write-config should mark generated skill MCP-aware: %+v", skill)
 	}
 	if !strings.HasSuffix(action.Path, filepath.Join(".codex", "config.toml")) || action.Status != "create" {
 		t.Fatalf("codex merge_config action = %+v", action)
@@ -120,15 +126,90 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		t.Fatalf("manifest = %+v, content hash = %s", manifest, contentSHA256(data))
 	}
 	text := string(data)
-	for _, want := range []string{"name: sourcemux-routing", "SourceMux routing", "custom.sourcemux.json"} {
+	for _, want := range []string{
+		"name: sourcemux-routing",
+		"SourceMux routing",
+		"custom.sourcemux.json",
+		"cli --config",
+		"Capability routing",
+		"Evidence policy",
+		"search \"query\" --platform Twitter --json",
+		"docs-search",
+		"exa-search",
+		"exa-contents",
+		"plan \"research question\" --depth standard",
+		"fetch --json",
+		"Jina Reader",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("generated skill missing %q:\n%s", want, text)
 		}
 	}
-	for _, bad := range []string{"grok-search-routing", "/Users/johnsmith/Project/Study/grok-search-go"} {
+	for _, bad := range []string{"grok-search-routing", "/Users/johnsmith/Project/Study/grok-search-go", "Use SourceMux MCP tools", "playwright", "browser"} {
 		if strings.Contains(text, bad) {
 			t.Fatalf("generated skill contains non-portable %q:\n%s", bad, text)
 		}
+	}
+}
+
+func TestInstallCodexUserScopeWritesCodexSkillRoot(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Setenv("HOME", dir)
+
+	if got := RunInstall([]string{"codex", "--scope", "user", "--config", "custom.sourcemux.json"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex --scope user) = %d, want 0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "skills", skillName, "SKILL.md")); err != nil {
+		t.Fatalf("expected user Codex skill under ~/.codex/skills: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect Codex user skill under ~/.agents/skills: %v", err)
+	}
+}
+
+func TestInstallUpdateRefreshesUnmodifiedGeneratedSkill(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	if got := RunInstall([]string{"codex", "--config", "custom.sourcemux.json"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex) = %d, want 0", got)
+	}
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	oldData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read old skill: %v", err)
+	}
+	if strings.Contains(string(oldData), "Use SourceMux MCP tools") {
+		t.Fatalf("initial skill should be CLI-first:\n%s", oldData)
+	}
+
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"update", "codex", "--write-config", "--json", "--config", "custom.sourcemux.json"}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(update codex --write-config) = %d, want 0", got)
+		}
+	})
+	var plan Plan
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, out)
+	}
+	action := findAction(plan.Actions, "codex", "write_file")
+	if action == nil || action.Status != "updated" || action.Backup != "" || !action.MCPMode {
+		t.Fatalf("update write_file action = %+v", action)
+	}
+	newData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read updated skill: %v", err)
+	}
+	if !strings.Contains(string(newData), "Use SourceMux MCP tools") {
+		t.Fatalf("updated skill should be MCP-aware:\n%s", newData)
+	}
+	manifest, err := readManifest(manifestPath(path))
+	if err != nil {
+		t.Fatalf("read updated manifest: %v", err)
+	}
+	if !manifest.MCPMode || manifest.ContentSHA256 != contentSHA256(newData) {
+		t.Fatalf("manifest = %+v, content hash = %s", manifest, contentSHA256(newData))
 	}
 }
 
@@ -163,7 +244,7 @@ func TestInstallFirstTierTargetsExposeOfficialMCPGuidance(t *testing.T) {
 	chdir(t, dir)
 
 	out := captureStdout(t, func() {
-		if got := RunInstall([]string{"claude-code", "gemini", "opencode", "--dry-run", "--json", "--scope", "project"}, "sourcemux.json"); got != 0 {
+		if got := RunInstall([]string{"claude-code", "gemini", "opencode", "--write-config", "--dry-run", "--json", "--scope", "project"}, "sourcemux.json"); got != 0 {
 			t.Fatalf("RunInstall(first-tier dry-run) = %d, want 0", got)
 		}
 	})
@@ -177,6 +258,12 @@ func TestInstallFirstTierTargetsExposeOfficialMCPGuidance(t *testing.T) {
 	}
 	if !containsAll(claude.Command, []string{"--scope", "project", "sourcemux", "--config"}) {
 		t.Fatalf("claude command missing scope/name/config: %+v", claude.Command)
+	}
+	for _, target := range []string{"claude-code", "gemini", "opencode"} {
+		skill := findAction(plan.Actions, target, "write_file")
+		if skill == nil || !skill.MCPMode {
+			t.Fatalf("%s write_file should be MCP-aware when --write-config is requested: %+v", target, skill)
+		}
 	}
 
 	gemini := findAction(plan.Actions, "gemini", "shell_command")
@@ -608,6 +695,46 @@ func TestUninstallRefusesModifiedGeneratedSkill(t *testing.T) {
 	}
 }
 
+func TestUninstallForceBacksUpModifiedGeneratedSkill(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if got := RunInstall([]string{"codex"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex) = %d, want 0", got)
+	}
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	modified := []byte("locally modified generated skill")
+	if err := os.WriteFile(path, modified, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if got := RunUninstall([]string{"codex", "--force", "--json"}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunUninstall(codex --force) = %d, want 0", got)
+		}
+	})
+	var plan Plan
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, out)
+	}
+	action := findAction(plan.Actions, "codex", "remove_file")
+	if action == nil || action.Status != "removed-with-backup" || action.Backup == "" {
+		t.Fatalf("force remove action = %+v", action)
+	}
+	backupData, err := os.ReadFile(action.Backup)
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if string(backupData) != string(modified) {
+		t.Fatalf("backup = %q, want modified skill", backupData)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("skill should be removed after force backup: %v", err)
+	}
+	if _, err := os.Stat(manifestPath(path)); !os.IsNotExist(err) {
+		t.Fatalf("manifest should be removed after force backup: %v", err)
+	}
+}
+
 func TestStatusReportsManagedAndModifiedSkill(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -620,7 +747,7 @@ func TestStatusReportsManagedAndModifiedSkill(t *testing.T) {
 		}
 	})
 	statuses := decodeStatuses(t, out)
-	if len(statuses) != 1 || !statuses[0].Installed || !statuses[0].Managed || statuses[0].Modified {
+	if len(statuses) != 1 || !statuses[0].Installed || !statuses[0].Managed || statuses[0].Modified || statuses[0].InstallMode != "cli-only" {
 		t.Fatalf("status after install = %+v", statuses)
 	}
 
