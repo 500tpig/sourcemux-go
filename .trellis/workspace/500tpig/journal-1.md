@@ -451,3 +451,36 @@ Implemented safe MCP client config merging for installer write-config/status flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: SourceMux heavy search controls
+
+**Date**: 2026-05-25
+**Task**: SourceMux heavy search controls
+**Branch**: `main`
+
+### Summary
+
+Added Grok endpoint profiles plus caller-controlled search fallback timing, no-fallback diagnostics, docs, generated skill guidance, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `09f0111` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
