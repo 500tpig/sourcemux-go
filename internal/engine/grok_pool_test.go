@@ -120,7 +120,7 @@ func TestPool_EmptyPool(t *testing.T) {
 func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	eps := []GrokEndpoint{
 		{Name: "wykon", BaseURL: "http://x", APIKey: "k", Model: "m", SendSearchFlag: false},
-		{Name: "yyds", BaseURL: "http://y", APIKey: "k2", Model: "m2", SendSearchFlag: true, APIType: "responses", ResponseTools: []string{ResponseToolWebSearch, ResponseToolXSearch}},
+		{Name: "yyds", BaseURL: "http://y", APIKey: "k2", Model: "m2", Profile: "heavy", SendSearchFlag: true, APIType: "responses", ResponseTools: []string{ResponseToolWebSearch, ResponseToolXSearch}},
 	}
 	pool := NewGrokPool(eps)
 	if pool.Len() != 2 {
@@ -130,11 +130,65 @@ func TestNewGrokPool_PreservesNameAndFlag(t *testing.T) {
 	if cs[0].Name != "wykon" || cs[0].SendSearchFlag != false {
 		t.Fatalf("client 0 = %+v", cs[0])
 	}
-	if cs[1].Name != "yyds" || cs[1].SendSearchFlag != true || cs[1].APIType != "responses" {
+	if cs[1].Name != "yyds" || cs[1].SendSearchFlag != true || cs[1].APIType != "responses" || cs[1].EffectiveProfile() != "heavy" {
 		t.Fatalf("client 1 = %+v", cs[1])
 	}
 	if !reflect.DeepEqual(cs[1].ResponseTools, []string{ResponseToolWebSearch, ResponseToolXSearch}) {
 		t.Fatalf("client 1 response tools = %v", cs[1].ResponseTools)
+	}
+}
+
+func TestNewGrokPool_SkipsDisabledEndpoints(t *testing.T) {
+	disabled := false
+	pool := NewGrokPool([]GrokEndpoint{
+		{Name: "disabled", BaseURL: "http://disabled", APIKey: "k", Model: "m", Enabled: &disabled},
+		{Name: "enabled", BaseURL: "http://enabled", APIKey: "k", Model: "m"},
+	})
+
+	if pool.Len() != 1 {
+		t.Fatalf("Len = %d, want 1", pool.Len())
+	}
+	if got := pool.Clients()[0].Name; got != "enabled" {
+		t.Fatalf("client name = %q, want enabled", got)
+	}
+}
+
+func TestGrokPool_ProfileSelectsOnlyMatchingEndpoints(t *testing.T) {
+	var defaultCalls, heavyCalls int32
+	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&defaultCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"default ok"}}]}`))
+	}))
+	t.Cleanup(defaultSrv.Close)
+	heavySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&heavyCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"heavy ok"}}]}`))
+	}))
+	t.Cleanup(heavySrv.Close)
+
+	pool := NewGrokPool([]GrokEndpoint{
+		{Name: "default", BaseURL: defaultSrv.URL, APIKey: "k", Model: "m"},
+		{Name: "heavy", BaseURL: heavySrv.URL, APIKey: "k", Model: "m", Profile: "heavy"},
+	})
+
+	res, err := pool.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatalf("default Search failed: %v", err)
+	}
+	if res.EndpointName != "default" {
+		t.Fatalf("default EndpointName = %q", res.EndpointName)
+	}
+	res, err = pool.SearchWithModelAndProfile(context.Background(), "q", "", "heavy")
+	if err != nil {
+		t.Fatalf("heavy Search failed: %v", err)
+	}
+	if res.EndpointName != "heavy" {
+		t.Fatalf("heavy EndpointName = %q", res.EndpointName)
+	}
+	if atomic.LoadInt32(&defaultCalls) != 1 || atomic.LoadInt32(&heavyCalls) != 1 {
+		t.Fatalf("calls default=%d heavy=%d", defaultCalls, heavyCalls)
 	}
 }
 

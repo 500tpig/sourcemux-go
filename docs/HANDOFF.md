@@ -113,7 +113,7 @@ MCP:
 3. Call `get_sources` with the returned `session_id`.
 4. Call `web_fetch` on one returned URL or `https://example.com`.
 5. If Tavily is configured, call `web_map` and `web_crawl`.
-6. Call `research_run` for a bounded research pack.
+6. Call `research_run` for a bounded research pack; pass `profile` when you need an explicit heavy Grok pool.
 7. If `reasoningEndpoints[]` is configured, call `smart_answer`.
 
 Expected behavior:
@@ -164,12 +164,47 @@ Set `exa.apiKey` and keep `exa.enabled` true. Exa is a fallback behind Grok and 
 
 ### Slow endpoint pool
 
-Set `grokPoolTimeoutSec`, for example:
+Set `grokPoolTimeoutSec`, and keep heavy models out of the default profile. For
+example:
 
 ```json
 {
-  "grokPoolTimeoutSec": 45
+  "grokEndpoints": [
+    {
+      "name": "fast",
+      "baseURL": "https://your-endpoint.example/v1",
+      "apiKey": "sk-your-key",
+      "model": "grok-4.20-fast",
+      "profile": "default"
+    },
+    {
+      "name": "xhigh",
+      "baseURL": "https://your-endpoint.example/v1",
+      "apiKey": "sk-your-key",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "profile": "heavy"
+    }
+  ],
+  "grokPoolTimeoutSec": 30
 }
 ```
 
-This bounds the total wall-clock time spent across the Grok endpoint pool.
+This bounds the total wall-clock time spent across the selected Grok endpoint
+profile. Use `search --profile heavy` or `research --profile heavy` only when
+you explicitly want the heavy pool.
+
+For one-off slow multi-agent searches, prefer per-call controls instead of
+raising the global cap for every caller:
+
+```bash
+./sourcemux --config /path/to/sourcemux.json search "complex current topic" \
+  --profile heavy --fallback-after 60s --timeout 180s --json
+
+./sourcemux --config /path/to/sourcemux.json search "complex current topic" \
+  --profile xhigh --grok-pool-timeout 0 --no-fallback --timeout 300s --json
+```
+
+`--fallback-after` and `--grok-pool-timeout` both override
+`grokPoolTimeoutSec` for that search. Use `--no-fallback` when diagnosing
+whether the selected Grok profile itself can return; otherwise SourceMux may
+return TinyFish/Exa/Tavily fallback results after the Grok pool gives up.

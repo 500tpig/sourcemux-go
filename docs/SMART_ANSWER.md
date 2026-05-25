@@ -29,6 +29,13 @@ web and X search:
 `responseTools` is only for the search endpoint. The final synthesis model still
 belongs in `reasoningEndpoints[]`.
 
+Heavy multi-agent models such as `grok-4.20-multi-agent-xhigh` should not be in
+the default search profile. Either put them in `reasoningEndpoints[]` for final
+synthesis, or put them in `grokEndpoints[]` with `"profile": "heavy"` and select
+them explicitly with `search --profile heavy`. For slow multi-agent search,
+use `--fallback-after` to bound when SourceMux gives way to fallback providers,
+or `--grok-pool-timeout 0 --no-fallback` to verify the Grok profile itself.
+
 ## Why `reasoningEndpoints` are separate
 
 `grokEndpoints[]` are search-capable endpoints used by `web_search` and `research_run`. A synthesis-only model such as DeepSeek Flash/Pro should not go there, because a successful response would short-circuit the source-first search fallback route.
@@ -58,6 +65,12 @@ Use `reasoningEndpoints[]` for final-answer models:
       "baseURL": "https://api.deepseek.com/v1",
       "apiKey": "sk-your-deepseek-key",
       "model": "deepseek-v4-pro"
+    },
+    {
+      "name": "grok-multi-agent-xhigh",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-grok-key",
+      "model": "grok-4.20-multi-agent-xhigh"
     }
   ]
 }
@@ -77,6 +90,23 @@ Use Pro for more complex synthesis without changing the config:
 ./sourcemux smart-answer "Compare these architecture options" \
   --depth deep \
   --reasoning-model deepseek-v4-pro \
+  --json
+```
+
+Explicit heavy search profile:
+
+```bash
+./sourcemux search "Investigate this complex current topic" \
+  --profile heavy \
+  --fallback-after 60s \
+  --timeout 180s \
+  --json
+
+./sourcemux search "Investigate this complex current topic" \
+  --profile xhigh \
+  --grok-pool-timeout 0 \
+  --no-fallback \
+  --timeout 300s \
   --json
 ```
 

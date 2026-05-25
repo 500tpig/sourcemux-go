@@ -40,7 +40,7 @@ func (p *GrokSearchProvider) Try(ctx context.Context, req capability.Request) (c
 	if p == nil || p.Pool == nil || p.Pool.Len() == 0 {
 		return capability.Result{}, fmt.Errorf("grok pool is empty: no endpoints configured")
 	}
-	res, err := p.Pool.SearchWithModel(ctx, req.Query, stringOption(req, "model"))
+	res, err := p.Pool.SearchWithModelAndProfile(ctx, req.Query, stringOption(req, "model"), stringOption(req, "profile"))
 	if err != nil {
 		return capability.Result{}, err
 	}

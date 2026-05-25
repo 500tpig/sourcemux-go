@@ -47,6 +47,7 @@ var dateInURLPattern = regexp.MustCompile(`20(2[4-9]|3[0-9])`)
 type ResearchOptions struct {
 	Query      string   `json:"query"`
 	Depth      string   `json:"depth,omitempty"`
+	Profile    string   `json:"profile,omitempty"`
 	Platform   string   `json:"platform,omitempty"`
 	Domains    []string `json:"domains,omitempty"`
 	MaxFetches int      `json:"max_fetches,omitempty"`
@@ -129,7 +130,7 @@ type ResearchSiteSummary struct {
 
 // ResearchSearchProvider abstracts web_search execution for fakes in tests.
 type ResearchSearchProvider interface {
-	Search(ctx context.Context, query, platform string) (*WebSearchResult, error)
+	Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error)
 }
 
 // ResearchFetchProvider abstracts web_fetch execution for fakes in tests.
@@ -182,8 +183,8 @@ type webSearchResearchProvider struct {
 	clients WebSearchClients
 }
 
-func (p webSearchResearchProvider) Search(ctx context.Context, query, platform string) (*WebSearchResult, error) {
-	return RunWebSearch(ctx, p.clients, query, platform, "")
+func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
+	return RunWebSearch(ctx, p.clients, query, platform, "", profile)
 }
 
 type webFetchResearchProvider struct {
@@ -229,9 +230,10 @@ func (c *MemorySourceCache) GetSources(sessionID string) ([]string, bool) {
 // RegisterResearchRun registers the executing research workflow MCP tool.
 func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 	tool := mcp.NewTool("research_run",
-		mcp.WithDescription("Run a bounded in-memory research workflow: plan queries, execute web_search rounds, read sources, rank/dedup URLs, fetch top pages, optionally map/crawl target domains, and return a compact research pack."),
+		mcp.WithDescription("Run a bounded in-memory research workflow: plan queries, execute web_search rounds, optionally select a Grok search profile, read sources, rank/dedup URLs, fetch top pages, optionally map/crawl target domains, and return a compact research pack."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Research question or topic")),
 		mcp.WithString("depth", mcp.Description("Research depth: quick, standard, or deep (default standard)"), mcp.Enum("quick", "standard", "deep")),
+		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile for web_search, e.g. 'heavy'")),
 		mcp.WithString("platform", mcp.Description("Optional platform focus, e.g. 'GitHub, Reddit'")),
 		mcp.WithArray("domains",
 			mcp.Description("Optional allow-list of domains or site roots to prioritize/filter; may also drive web_map/web_crawl expansion"),
@@ -249,10 +251,12 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 			return mcp.NewToolResultError("query is required"), nil
 		}
 		depth, _ := req.Params.Arguments["depth"].(string)
+		profile, _ := req.Params.Arguments["profile"].(string)
 		platform, _ := req.Params.Arguments["platform"].(string)
 		pack, err := executor.Run(ctx, ResearchOptions{
 			Query:      query,
 			Depth:      depth,
+			Profile:    profile,
 			Platform:   platform,
 			Domains:    stringSliceArg(req.Params.Arguments, "domains"),
 			MaxFetches: intArgOr(req.Params.Arguments, "max_fetches", 0),
@@ -318,7 +322,7 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 			summary := ResearchSearchSummary{Query: plannedQuery}
 			subCtx, cancel := context.WithTimeout(ctx, researchPerCallTimeout)
 			defer cancel()
-			res, err := e.Searcher.Search(subCtx, plannedQuery, platform)
+			res, err := e.Searcher.Search(subCtx, plannedQuery, platform, opts.Profile)
 			if err != nil {
 				summary.Error = err.Error()
 				searchSummaries[idx] = summary

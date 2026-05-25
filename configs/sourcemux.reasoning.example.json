@@ -5,6 +5,8 @@
       "baseURL": "https://your-grok-compatible-endpoint.example/v1",
       "apiKey": "sk-your-grok-key",
       "model": "grok-4.20-fast",
+      "enabled": true,
+      "profile": "default",
       "sendSearchFlag": false
     }
   ],
@@ -20,6 +22,12 @@
       "baseURL": "https://api.deepseek.com/v1",
       "apiKey": "sk-your-deepseek-key",
       "model": "deepseek-v4-pro"
+    },
+    {
+      "name": "grok-multi-agent-xhigh",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-grok-key",
+      "model": "grok-4.20-multi-agent-xhigh"
     }
   ],
   "tavily": {

@@ -1082,6 +1082,7 @@ func routingSkill(binary, configPath string, mcpMode bool) string {
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- For explicit slow heavy/xhigh Grok search, prefer --fallback-after to bound when fallback providers may run; use --grok-pool-timeout 0 --no-fallback --timeout 300s when verifying whether the Grok profile itself can return.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	if mcpMode {
 		cliPolicy = `- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
@@ -1089,6 +1090,7 @@ func routingSkill(binary, configPath string, mcpMode bool) string {
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- For explicit slow heavy/xhigh Grok search, prefer CLI --fallback-after to bound when fallback providers may run; use --grok-pool-timeout 0 --no-fallback --timeout 300s when verifying whether the Grok profile itself can return.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	}
 	return fmt.Sprintf(`---
@@ -1113,6 +1115,7 @@ Use SourceMux as the default web research capability.
 | Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | exa-search --type deep --json | Calls Exa directly when Exa-specific controls matter. |
 | Known URL page extraction | fetch --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
+| Explicit slow heavy/xhigh Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json; use --grok-pool-timeout 0 --no-fallback --timeout 300s to verify Grok itself | Gives the caller control over waiting vs fallback instead of relying only on the configured pool cap. |
 | Multi-source investigation with synthesis | research --depth standard --json or research --depth deep --json | Runs the composable SourceMux research workflow. |
 | Planning/decomposition without executing the research | plan --depth standard or plan --depth deep | Produces a deterministic search plan before running provider calls. |
 
@@ -1133,13 +1136,15 @@ Use SourceMux as the default web research capability.
 
 %s %s search "query" --json
 %s %s search "query" --platform Twitter --json
+%s %s search "complex query" --profile heavy --fallback-after 60s --timeout 180s --json
+%s %s search "complex query" --profile xhigh --grok-pool-timeout 0 --no-fallback --timeout 300s --json
 %s %s fetch "https://example.com" --json
 %s %s docs-search "library or API question" --json
 %s %s exa-search "official docs API reference" --type deep --json
 %s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 %s %s plan "research question" --depth standard
 %s %s research "topic" --depth standard --json
-`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
+`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {

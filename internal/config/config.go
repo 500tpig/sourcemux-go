@@ -90,6 +90,7 @@ type providerFileConfig struct {
 	BaseURL        string                `json:"baseURL"`
 	Model          string                `json:"model"`
 	APIType        string                `json:"apiType"`
+	Profile        string                `json:"profile,omitempty"`
 	SendSearchFlag bool                  `json:"sendSearchFlag"`
 	ResponseTools  []string              `json:"responseTools,omitempty"`
 	Endpoints      []engine.GrokEndpoint `json:"endpoints,omitempty"`
@@ -159,7 +160,7 @@ func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 	return &Config{
 		Version:              1,
 		MinimumProfile:       "off",
-		MainSearchConfigured: len(endpoints) > 0,
+		MainSearchConfigured: len(engine.FilterGrokEndpoints(endpoints, "")) > 0,
 		DocsSearchConfigured: boolPtrOr(fileCfg.Exa.Enabled, true) && strings.TrimSpace(fileCfg.Exa.APIKey) != "",
 		WebFetchConfigured:   stringOr(fileCfg.Jina.APIURL, "https://r.jina.ai") != "",
 		GrokEndpoints:        endpoints,
@@ -250,6 +251,9 @@ func rejectMixedV1V2(raw map[string]json.RawMessage) error {
 
 func applyV2Providers(out *Config, providers []providerFileConfig, path string) error {
 	for i, p := range providers {
+		if !providerEnabled(p) {
+			continue
+		}
 		switch strings.TrimSpace(p.Type) {
 		case "", "disabled":
 			continue
@@ -290,6 +294,7 @@ func grokEndpointFromProvider(p providerFileConfig) engine.GrokEndpoint {
 		APIKey:         strings.TrimSpace(p.APIKey),
 		Model:          strings.TrimSpace(p.Model),
 		APIType:        strings.TrimSpace(p.APIType),
+		Profile:        strings.TrimSpace(p.Profile),
 		SendSearchFlag: p.SendSearchFlag,
 		ResponseTools:  append([]string(nil), p.ResponseTools...),
 	}
@@ -302,11 +307,13 @@ func v2HasMainSearch(providers []providerFileConfig) bool {
 		}
 		switch strings.TrimSpace(p.Type) {
 		case "grok-pool":
-			if len(p.Endpoints) > 0 || (strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(p.APIKey) != "") {
+			ep := grokEndpointFromProvider(p)
+			if len(engine.FilterGrokEndpoints(p.Endpoints, "")) > 0 || (strings.TrimSpace(ep.BaseURL) != "" && strings.TrimSpace(ep.APIKey) != "" && len(engine.FilterGrokEndpoints([]engine.GrokEndpoint{ep}, "")) > 0) {
 				return true
 			}
 		case "openai-compatible":
-			if strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(p.APIKey) != "" {
+			ep := grokEndpointFromProvider(p)
+			if strings.TrimSpace(ep.BaseURL) != "" && strings.TrimSpace(ep.APIKey) != "" && len(engine.FilterGrokEndpoints([]engine.GrokEndpoint{ep}, "")) > 0 {
 				return true
 			}
 		}
@@ -379,6 +386,7 @@ func normalizeEndpoints(eps []engine.GrokEndpoint) ([]engine.GrokEndpoint, error
 		ep.APIKey = strings.TrimSpace(ep.APIKey)
 		ep.Model = strings.TrimSpace(ep.Model)
 		ep.APIType = strings.TrimSpace(ep.APIType)
+		ep.Profile = ep.EffectiveProfile()
 		responseTools, err := engine.NormalizeResponseTools(ep.ResponseTools)
 		if err != nil {
 			return nil, fmt.Errorf("endpoint #%d (name=%q): %w", i, ep.Name, err)
@@ -387,20 +395,26 @@ func normalizeEndpoints(eps []engine.GrokEndpoint) ([]engine.GrokEndpoint, error
 		if len(ep.ResponseTools) > 0 && ep.APIType != "responses" {
 			return nil, fmt.Errorf("endpoint #%d (name=%q) responseTools require apiType \"responses\"", i, ep.Name)
 		}
-		if ep.BaseURL == "" || ep.APIKey == "" {
-			return nil, fmt.Errorf("endpoint #%d (name=%q) missing baseURL or apiKey", i, ep.Name)
-		}
-		ep.BaseURL = normalizeOpenAIBaseURL(ep.BaseURL)
 		if ep.Name == "" {
 			ep.Name = fmt.Sprintf("endpoint-%d", i)
 		}
 		if ep.Model == "" {
 			ep.Model = "grok-3-mini"
 		}
+		if ep.BaseURL != "" {
+			ep.BaseURL = normalizeOpenAIBaseURL(ep.BaseURL)
+		}
 		switch ep.APIType {
 		case "", "chat", "responses":
 		default:
 			return nil, fmt.Errorf("endpoint #%d (name=%q) has invalid apiType %q: must be \"\" (or \"chat\") or \"responses\"", i, ep.Name, ep.APIType)
+		}
+		if !ep.IsEnabled() {
+			out = append(out, ep)
+			continue
+		}
+		if ep.BaseURL == "" || ep.APIKey == "" {
+			return nil, fmt.Errorf("endpoint #%d (name=%q) missing baseURL or apiKey", i, ep.Name)
 		}
 		out = append(out, ep)
 	}

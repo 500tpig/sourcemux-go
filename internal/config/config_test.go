@@ -273,6 +273,36 @@ func TestLoadFile_PoolTimeoutZeroDisables(t *testing.T) {
 	}
 }
 
+func TestLoadFile_GrokEndpointRoutingFields(t *testing.T) {
+	path := writeConfig(t, `{
+	  "grokEndpoints": [
+	    {"name":"fast","baseURL":"https://fast.example","apiKey":"sk-fast","model":"grok-fast"},
+	    {"name":"xhigh","baseURL":"https://heavy.example","apiKey":"sk-heavy","model":"grok-4.20-multi-agent-xhigh","profile":" HEAVY "},
+	    {"name":"disabled","enabled":false,"model":"broken-model"}
+	  ]
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if len(cfg.GrokEndpoints) != 3 {
+		t.Fatalf("endpoints len = %d, want 3", len(cfg.GrokEndpoints))
+	}
+	if !cfg.MainSearchConfigured {
+		t.Fatal("MainSearchConfigured = false, want true")
+	}
+	if cfg.GrokEndpoints[0].EffectiveProfile() != "default" || !cfg.GrokEndpoints[0].IsEnabled() {
+		t.Fatalf("default endpoint routing = %+v", cfg.GrokEndpoints[0])
+	}
+	if cfg.GrokEndpoints[1].EffectiveProfile() != "heavy" || !cfg.GrokEndpoints[1].IsEnabled() {
+		t.Fatalf("heavy endpoint routing = %+v", cfg.GrokEndpoints[1])
+	}
+	if cfg.GrokEndpoints[2].IsEnabled() {
+		t.Fatalf("disabled endpoint enabled = true: %+v", cfg.GrokEndpoints[2])
+	}
+}
+
 func TestLoadFile_V2CapabilitiesDeriveFlatView(t *testing.T) {
 	path := writeConfig(t, `{
 	  "version": 2,

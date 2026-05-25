@@ -208,6 +208,28 @@ result, err := pool.Fetch(ctx, request)
 
 ---
 
+### Scenario: Explicit research search profiles
+
+#### 1. Scope / Trigger
+
+- Trigger: adding research workflow options that should steer the search phase toward a different Grok pool without changing the overall research depth.
+- Scope: `research`, `research_run`, and any shared research executor that delegates to `web_search`.
+
+#### 2. Contracts
+
+- Research depth (`quick`, `standard`, `deep`) controls breadth/concurrency and fetch limits, not model tier selection.
+- A separate `profile` option controls which Grok endpoint profile the research search phase uses.
+- `profile` must be threaded through the CLI, MCP tool, and shared research executor to the underlying `web_search` call.
+- Heavy pools such as `heavy` or `xhigh` must remain opt-in; default research should continue using the default profile.
+
+#### 3. Validation
+
+- Tests must cover that a passed research profile reaches the shared search provider.
+- Documentation must distinguish research depth from search profile selection.
+- If `profile` is omitted, research must preserve historical default behavior.
+
+---
+
 ### Scenario: Standalone external-API MCP and CLI surfaces
 
 #### 1. Scope / Trigger

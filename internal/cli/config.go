@@ -58,6 +58,8 @@ type configEndpointOutput struct {
 	BaseURL        string   `json:"base_url"`
 	Model          string   `json:"model"`
 	APIType        string   `json:"api_type,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	Profile        string   `json:"profile,omitempty"`
 	SendSearchFlag bool     `json:"send_search_flag"`
 	ResponseTools  []string `json:"response_tools,omitempty"`
 	KeyStatus      string   `json:"key_status"`
@@ -394,6 +396,7 @@ func runConfigList(args []string) int {
 		fmt.Printf("      Base URL: %s\n", ep.BaseURL)
 		fmt.Printf("      Model: %s\n", ep.Model)
 		fmt.Printf("      API type: %s\n", apiType)
+		fmt.Printf("      Enabled/profile: %v / %s\n", ep.Enabled, ep.Profile)
 		fmt.Printf("      Send search flag/tools: %v\n", ep.SendSearchFlag)
 		if len(ep.ResponseTools) > 0 {
 			fmt.Printf("      Response tools: %s\n", strings.Join(ep.ResponseTools, ", "))
@@ -488,6 +491,8 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 			BaseURL:        ep.BaseURL,
 			Model:          ep.Model,
 			APIType:        ep.APIType,
+			Enabled:        ep.IsEnabled(),
+			Profile:        ep.EffectiveProfile(),
 			SendSearchFlag: ep.SendSearchFlag,
 			ResponseTools:  responseTools,
 			KeyStatus:      keyStatus(ep.APIKey),
@@ -498,6 +503,7 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 			Name:      ep.Name,
 			BaseURL:   ep.BaseURL,
 			Model:     ep.Model,
+			Enabled:   true,
 			KeyStatus: keyStatus(ep.APIKey),
 		})
 	}

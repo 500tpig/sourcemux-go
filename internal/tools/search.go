@@ -25,11 +25,12 @@ type SourceCacher interface {
 // WebSearchClients groups the production search providers in the same order
 // used by the web_search MCP tool and CLI search command.
 type WebSearchClients struct {
-	Pool     *engine.GrokPool
-	TinyFish *engine.TinyFishPool
-	Exa      *engine.ExaClient
-	Tavily   *engine.TavilyClient
-	Cache    SourceCacher
+	Pool             *engine.GrokPool
+	TinyFish         *engine.TinyFishPool
+	Exa              *engine.ExaClient
+	Tavily           *engine.TavilyClient
+	Cache            SourceCacher
+	DisableFallbacks bool
 }
 
 // WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
@@ -63,6 +64,9 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
+		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile, e.g. 'heavy'")),
+		mcp.WithNumber("grok_pool_timeout_sec", mcp.Description("Optional per-call Grok pool timeout in seconds; 0 disables the pool cap and leaves cancellation to the caller context")),
+		mcp.WithBoolean("no_fallback", mcp.Description("Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")),
 		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
 	)
 
@@ -70,15 +74,23 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 		query, _ := req.Params.Arguments["query"].(string)
 		platform, _ := req.Params.Arguments["platform"].(string)
 		model, _ := req.Params.Arguments["model"].(string)
+		profile, _ := req.Params.Arguments["profile"].(string)
 		includeTrace := boolArgOr(req.Params.Arguments, "include_trace", false)
-
-		res, err := RunWebSearch(ctx, WebSearchClients{
+		clients := WebSearchClients{
 			Pool:     pool,
 			TinyFish: tinyfish,
 			Exa:      exa,
 			Tavily:   tavily,
 			Cache:    cache,
-		}, query, platform, model)
+		}
+		if boolArgOr(req.Params.Arguments, "no_fallback", false) {
+			clients.DisableFallbacks = true
+		}
+		if seconds, ok := nonNegativeIntArg(req.Params.Arguments, "grok_pool_timeout_sec"); ok {
+			clients = clients.WithGrokPoolTimeout(time.Duration(seconds) * time.Second)
+		}
+
+		res, err := RunWebSearch(ctx, clients, query, platform, model, profile)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -92,10 +104,20 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 	})
 }
 
+// WithGrokPoolTimeout returns a shallow copy that can safely override the
+// selected Grok pool's total budget for one call without mutating shared MCP
+// server state.
+func (c WebSearchClients) WithGrokPoolTimeout(timeout time.Duration) WebSearchClients {
+	if c.Pool != nil {
+		c.Pool = c.Pool.WithOverallTimeout(timeout)
+	}
+	return c
+}
+
 // RunWebSearch executes the production web_search routing chain. Keep this as
 // the single shared implementation so higher-level workflows do not fork the
 // provider fallback order.
-func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform, model string) (*WebSearchResult, error) {
+func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform, model, profile string) (*WebSearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
@@ -112,7 +134,8 @@ func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform
 	res, trace := r.Run(ctx, capability.MainSearch, capability.Request{
 		Query: query,
 		Options: map[string]any{
-			"model": model,
+			"model":   model,
+			"profile": profile,
 		},
 	})
 	if strings.TrimSpace(res.Content) == "" {
@@ -267,6 +290,9 @@ func searchProviders(clients WebSearchClients) []capability.Provider {
 	if clients.Pool != nil && clients.Pool.Len() > 0 {
 		providers = append(providers, adapters.NewGrokSearch(clients.Pool))
 	}
+	if clients.DisableFallbacks {
+		return providers
+	}
 	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
 		providers = append(providers, adapters.NewTinyFishSearch(clients.TinyFish))
 	}
@@ -297,6 +323,36 @@ func metadataString(metadata map[string]any, key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func nonNegativeIntArg(args map[string]any, key string) (int, bool) {
+	if args == nil {
+		return 0, false
+	}
+	v, ok := args[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case int:
+		return n, n >= 0
+	case int32:
+		return int(n), n >= 0
+	case int64:
+		return int(n), n >= 0
+	case float64:
+		if n < 0 {
+			return 0, false
+		}
+		return int(n), true
+	case float32:
+		if n < 0 {
+			return 0, false
+		}
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 func firstFailureDetail(trace router.RouteTrace) string {

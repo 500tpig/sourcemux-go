@@ -53,6 +53,7 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 			sb.WriteString(fmt.Sprintf("\n    Base URL: %s", c.BaseURL))
 			sb.WriteString(fmt.Sprintf("\n    API Key:  %s", maskKey(c.APIKey)))
 			sb.WriteString(fmt.Sprintf("\n    Model:    %s", c.Model))
+			sb.WriteString(fmt.Sprintf("\n    Profile:  %s", c.EffectiveProfile()))
 			apiType := c.APIType
 			if apiType == "" {
 				apiType = "chat"

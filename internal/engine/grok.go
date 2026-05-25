@@ -41,6 +41,7 @@ type GrokClient struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+	Profile string
 	// APIType selects the request/response protocol:
 	//   ""  or "chat"      → POST /v1/chat/completions  (default, all grok2api proxies)
 	//   "responses"        → POST /v1/responses         (xAI Responses API, native xAI endpoints)
@@ -57,6 +58,13 @@ type GrokClient struct {
 	// RetryConfig governs httpDoWithRetry behaviour: 429/5xx + network errors are
 	// retried with capped exponential backoff, honouring any Retry-After header.
 	RetryConfig RetryConfig
+}
+
+func (c *GrokClient) EffectiveProfile() string {
+	if c == nil {
+		return DefaultGrokEndpointProfile
+	}
+	return normalizeGrokEndpointProfile(c.Profile)
 }
 
 // NewGrokClient creates a Grok client with default 60s timeout and search flag enabled.

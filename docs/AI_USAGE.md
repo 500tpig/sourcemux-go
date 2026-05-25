@@ -94,6 +94,7 @@ not just list commands:
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
 | Known URL content extraction | `fetch --json` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
+| Explicit slow heavy/xhigh Grok search | `search --profile heavy --fallback-after 60s --timeout 180s --json`; use `--grok-pool-timeout 0 --no-fallback --timeout 300s` to verify Grok itself |
 | Multi-source investigation with synthesis | `research --depth standard --json` or `research --depth deep --json` |
 | Planning/decomposition without executing provider calls | `plan --depth standard` or `plan --depth deep` |
 

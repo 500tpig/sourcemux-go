@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	cfgpkg "github.com/500tpig/sourcemux-go/internal/config"
 	"github.com/500tpig/sourcemux-go/internal/engine"
@@ -213,7 +214,7 @@ func TestConfigFilesOutputShowsSingleActiveFileOnly(t *testing.T) {
 
 func TestConfigListMasksSecrets(t *testing.T) {
 	path := writeCLIConfig(t, `{
-	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test","apiType":"responses","sendSearchFlag":true,"responseTools":["web_search","x_search"]}],
+	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test","apiType":"responses","profile":"heavy","sendSearchFlag":true,"responseTools":["web_search","x_search"]}],
 	  "reasoningEndpoints": [{"name":"deepseek","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-deepseek-secret","model":"deepseek-v4-flash"}],
 	  "tavily": {"apiKey": "tvly-secret"},
 	  "exa": {"apiKey": "exa-secret"},
@@ -241,6 +242,9 @@ func TestConfigListMasksSecrets(t *testing.T) {
 	}
 	if strings.Join(parsed.GrokEndpoints[0].ResponseTools, ",") != "web_search,x_search" {
 		t.Fatalf("grok endpoint response tools missing: %+v", parsed.GrokEndpoints[0])
+	}
+	if !parsed.GrokEndpoints[0].Enabled || parsed.GrokEndpoints[0].Profile != "heavy" {
+		t.Fatalf("grok endpoint routing fields missing: %+v", parsed.GrokEndpoints[0])
 	}
 	if len(parsed.ReasoningEndpoints) != 1 || parsed.ReasoningEndpoints[0].KeyStatus == "" {
 		t.Fatalf("reasoning endpoint key status missing: %+v", parsed.ReasoningEndpoints)
@@ -525,6 +529,81 @@ func TestSearchOutputJSONShape(t *testing.T) {
 	}
 }
 
+func TestRunSearchNoFallbackDisablesProviderFallback(t *testing.T) {
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"error":"try later"}`)
+	}))
+	defer grok.Close()
+
+	var tinyfishCalls int32
+	tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tinyfishCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":{"results":[{"title":"fallback","url":"https://example.com"}]}}`)
+	}))
+	defer tinyfish.Close()
+
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+	  "tinyfish": {"enabled": true, "searchURL": "`+tinyfish.URL+`", "keys": [{"name":"tf","apiKey":"tf-secret"}]}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "q", "--no-fallback", "--json"}); got != 1 {
+			t.Fatalf("Run(search --no-fallback) = %d, want 1", got)
+		}
+	})
+	if got := atomic.LoadInt32(&tinyfishCalls); got != 0 {
+		t.Fatalf("TinyFish fallback calls = %d, want 0", got)
+	}
+	var decoded searchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if !strings.Contains(decoded.GrokError, "grok API 503") {
+		t.Fatalf("grok_error = %q, want upstream failure", decoded.GrokError)
+	}
+}
+
+func TestRunSearchGrokPoolTimeoutZeroOverrideDisablesConfiguredCap(t *testing.T) {
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(1100 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"slow ok"}}]}`)
+	}))
+	defer grok.Close()
+
+	path := writeCLIConfig(t, `{
+	  "grokPoolTimeoutSec": 1,
+	  "grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}]
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{
+			"--config", path,
+			"search", "q",
+			"--profile", "default",
+			"--grok-pool-timeout", "0",
+			"--no-fallback",
+			"--timeout", "2s",
+			"--json",
+		}); got != 0 {
+			t.Fatalf("Run(search timeout override) = %d, want 0", got)
+		}
+	})
+	var decoded searchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Engine != "local" || decoded.Content != "slow ok" {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+	if decoded.GrokPoolTimeout != "0s" || !decoded.NoFallback {
+		t.Fatalf("timeout metadata = pool %q no_fallback %v", decoded.GrokPoolTimeout, decoded.NoFallback)
+	}
+}
+
 func TestFetchOutputJSONShape(t *testing.T) {
 	f := fetchOutput{Source: "jina", URL: "https://x", Content: "md"}
 	b, err := json.Marshal(f)
@@ -651,6 +730,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 		if got := runResearchWithRunner([]string{
 			"SourceMux MCP",
 			"--depth", "deep",
+			"--profile", "heavy",
 			"--platform", "GitHub",
 			"--domain", "example.com",
 			"--domain", "github.com",
@@ -661,7 +741,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 		}
 	})
 
-	if runner.opts.Query != "SourceMux MCP" || runner.opts.Depth != "deep" || runner.opts.Platform != "GitHub" {
+	if runner.opts.Query != "SourceMux MCP" || runner.opts.Depth != "deep" || runner.opts.Profile != "heavy" || runner.opts.Platform != "GitHub" {
 		t.Fatalf("runner opts = %+v", runner.opts)
 	}
 	if strings.Join(runner.opts.Domains, ",") != "example.com,github.com" {

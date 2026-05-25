@@ -41,8 +41,13 @@ func main() {
 	fmt.Printf("Grok diagnose: endpoints=%d mode=%s timeout=%s\n", len(cfg.GrokEndpoints), *mode, timeout.String())
 	for i, ep := range cfg.GrokEndpoints {
 		fmt.Printf("\n[%d] %s\n", i+1, endpointName(ep, i))
+		if !ep.IsEnabled() {
+			fmt.Println("    disabled: true (skipped)")
+			continue
+		}
 		fmt.Printf("    baseURL: %s\n", ep.BaseURL)
 		fmt.Printf("    configured model: %s\n", ep.Model)
+		fmt.Printf("    profile: %s\n", ep.EffectiveProfile())
 		fmt.Printf("    send search:true: %v\n", ep.SendSearchFlag)
 
 		models, listErr := listModels(ep, *listTimeout)

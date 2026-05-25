@@ -17,6 +17,7 @@ type probeEndpoint struct {
 	BaseURL        string   `json:"base_url"`
 	Model          string   `json:"model"`
 	APIType        string   `json:"api_type,omitempty"`
+	Profile        string   `json:"profile,omitempty"`
 	SendSearchFlag bool     `json:"send_search_flag"`
 	ResponseTools  []string `json:"response_tools,omitempty"`
 	OK             bool     `json:"ok"`
@@ -85,6 +86,7 @@ func runProbeNamed(name string, args []string) int {
 			BaseURL:        c.BaseURL,
 			Model:          c.Model,
 			APIType:        c.APIType,
+			Profile:        c.EffectiveProfile(),
 			SendSearchFlag: c.SendSearchFlag,
 		}
 		if c.APIType == "responses" && c.SendSearchFlag {
@@ -130,6 +132,7 @@ func runProbeNamed(name string, args []string) int {
 	for i, ep := range out.Endpoints {
 		fmt.Printf("\n[%d] %s\n  Base URL: %s\n  Model:    %s\n",
 			i+1, ep.Name, ep.BaseURL, ep.Model)
+		fmt.Printf("  Profile:  %s\n", ep.Profile)
 		if ep.APIType != "" {
 			fmt.Printf("  API type: %s\n", ep.APIType)
 		}

@@ -16,6 +16,12 @@ type GrokEndpoint struct {
 	APIKey         string `json:"apiKey"`
 	Model          string `json:"model"`
 	SendSearchFlag bool   `json:"sendSearchFlag"`
+	// Enabled controls whether this endpoint participates in Grok pool search.
+	// Nil preserves the historical default of enabled=true.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Profile gates heavier endpoints behind explicit selection. Empty is
+	// normalized to "default"; normal search only uses the default profile.
+	Profile string `json:"profile,omitempty"`
 	// APIType selects the request protocol. Valid values:
 	//   "" or "chat"   → POST /v1/chat/completions (default)
 	//   "responses"    → POST /v1/responses        (xAI Responses API)
@@ -25,6 +31,8 @@ type GrokEndpoint struct {
 	// web_search only.
 	ResponseTools []string `json:"responseTools,omitempty"`
 }
+
+const DefaultGrokEndpointProfile = "default"
 
 // GrokPool routes a search through an ordered list of Grok endpoints,
 // failing over to the next endpoint when one returns an error or empty content.
@@ -41,10 +49,14 @@ type GrokPool struct {
 func NewGrokPool(endpoints []GrokEndpoint) *GrokPool {
 	clients := make([]*GrokClient, 0, len(endpoints))
 	for _, ep := range endpoints {
+		if !ep.IsEnabled() {
+			continue
+		}
 		c := NewGrokClient(ep.BaseURL, ep.APIKey, ep.Model)
 		if ep.Name != "" {
 			c.Name = ep.Name
 		}
+		c.Profile = ep.EffectiveProfile()
 		c.SendSearchFlag = ep.SendSearchFlag
 		c.APIType = ep.APIType
 		c.ResponseTools = append([]string(nil), ep.ResponseTools...)
@@ -70,6 +82,19 @@ func (p *GrokPool) Clients() []*GrokClient {
 	return p.clients
 }
 
+// WithOverallTimeout returns a shallow copy of the pool with the same endpoint
+// clients and a different total wall-clock budget. This is useful for per-call
+// overrides without mutating a shared server pool.
+func (p *GrokPool) WithOverallTimeout(timeout time.Duration) *GrokPool {
+	if p == nil {
+		return nil
+	}
+	cloned := *p
+	cloned.clients = append([]*GrokClient(nil), p.clients...)
+	cloned.OverallTimeout = timeout
+	return &cloned
+}
+
 // PoolSearchResult bundles a SearchResult with the endpoint that produced it.
 type PoolSearchResult struct {
 	*SearchResult
@@ -87,8 +112,19 @@ func (p *GrokPool) Search(ctx context.Context, query string) (*PoolSearchResult,
 // model for this single request when model is non-empty. It does not mutate the
 // pool, so concurrent requests keep using their own configured/default model.
 func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*PoolSearchResult, error) {
+	return p.SearchWithModelAndProfile(ctx, query, model, "")
+}
+
+// SearchWithModelAndProfile is like SearchWithModel, but only tries endpoints
+// assigned to profile. Empty profile means the default profile.
+func (p *GrokPool) SearchWithModelAndProfile(ctx context.Context, query, model, profile string) (*PoolSearchResult, error) {
 	if p == nil || len(p.clients) == 0 {
 		return nil, errors.New("grok pool is empty: no endpoints configured")
+	}
+	profile = normalizeGrokEndpointProfile(profile)
+	clients := p.profileClients(profile)
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("grok pool has no endpoints for profile %q", profile)
 	}
 	if p.OverallTimeout > 0 {
 		var cancel context.CancelFunc
@@ -96,7 +132,7 @@ func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*P
 		defer cancel()
 	}
 	var errs []string
-	for _, c := range p.clients {
+	for _, c := range clients {
 		// Stop early if the overall budget (or caller's ctx) is exhausted.
 		if err := ctx.Err(); err != nil {
 			errs = append(errs, fmt.Sprintf("(deadline reached: %v)", err))
@@ -127,8 +163,48 @@ func (p *GrokPool) SearchWithModel(ctx context.Context, query, model string) (*P
 			EndpointModel: active.Model,
 		}, nil
 	}
-	return nil, fmt.Errorf("all %d grok endpoints failed: %s",
-		len(p.clients), strings.Join(errs, "; "))
+	return nil, fmt.Errorf("all %d grok endpoints failed for profile %q: %s",
+		len(clients), profile, strings.Join(errs, "; "))
+}
+
+func (p *GrokPool) profileClients(profile string) []*GrokClient {
+	profile = normalizeGrokEndpointProfile(profile)
+	out := make([]*GrokClient, 0, len(p.clients))
+	for _, c := range p.clients {
+		if c.EffectiveProfile() == profile {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (e GrokEndpoint) IsEnabled() bool {
+	return e.Enabled == nil || *e.Enabled
+}
+
+func (e GrokEndpoint) EffectiveProfile() string {
+	return normalizeGrokEndpointProfile(e.Profile)
+}
+
+// FilterGrokEndpoints returns enabled endpoints assigned to profile. Empty
+// profile means the default profile.
+func FilterGrokEndpoints(endpoints []GrokEndpoint, profile string) []GrokEndpoint {
+	profile = normalizeGrokEndpointProfile(profile)
+	out := make([]GrokEndpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		if ep.IsEnabled() && ep.EffectiveProfile() == profile {
+			out = append(out, ep)
+		}
+	}
+	return out
+}
+
+func normalizeGrokEndpointProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if profile == "" {
+		return DefaultGrokEndpointProfile
+	}
+	return profile
 }
 
 func looksLikeGrokUnavailableContent(content string) bool {

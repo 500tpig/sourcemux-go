@@ -143,6 +143,31 @@ func TestResearchExecutorBuildsStablePack(t *testing.T) {
 	}
 }
 
+func TestResearchExecutorPassesProfileToSearch(t *testing.T) {
+	searcher := &profileRecordingSearcher{}
+	executor := &ResearchExecutor{
+		Searcher: searcher,
+		Fetcher:  fakeResearchFetcher{},
+	}
+
+	_, err := executor.Run(context.Background(), ResearchOptions{
+		Query:   "SourceMux MCP",
+		Depth:   "quick",
+		Profile: "heavy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searcher.profiles) == 0 {
+		t.Fatal("expected searcher to be called")
+	}
+	for i, profile := range searcher.profiles {
+		if profile != "heavy" {
+			t.Fatalf("searcher profile[%d] = %q, want heavy", i, profile)
+		}
+	}
+}
+
 func TestResearchExecutorNoSourcesUsesStableEmptyArrays(t *testing.T) {
 	executor := &ResearchExecutor{
 		Searcher: emptyResearchSearcher{},
@@ -326,7 +351,7 @@ func TestExtractConfirmedFactsRequiresQueryRelevance(t *testing.T) {
 
 type fakeResearchSearcher struct{}
 
-func (fakeResearchSearcher) Search(ctx context.Context, query, platform string) (*WebSearchResult, error) {
+func (fakeResearchSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
 	if strings.Contains(query, "fail") {
 		return nil, errors.New("search failed")
 	}
@@ -342,7 +367,7 @@ func (fakeResearchSearcher) Search(ctx context.Context, query, platform string) 
 
 type emptyResearchSearcher struct{}
 
-func (emptyResearchSearcher) Search(ctx context.Context, query, platform string) (*WebSearchResult, error) {
+func (emptyResearchSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
 	return &WebSearchResult{
 		Query:      query,
 		Engine:     "fake",
@@ -371,7 +396,7 @@ type slowSearcher struct {
 	queryCount int32
 }
 
-func (s *slowSearcher) Search(ctx context.Context, query, platform string) (*WebSearchResult, error) {
+func (s *slowSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
 	atomic.AddInt32(&s.queryCount, 1)
 	cur := atomic.AddInt32(&s.curActive, 1)
 	for {
@@ -465,6 +490,15 @@ func TestResearchExecutorRunsSearchesConcurrentlyPreservingOrder(t *testing.T) {
 			t.Fatalf("executed_searches[%d].Query = %q, want %q", i, pack.ExecutedSearches[i].Query, q)
 		}
 	}
+}
+
+type profileRecordingSearcher struct {
+	profiles []string
+}
+
+func (s *profileRecordingSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
+	s.profiles = append(s.profiles, profile)
+	return (&fakeResearchSearcher{}).Search(ctx, query, platform, profile)
 }
 
 func TestFetchSelectedSourcesPreservesURLOrder(t *testing.T) {
