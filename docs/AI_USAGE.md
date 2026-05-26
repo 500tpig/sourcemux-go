@@ -94,8 +94,9 @@ not just list commands:
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
 | Known URL content extraction | `fetch --json` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
-| Explicit slow heavy/xhigh Grok search | `search --profile heavy --fallback-after 60s --timeout 180s --json`; use `--grok-pool-timeout 0 --no-fallback --timeout 300s` to verify Grok itself |
-| Multi-source investigation with synthesis | `research --depth standard --json` or `research --depth deep --json` |
+| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --timeout 360s --json` |
+| Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 360s --json` |
+| Multi-source investigation with synthesis | `research --depth standard --json` or `research --depth deep --profile heavy --json` |
 | Planning/decomposition without executing provider calls | `plan --depth standard` or `plan --depth deep` |
 
 Evidence policy:
@@ -104,6 +105,7 @@ Evidence policy:
 2. Fetch key URLs before high-risk, precise, or source-critical claims.
 3. Cite fetched or source URL evidence in the final answer.
 4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
+5. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
 
 ## Recommended host setup
 

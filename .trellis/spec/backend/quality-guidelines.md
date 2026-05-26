@@ -777,6 +777,8 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
   - MCP-aware generated skills are allowed only when MCP setup is explicitly requested (`--write-config`) or the selected target is an explicit MCP-print target such as `mcp-json` / `stdio`.
   - Every generated CLI example must include the installed config path as `--config <path> <command> ...`; do not rely on project-local `./sourcemux.json` or environment variables.
   - Prefer top-level short commands (`sourcemux search`, `sourcemux fetch`, `sourcemux docs-search`, `sourcemux research`) over the compatibility `sourcemux cli ...` form in generated guidance.
+  - Generated routing skills must distinguish user-facing research from Grok/profile diagnostics. `--no-fallback` examples must be labeled diagnostics-only and use a short probe query; do not pair broad research queries with `--grok-pool-timeout 0 --no-fallback`.
+  - Heavy or multi-agent search examples for user-facing work must preserve fallback, for example `search "query" --profile heavy --fallback-after 60s --timeout 180s --json`, so source-first fallback providers can still return useful evidence.
   - Generated skill manifests must record enough mode metadata (for example `mcp_mode`) for `install status` to distinguish `cli-only`, `mcp-configured`, and unmanaged skills.
 - Entry payload:
   - Codex/Gemini write only command and args: `command=<sourcemux binary>`, `args=["--config", <active config path>]`.

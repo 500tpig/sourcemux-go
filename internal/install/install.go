@@ -1081,21 +1081,29 @@ func routingSkill(binary, configPath string, mcpMode bool) string {
 	cliPolicy := `- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
+- User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
+- --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- For explicit slow heavy/xhigh Grok search, prefer --fallback-after to bound when fallback providers may run; use --grok-pool-timeout 0 --no-fallback --timeout 300s when verifying whether the Grok profile itself can return.
+- Treat multi-agent or otherwise high-effort reasoning models as final-synthesis tools first, not routine evidence-search tools.
+- Do not pass a known slow multi-agent model override to routine search unless the user explicitly wants to force that model.
+- Do not assume any specific endpoint name or a dedicated xhigh search profile exists; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	if mcpMode {
 		cliPolicy = `- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
 - Use the SourceMux CLI for deep research, reproducible JSON, large outputs, shell/script chaining, or saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
+- User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
+- --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- For explicit slow heavy/xhigh Grok search, prefer CLI --fallback-after to bound when fallback providers may run; use --grok-pool-timeout 0 --no-fallback --timeout 300s when verifying whether the Grok profile itself can return.
+- Treat multi-agent or otherwise high-effort reasoning models as final-synthesis tools first, not routine evidence-search tools.
+- Do not pass a known slow multi-agent model override to routine search unless the user explicitly wants to force that model.
+- Do not assume any specific endpoint name or a dedicated xhigh search profile exists; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	}
 	return fmt.Sprintf(`---
 name: sourcemux-routing
-description: Route web research and source fetching through SourceMux.
+description: Route web search, research, source fetching, docs lookup, and SourceMux profile/model selection through SourceMux; includes strict guardrails for default vs heavy vs diagnostics-only no-fallback routing.
 ---
 
 # SourceMux routing
@@ -1106,6 +1114,28 @@ Use SourceMux as the default web research capability.
 
 %s
 
+## Mode selection
+
+Choose one mode before running commands:
+
+| Mode | Use when | Command pattern |
+| --- | --- | --- |
+| Quick search | Fresh/current facts, community feedback, one-hop discovery | search "query" --json |
+| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | research "topic" --depth standard --json |
+| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | research "topic" --depth deep --profile heavy --json |
+| Explicit heavy search | User asks to use heavy/multi-agent search directly | search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
+| Final synthesis | Evidence is collected and the user wants an answer/plan | smart-answer "question" --json |
+| Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | short probe with --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
+
+If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, treat that as a valid source-discovery result. Fetch key URLs next; do not rerun with --no-fallback unless the user is debugging the Grok profile itself.
+
+## Profile policy
+
+| Profile | Intended use | Notes |
+| --- | --- | --- |
+| default | Routine search/research | Normal search should rely on the configured default pool without pinning endpoint names. |
+| heavy | Deep evidence collection or explicit multi-agent search | Use --profile heavy; keep fallback available with --fallback-after for user-facing search. |
+
 ## Capability routing
 
 | User intent | Prefer | Why |
@@ -1115,9 +1145,23 @@ Use SourceMux as the default web research capability.
 | Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | exa-search --type deep --json | Calls Exa directly when Exa-specific controls matter. |
 | Known URL page extraction | fetch --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
-| Explicit slow heavy/xhigh Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json; use --grok-pool-timeout 0 --no-fallback --timeout 300s to verify Grok itself | Gives the caller control over waiting vs fallback instead of relying only on the configured pool cap. |
-| Multi-source investigation with synthesis | research --depth standard --json or research --depth deep --json | Runs the composable SourceMux research workflow. |
+| Explicit slow heavy or multi-agent Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
+| Grok/profile diagnostics | search "short probe" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
+| Multi-source investigation with synthesis | research --depth standard --json or research --depth deep --profile heavy --json | Runs the composable SourceMux research workflow. Keep routine evidence collection on configured search profiles; reserve slower reasoning routes for explicit requests or final synthesis. |
 | Planning/decomposition without executing the research | plan --depth standard or plan --depth deep | Produces a deterministic search plan before running provider calls. |
+
+## Diagnostics workflow
+
+Use this only when the user is asking why endpoints/profile/model behavior failed:
+
+1. Inspect redacted profile metadata, never secrets:
+   jq '{grokEndpoints: [.grokEndpoints[]? | {name, model, profile}], reasoningEndpoints: [.reasoningEndpoints[]? | {name, model, profile}]}' <config>
+2. Run a short probe, not the user's broad research query:
+   search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
+3. Interpret results:
+   - probe succeeds, broad query times out: endpoint is reachable; use --fallback-after or research.
+   - probe fails: report the grok_error/route_decision and do not hide it with fallback.
+   - fallback engine returns content: use it for source discovery unless the user is specifically debugging Grok.
 
 ## Evidence policy
 
@@ -1137,14 +1181,19 @@ Use SourceMux as the default web research capability.
 %s %s search "query" --json
 %s %s search "query" --platform Twitter --json
 %s %s search "complex query" --profile heavy --fallback-after 60s --timeout 180s --json
-%s %s search "complex query" --profile xhigh --grok-pool-timeout 0 --no-fallback --timeout 300s --json
 %s %s fetch "https://example.com" --json
 %s %s docs-search "library or API question" --json
 %s %s exa-search "official docs API reference" --type deep --json
 %s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 %s %s plan "research question" --depth standard
 %s %s research "topic" --depth standard --json
-`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
+%s %s research "topic" --depth deep --profile heavy --json
+%s %s smart-answer "complex research question" --json
+
+Diagnostics only; do not use for user-facing research answers:
+
+%s %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
+`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {

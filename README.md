@@ -93,11 +93,11 @@ sourcemux doctor --json
 sourcemux search "今天 Go 生态有哪些重要更新？" --json
 ```
 
-显式跑较慢的 heavy/xhigh Grok 搜索时，可以由调用方决定是否等待或 fallback：
+显式跑较慢的 heavy Grok 搜索时，用户面向的研究应保留 fallback；只有诊断 profile 本身是否可返回时才禁用 fallback：
 
 ```bash
-sourcemux search "复杂搜索问题" --profile xhigh --grok-pool-timeout 0 --no-fallback --timeout 300s --json
 sourcemux search "复杂搜索问题" --profile heavy --fallback-after 60s --timeout 180s --json
+sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
 抓取网页正文：
@@ -438,12 +438,12 @@ the default search pool. Put them in either:
 
 ```bash
 sourcemux search "complex current topic" --profile heavy --fallback-after 60s --timeout 180s --json
-sourcemux search "complex current topic" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 300s --json
+sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
-Use `--no-fallback` when you need to verify whether the selected Grok profile
-itself can return. Without it, SourceMux may still return TinyFish/Exa/Tavily
-results after the Grok pool times out.
+Use `--no-fallback` only when you need to diagnose whether the selected Grok
+profile itself can return. Do not use it for user-facing research/search; it
+disables TinyFish/Exa/Tavily fallback results.
 
 See:
 
@@ -492,7 +492,7 @@ Search-specific controls:
 - `--profile heavy|xhigh` selects an explicit Grok endpoint profile.
 - `--grok-pool-timeout <dur>` overrides `grokPoolTimeoutSec` for that call; `0` disables the Grok pool cap and leaves cancellation to `--timeout` or the caller.
 - `--fallback-after <dur>` is an alias for `--grok-pool-timeout` when you want the selected Grok pool to give way to fallback providers after a bounded wait.
-- `--no-fallback` disables TinyFish/Exa/Tavily fallback so failures from the selected Grok pool are visible.
+- `--no-fallback` disables TinyFish/Exa/Tavily fallback so failures from the selected Grok pool are visible; use it for diagnostics only, not user-facing research/search.
 
 ## MCP usage
 
@@ -623,7 +623,7 @@ select it explicitly:
 
 ```bash
 sourcemux search "complex current topic" --profile heavy --fallback-after 60s --timeout 180s --json
-sourcemux search "complex current topic" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 300s --json
+sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
 Example:

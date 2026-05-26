@@ -34,7 +34,8 @@ the default search profile. Either put them in `reasoningEndpoints[]` for final
 synthesis, or put them in `grokEndpoints[]` with `"profile": "heavy"` and select
 them explicitly with `search --profile heavy`. For slow multi-agent search,
 use `--fallback-after` to bound when SourceMux gives way to fallback providers,
-or `--grok-pool-timeout 0 --no-fallback` to verify the Grok profile itself.
+or `--grok-pool-timeout 0 --no-fallback` only when explicitly diagnosing
+whether the Grok profile itself can return.
 
 ## Why `reasoningEndpoints` are separate
 
@@ -98,15 +99,14 @@ Explicit heavy search profile:
 ```bash
 ./sourcemux search "Investigate this complex current topic" \
   --profile heavy \
-  --fallback-after 60s \
-  --timeout 180s \
+  --timeout 360s \
   --json
 
-./sourcemux search "Investigate this complex current topic" \
-  --profile xhigh \
+./sourcemux search "ping" \
+  --profile heavy \
   --grok-pool-timeout 0 \
   --no-fallback \
-  --timeout 300s \
+  --timeout 360s \
   --json
 ```
 
