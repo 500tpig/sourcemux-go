@@ -2,12 +2,22 @@
 
 This guide starts from a fresh clone and avoids any local-only paths.
 
+## Pick a path
+
+SourceMux has two first-use paths:
+
+* **Self-use CLI path:** build the single binary, create `sourcemux.json`, then
+  run `search`, `fetch`, or `research` with `--json`.
+* **Agent routing path:** after the same binary and config exist, run
+  `bootstrap <agent>` to generate a CLI-first `sourcemux-routing` skill, and
+  add MCP config only when you explicitly pass `--write-config`.
+
 ## 1. Install or build
 
 The currently shareable path is to build from a source checkout that includes
 the SourceMux rename. Homebrew, Scoop, GitHub Releases, and `go install
-...@latest` become stable install paths after the first SourceMux release is
-published.
+...@latest` become stable install paths only after the first tagged SourceMux
+release and matching package manifests are published.
 
 Build from source:
 
@@ -17,7 +27,8 @@ cd sourcemux-go
 go build -o sourcemux .
 ```
 
-Stable install paths after release:
+Expected release-channel commands after the tag, GitHub Release, and package
+manifests exist:
 
 ```bash
 brew tap 500tpig/tap
@@ -107,6 +118,11 @@ or direct `exa-search` for source-first docs/API discovery, and `fetch` to
 verify key URLs before source-critical claims. Plain `search` stays on the
 default Grok profile; `research` defaults to `profile=auto` so configured heavy
 search is used for research/deep/current/comparison/high-risk flows.
+
+`fetch` is Jina-first because Jina Reader is lightweight and can work without a
+key. Treat it as the first URL extraction attempt, not the whole capability
+ceiling: empty or failed Jina results can fall through to TinyFish Fetch, Exa
+Contents, and Tavily Extract when those providers are configured.
 
 ## 5. Install agent routing skill and MCP snippets
 

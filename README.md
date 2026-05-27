@@ -6,9 +6,14 @@
 
 [中文](#中文) | [English](#english)
 
+> **SourceMux is a single-binary CLI + stdio MCP agent research router.**
+> It gives agents fast/default search for one-hop work, `profile=auto` heavy
+> Grok research when configured, and Jina-first URL fetch with provider
+> fallbacks.
+
 ## 中文
 
-SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索、网页抓取、文档检索与轻量研究工具。你可以把它理解成一个“多来源研究路由器”：用同一个二进制同时提供 stdio MCP server 和 CLI，把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力接到统一的 fallback route 里。
+SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二进制 CLI + stdio MCP 研究路由器。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力接到统一 fallback route：普通查询走快速默认搜索，`research` / `smart-answer` 默认用 `profile=auto` 在适合时切到已配置的 heavy / multi-agent Grok 搜索，URL 抓取先走轻量零 key 的 Jina Reader，再按需 fallback 到 TinyFish / Exa / Tavily。
 
 仓库默认只保存安全示例配置。真实 API key 只应该放在本地 `sourcemux.json`，或用 `--config /path/to/sourcemux.json` 显式指定的本地配置文件里。不要提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
@@ -30,6 +35,12 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索
 | `research_run` / `sourcemux research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面（默认 `--profile auto`） |
 | `smart_answer` / `sourcemux smart-answer` | 先跑 bounded research（默认 `--profile auto`），再交给配置好的 reasoning endpoint 综合回答 |
 
+### 为什么不是只用 Jina 或普通搜索
+
+- Jina Reader 是轻量、零 key、fetch-first 的 URL 正文提取入口；它不是搜索、文档检索、heavy Grok 或最终综合能力的上限。
+- 普通搜索适合一次性找结果；SourceMux 额外提供 agent 友好的 route、fallback、`get_sources`、fetch 验证、bounded research pack 和可复现 JSON。
+- 对复杂、当前、对比或高风险问题，`research` / `smart-answer` 默认 `profile=auto`，可以在配置了 heavy Grok profile 时自动用更强搜索，同时仍保留 fallback。
+
 ### 安装
 
 当前可直接给别人用的方式是从包含 SourceMux 改名后的源码构建。Homebrew / Scoop / `go install ...@latest` 需要等第一次 SourceMux release 发布后再作为稳定安装方式使用。
@@ -42,7 +53,7 @@ cd sourcemux-go
 go build -o sourcemux .
 ```
 
-发布后可用的稳定安装方式：
+发布 tag、GitHub Release 和包管理器 manifest 都实际存在后，预计可用的发布通道命令：
 
 ```bash
 brew tap 500tpig/tap
@@ -270,7 +281,10 @@ git remote set-url origin https://github.com/500tpig/sourcemux-go.git
 
 ## English
 
-SourceMux is an MCP-native search, fetch, docs, and research tool with a peer CLI surface for local use, automation, and reproducible JSON output.
+SourceMux is a single-binary CLI + stdio MCP agent research router for search,
+fetch, docs lookup, bounded research, and reasoning synthesis. It gives agents
+fast/default search for one-hop work, `profile=auto` heavy Grok research when
+configured, and Jina-first URL fetch with provider fallbacks.
 
 The default routing is:
 
@@ -279,6 +293,18 @@ The default routing is:
 - `docs_search` / `sourcemux docs-search`: Exa docs/web search fallback
 - `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages (defaults to `--profile auto`)
 - `smart_answer` / `sourcemux smart-answer`: run bounded research (defaults to `--profile auto`), then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
+
+Why not just Jina or simple search?
+
+- Jina Reader is a lightweight, zero-key, fetch-first URL extraction provider.
+  It is the first fetch attempt, not the ceiling for search, docs discovery,
+  heavy Grok search, or synthesis.
+- Simple web search returns candidate results. SourceMux adds agent-oriented
+  routing, fallback, `get_sources`, fetch verification, bounded research packs,
+  and reproducible JSON.
+- For complex, current, comparative, or high-risk work, `research` and
+  `smart-answer` default to `profile=auto`, so configured heavy Grok profiles
+  can be used while fallback remains available.
 
 ## Features
 
@@ -293,7 +319,7 @@ The default routing is:
 
 ## Install
 
-The currently shareable install path is to build from a source checkout that includes the SourceMux rename. Homebrew, Scoop, and `go install ...@latest` become stable install paths after the first SourceMux release is published.
+The currently shareable install path is to build from a source checkout that includes the SourceMux rename. Homebrew, Scoop, and `go install ...@latest` become stable install paths only after a tagged SourceMux release and matching package manifests are published.
 
 Build from source:
 
@@ -303,7 +329,8 @@ cd sourcemux-go
 go build -o sourcemux .
 ```
 
-Stable install paths after release:
+Expected release-channel commands after the tag, GitHub Release, and package
+manifests exist:
 
 ```bash
 brew tap 500tpig/tap

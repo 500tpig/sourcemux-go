@@ -120,7 +120,7 @@ Expected behavior:
 
 - Secrets are masked in config output.
 - MCP search responses include an engine label plus a compact summary; use CLI `search --json` for full output.
-- MCP fetch responses include a source label plus a compact excerpt; use CLI `fetch --json` for full output.
+- MCP fetch responses include a source label plus a compact excerpt; use CLI `fetch --json` for full output. Fetch is Jina-first because Jina Reader is lightweight and can work without a key, then falls back to TinyFish Fetch, Exa Contents, and Tavily Extract when configured. Treat Jina as the first URL extraction provider, not the whole SourceMux capability ceiling.
 - MCP research output stays compact while still surfacing executed searches, source summary, fetched page summary, high-signal sources, confirmed facts, likely inferences, and open questions; use CLI `research --json` for the full pack.
 - `smart_answer` includes endpoint/model metadata and high-signal URLs.
 

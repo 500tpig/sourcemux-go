@@ -14,7 +14,15 @@ After renaming the GitHub repository, update existing local clones:
 git remote set-url origin https://github.com/500tpig/sourcemux-go.git
 ```
 
-New installs should use:
+Until the first tagged SourceMux release is published, build from source:
+
+```bash
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+```
+
+After a tagged SourceMux release exists, new `go install` installs should use:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest

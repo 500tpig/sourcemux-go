@@ -6,6 +6,8 @@ This document defines the recommended integration model for `sourcemux-go` acros
 
 `sourcemux-go` should be treated as:
 
+* **Single-binary agent research router** for both local CLI use and stdio MCP
+  server mode
 * **MCP-native** for compact interactive lookups inside an agent host
 * **CLI-peer** for heavy, reproducible, or file-oriented workflows
 * **Prompt/skill-routed** so each host knows when to choose MCP vs CLI
@@ -107,6 +109,16 @@ Evidence policy:
 4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
 5. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
 6. For search-capable multi-agent Grok models, configure them in `grokEndpoints[]` with a profile such as `heavy`; `reasoningEndpoints[]` alone is only for final synthesis and will not be used by `search` or `research`.
+
+Fetch routing note:
+
+* `fetch` / `web_fetch` starts with Jina Reader because it is a lightweight
+  zero-key URL extraction path.
+* Jina is not the ceiling for SourceMux capability. It is followed by
+  TinyFish Fetch, Exa Contents, and Tavily Extract when those providers are
+  configured and earlier fetch attempts fail or return empty content.
+* For agents, the fetch provider label explains how that URL was extracted; it
+  does not replace source discovery, citation review, or the research route.
 
 ## Recommended host setup
 
