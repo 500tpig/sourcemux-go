@@ -39,6 +39,7 @@ func TestSmartAnswererRun(t *testing.T) {
 	res, err := answerer.Run(context.Background(), SmartAnswerOptions{
 		Query:             "should I use DeepSeek?",
 		Depth:             "quick",
+		Profile:           "heavy",
 		ReasoningEndpoint: "deepseek",
 	})
 	if err != nil {
@@ -47,7 +48,7 @@ func TestSmartAnswererRun(t *testing.T) {
 	if res.Answer == "" || res.ReasoningEndpoint != "deepseek" || res.ReasoningModel != "deepseek-v4-flash" {
 		t.Fatalf("result = %+v", res)
 	}
-	if researcher.opts.Depth != "quick" {
+	if researcher.opts.Depth != "quick" || researcher.opts.Profile != "heavy" {
 		t.Fatalf("research opts = %+v", researcher.opts)
 	}
 	if reasoner.endpoint != "deepseek" {
@@ -55,6 +56,26 @@ func TestSmartAnswererRun(t *testing.T) {
 	}
 	if !strings.Contains(reasoner.req.UserPrompt, "research_pack") || !strings.Contains(reasoner.req.UserPrompt, "https://example.com/deepseek") {
 		t.Fatalf("reasoning prompt missing research evidence: %s", reasoner.req.UserPrompt)
+	}
+}
+
+func TestSmartAnswererDefaultsResearchProfileToAuto(t *testing.T) {
+	researcher := &fakeSmartResearcher{pack: ResearchPack{Query: "hello", EffectiveDepth: "standard"}}
+	reasoner := &fakeSmartReasoner{
+		result: &engine.PoolReasoningResult{
+			ReasoningResult: &engine.ReasoningResult{Content: "answer"},
+			EndpointName:    "deepseek",
+			EndpointModel:   "deepseek-v4-flash",
+		},
+	}
+	answerer := &SmartAnswerer{Researcher: researcher, Reasoner: reasoner}
+
+	_, err := answerer.Run(context.Background(), SmartAnswerOptions{Query: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if researcher.opts.Profile != "auto" {
+		t.Fatalf("research profile = %q, want auto", researcher.opts.Profile)
 	}
 }
 

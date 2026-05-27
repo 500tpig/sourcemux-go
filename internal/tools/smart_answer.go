@@ -17,6 +17,7 @@ const missingReasoningEndpointsMessage = "no reasoningEndpoints configured; add 
 type SmartAnswerOptions struct {
 	Query             string   `json:"query"`
 	Depth             string   `json:"depth,omitempty"`
+	Profile           string   `json:"profile,omitempty"`
 	Platform          string   `json:"platform,omitempty"`
 	Domains           []string `json:"domains,omitempty"`
 	MaxFetches        int      `json:"max_fetches,omitempty"`
@@ -60,6 +61,7 @@ func RegisterSmartAnswer(s *mcpserver.MCPServer, answerer *SmartAnswerer) {
 		mcp.WithDescription("Gather evidence with the existing research workflow, then synthesize a final answer with a configured reasoning endpoint such as DeepSeek V4 Flash/Pro."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Question to answer")),
 		mcp.WithString("depth", mcp.Description("Research depth: quick, standard, or deep (default standard)"), mcp.Enum("quick", "standard", "deep")),
+		mcp.WithString("profile", mcp.Description("Research search profile: auto (default), default, heavy, or another configured profile")),
 		mcp.WithString("platform", mcp.Description("Optional platform focus, e.g. 'GitHub, Reddit'")),
 		mcp.WithArray("domains",
 			mcp.Description("Optional allow-list of domains or site roots for the research phase"),
@@ -78,11 +80,14 @@ func RegisterSmartAnswer(s *mcpserver.MCPServer, answerer *SmartAnswerer) {
 		endpoint, _ := req.Params.Arguments["reasoning_endpoint"].(string)
 		model, _ := req.Params.Arguments["reasoning_model"].(string)
 		depth, _ := req.Params.Arguments["depth"].(string)
+		profile, _ := req.Params.Arguments["profile"].(string)
+		profile = defaultResearchProfile(profile)
 		platform, _ := req.Params.Arguments["platform"].(string)
 
 		res, err := answerer.Run(ctx, SmartAnswerOptions{
 			Query:             query,
 			Depth:             depth,
+			Profile:           profile,
 			Platform:          platform,
 			Domains:           stringSliceArg(req.Params.Arguments, "domains"),
 			MaxFetches:        intArgOr(req.Params.Arguments, "max_fetches", 0),
@@ -115,6 +120,7 @@ func (a *SmartAnswerer) Run(ctx context.Context, opts SmartAnswerOptions) (Smart
 	pack, err := a.Researcher.Run(ctx, ResearchOptions{
 		Query:      query,
 		Depth:      opts.Depth,
+		Profile:    defaultResearchProfile(opts.Profile),
 		Platform:   opts.Platform,
 		Domains:    opts.Domains,
 		MaxFetches: opts.MaxFetches,
@@ -178,6 +184,9 @@ func FormatSmartAnswerResult(res SmartAnswerResult) string {
 	fmt.Fprintf(&sb, "query: %s\n", res.Query)
 	fmt.Fprintf(&sb, "reasoning: %s (%s)\n", res.ReasoningEndpoint, res.ReasoningModel)
 	fmt.Fprintf(&sb, "research_depth: %s\n", res.Research.EffectiveDepth)
+	if res.Research.RequestedProfile != "" || res.Research.EffectiveProfile != "" {
+		fmt.Fprintf(&sb, "research_profile: requested=%s effective=%s\n", res.Research.RequestedProfile, res.Research.EffectiveProfile)
+	}
 	fmt.Fprintf(&sb, "sources_count: %d\n", res.Research.SourceSummary.UniqueURLs)
 	if res.Error != "" {
 		fmt.Fprintf(&sb, "error: %s\n", res.Error)

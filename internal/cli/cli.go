@@ -38,7 +38,7 @@ Commands:
   config <command>    Inspect the single active config file or masked effective config.
   setup               Write sourcemux.json without hand-editing JSON.
   plan   <query>      Print a deterministic multi-step search plan.
-  research <query>    Run a composable in-memory research workflow (use --profile for the search pool).
+  research <query>    Run a composable in-memory research workflow (defaults --profile auto).
   smart-answer <query>
                       Research sources, then synthesize with a reasoning endpoint.
   tinyfish-bench      Benchmark TinyFish Search, Fetch, and Agent locally.
@@ -49,7 +49,7 @@ Common flags (subcommand-dependent):
   --platform <name>   Focus a platform, e.g. 'Twitter' or 'GitHub, Reddit'.
                       Useful for content blocked by CF or hosted on X.
   --model <name>      One-shot Grok model override, e.g. 'grok-4.20-fast'.
-  --profile <name>    Use a named Grok endpoint profile, e.g. 'heavy'.
+  --profile <name>    Search profile: auto/default/heavy or another configured Grok profile.
   --timeout <dur>     Per-call timeout, e.g. '60s', '2m'.
   --grok-pool-timeout <dur>
                       Override configured Grok pool cap; 0 disables it.
@@ -75,8 +75,8 @@ Examples:
   sourcemux cli setup --non-interactive --api-url https://your-endpoint/v1 --api-key sk-... --json
   sourcemux cli probe  --json
   sourcemux cli plan   "Notion AI agents" --depth deep
-  sourcemux cli research "Notion AI agents" --depth deep --profile heavy --domain example.com --max-fetches 6 --json
-  sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --reasoning-model deepseek-v4-flash --json
+  sourcemux cli research "Notion AI agents" --depth deep --profile auto --domain example.com --max-fetches 6 --json
+  sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --profile auto --reasoning-model deepseek-v4-flash --json
   sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
 `
 

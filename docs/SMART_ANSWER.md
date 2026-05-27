@@ -29,13 +29,12 @@ web and X search:
 `responseTools` is only for the search endpoint. The final synthesis model still
 belongs in `reasoningEndpoints[]`.
 
-Heavy multi-agent models such as `grok-4.20-multi-agent-xhigh` should not be in
-the default search profile. Either put them in `reasoningEndpoints[]` for final
-synthesis, or put them in `grokEndpoints[]` with `"profile": "heavy"` and select
-them explicitly with `search --profile heavy`. For slow multi-agent search,
-use `--fallback-after` to bound when SourceMux gives way to fallback providers,
-or `--grok-pool-timeout 0 --no-fallback` only when explicitly diagnosing
-whether the Grok profile itself can return.
+Heavy multi-agent search models such as `grok-4.20-multi-agent-xhigh` should
+not be in the default search profile. Put search-capable multi-agent models in
+`grokEndpoints[]` with `"profile": "heavy"`; `smart-answer` and `research`
+default to `profile=auto`, which resolves to heavy for research/deep/current/
+comparison/high-risk flows when configured. `reasoningEndpoints[]` alone is
+only for final synthesis and is not used by `web_search` or `research`.
 
 ## Why `reasoningEndpoints` are separate
 
@@ -51,6 +50,14 @@ Use `reasoningEndpoints[]` for final-answer models:
       "baseURL": "https://your-grok-compatible-endpoint.example/v1",
       "apiKey": "sk-your-grok-key",
       "model": "grok-4.20-fast",
+      "sendSearchFlag": false
+    },
+    {
+      "name": "grok-multi-agent-search",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-grok-key",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "profile": "heavy",
       "sendSearchFlag": false
     }
   ],
@@ -82,6 +89,7 @@ Use `reasoningEndpoints[]` for final-answer models:
 ```bash
 ./sourcemux smart-answer "Should I adopt this library?" \
   --depth standard \
+  --profile auto \
   --reasoning-endpoint deepseek-flash
 ```
 
@@ -90,6 +98,7 @@ Use Pro for more complex synthesis without changing the config:
 ```bash
 ./sourcemux smart-answer "Compare these architecture options" \
   --depth deep \
+  --profile auto \
   --reasoning-model deepseek-v4-pro \
   --json
 ```
@@ -99,14 +108,15 @@ Explicit heavy search profile:
 ```bash
 ./sourcemux search "Investigate this complex current topic" \
   --profile heavy \
-  --timeout 360s \
+  --fallback-after 60s \
+  --timeout 180s \
   --json
 
 ./sourcemux search "ping" \
   --profile heavy \
   --grok-pool-timeout 0 \
   --no-fallback \
-  --timeout 360s \
+  --timeout 120s \
   --json
 ```
 
@@ -120,6 +130,7 @@ Inputs:
 | --- | :---: | --- |
 | `query` | Yes | The question to answer. |
 | `depth` | No | `quick`, `standard`, or `deep`. |
+| `profile` | No | Research search profile: `auto` (default), `default`, `heavy`, or another configured profile. |
 | `platform` | No | Optional search focus, such as `GitHub, Reddit`. |
 | `domains` | No | Domain allow-list for research. |
 | `max_fetches` | No | Maximum high-signal URLs fetched by research. |

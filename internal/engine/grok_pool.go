@@ -33,6 +33,7 @@ type GrokEndpoint struct {
 }
 
 const DefaultGrokEndpointProfile = "default"
+const HeavyGrokEndpointProfile = "heavy"
 
 // GrokPool routes a search through an ordered list of Grok endpoints,
 // failing over to the next endpoint when one returns an error or empty content.
@@ -80,6 +81,18 @@ func (p *GrokPool) Clients() []*GrokClient {
 		return nil
 	}
 	return p.clients
+}
+
+// ProfileLen reports the number of enabled endpoints assigned to profile.
+// Empty profile means the default profile.
+func (p *GrokPool) ProfileLen(profile string) int {
+	return len(p.profileClients(profile))
+}
+
+// HasProfile reports whether any enabled endpoint is assigned to profile.
+// Empty profile means the default profile.
+func (p *GrokPool) HasProfile(profile string) bool {
+	return p.ProfileLen(profile) > 0
 }
 
 // WithOverallTimeout returns a shallow copy of the pool with the same endpoint

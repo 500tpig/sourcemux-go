@@ -78,8 +78,8 @@ sourcemux exa-search "official docs API reference" --type deep --json
 sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 sourcemux fetch "https://example.com" --json
 sourcemux plan "research question" --depth standard
-sourcemux research "topic" --depth standard --json
-sourcemux smart-answer "question" --depth standard --json
+sourcemux research "topic" --depth standard --profile auto --json
+sourcemux smart-answer "question" --depth standard --profile auto --json
 ```
 
 ### Capability selection for generated skills
@@ -94,9 +94,9 @@ not just list commands:
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
 | Known URL content extraction | `fetch --json` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
-| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --timeout 360s --json` |
-| Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 360s --json` |
-| Multi-source investigation with synthesis | `research --depth standard --json` or `research --depth deep --profile heavy --json` |
+| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 60s --timeout 180s --json` |
+| Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
+| Multi-source investigation with synthesis | `research --depth standard --profile auto --json` or `research --depth deep --profile auto --json` |
 | Planning/decomposition without executing provider calls | `plan --depth standard` or `plan --depth deep` |
 
 Evidence policy:
@@ -106,6 +106,7 @@ Evidence policy:
 3. Cite fetched or source URL evidence in the final answer.
 4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
 5. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
+6. For search-capable multi-agent Grok models, configure them in `grokEndpoints[]` with a profile such as `heavy`; `reasoningEndpoints[]` alone is only for final synthesis and will not be used by `search` or `research`.
 
 ## Recommended host setup
 

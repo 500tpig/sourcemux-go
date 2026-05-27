@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 func TestExtractPlanQueries(t *testing.T) {
@@ -165,6 +167,97 @@ func TestResearchExecutorPassesProfileToSearch(t *testing.T) {
 		if profile != "heavy" {
 			t.Fatalf("searcher profile[%d] = %q, want heavy", i, profile)
 		}
+	}
+}
+
+func TestResearchExecutorDefaultsToAutoAndUsesResolvedProfile(t *testing.T) {
+	searcher := &resolvingProfileSearcher{
+		resolution: SearchProfileResolution{
+			RequestedProfile: "auto",
+			EffectiveProfile: "heavy",
+			ProfileReason:    "auto selected heavy: research flow",
+		},
+	}
+	executor := &ResearchExecutor{
+		Searcher: searcher,
+		Fetcher:  fakeResearchFetcher{},
+	}
+
+	pack, err := executor.Run(context.Background(), ResearchOptions{
+		Query: "SourceMux MCP",
+		Depth: "standard",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if searcher.requested != "auto" {
+		t.Fatalf("requested profile = %q, want auto", searcher.requested)
+	}
+	if pack.RequestedProfile != "auto" || pack.EffectiveProfile != "heavy" {
+		t.Fatalf("pack profiles = requested %q effective %q", pack.RequestedProfile, pack.EffectiveProfile)
+	}
+	for i, profile := range searcher.profiles {
+		if profile != "heavy" {
+			t.Fatalf("searcher profile[%d] = %q, want heavy", i, profile)
+		}
+	}
+}
+
+func TestResearchExecutorUsesLongerTimeoutForHeavySearchProfile(t *testing.T) {
+	searcher := &deadlineRecordingSearcher{
+		resolution: SearchProfileResolution{
+			RequestedProfile: "auto",
+			EffectiveProfile: "heavy",
+			ProfileReason:    "auto selected heavy: research flow",
+		},
+	}
+	executor := &ResearchExecutor{
+		Searcher: searcher,
+		Fetcher:  fakeResearchFetcher{},
+	}
+
+	_, err := executor.Run(context.Background(), ResearchOptions{Query: "SourceMux MCP"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searcher.timeouts) == 0 {
+		t.Fatal("expected searcher calls")
+	}
+	for _, timeout := range searcher.timeouts {
+		if timeout < time.Minute {
+			t.Fatalf("heavy search timeout = %s, want at least 1m", timeout)
+		}
+	}
+	if researchSearchTimeout("default") >= researchSearchTimeout("heavy") {
+		t.Fatalf("default timeout should remain shorter than heavy timeout")
+	}
+}
+
+func TestWithResearchGrokPoolTimeoutSetsBoundedFallbackCap(t *testing.T) {
+	pool := engine.NewGrokPool([]engine.GrokEndpoint{
+		{Name: "heavy", BaseURL: "http://heavy", APIKey: "k", Model: "m", Profile: "heavy"},
+	})
+	pool.OverallTimeout = time.Second
+	clients := WebSearchClients{Pool: pool}
+
+	got := withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
+	if got.Pool.OverallTimeout != researchHeavyFallbackAfter {
+		t.Fatalf("timeout = %s, want %s", got.Pool.OverallTimeout, researchHeavyFallbackAfter)
+	}
+	if clients.Pool.OverallTimeout != time.Second {
+		t.Fatalf("original pool timeout mutated to %s", clients.Pool.OverallTimeout)
+	}
+
+	pool.OverallTimeout = 0
+	got = withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
+	if got.Pool.OverallTimeout != researchHeavyFallbackAfter {
+		t.Fatalf("zero timeout override = %s, want %s", got.Pool.OverallTimeout, researchHeavyFallbackAfter)
+	}
+
+	pool.OverallTimeout = 90 * time.Second
+	got = withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
+	if got.Pool.OverallTimeout != researchHeavyFallbackAfter {
+		t.Fatalf("long timeout override = %s, want %s", got.Pool.OverallTimeout, researchHeavyFallbackAfter)
 	}
 }
 
@@ -493,11 +586,54 @@ func TestResearchExecutorRunsSearchesConcurrentlyPreservingOrder(t *testing.T) {
 }
 
 type profileRecordingSearcher struct {
+	mu       sync.Mutex
 	profiles []string
 }
 
 func (s *profileRecordingSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
+	s.mu.Lock()
 	s.profiles = append(s.profiles, profile)
+	s.mu.Unlock()
+	return (&fakeResearchSearcher{}).Search(ctx, query, platform, profile)
+}
+
+type resolvingProfileSearcher struct {
+	mu         sync.Mutex
+	requested  string
+	profiles   []string
+	resolution SearchProfileResolution
+}
+
+func (s *resolvingProfileSearcher) ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requested = requested
+	return s.resolution, nil
+}
+
+func (s *resolvingProfileSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
+	s.mu.Lock()
+	s.profiles = append(s.profiles, profile)
+	s.mu.Unlock()
+	return (&fakeResearchSearcher{}).Search(ctx, query, platform, profile)
+}
+
+type deadlineRecordingSearcher struct {
+	mu         sync.Mutex
+	timeouts   []time.Duration
+	resolution SearchProfileResolution
+}
+
+func (s *deadlineRecordingSearcher) ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error) {
+	return s.resolution, nil
+}
+
+func (s *deadlineRecordingSearcher) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		s.mu.Lock()
+		s.timeouts = append(s.timeouts, time.Until(deadline))
+		s.mu.Unlock()
+	}
 	return (&fakeResearchSearcher{}).Search(ctx, query, platform, profile)
 }
 

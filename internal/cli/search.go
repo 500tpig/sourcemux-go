@@ -16,26 +16,29 @@ import (
 // searchOutput is the JSON envelope for `cli search`. Keep the fields stable
 // so external scripts can rely on the shape.
 type searchOutput struct {
-	Engine          string                 `json:"engine"`
-	EndpointName    string                 `json:"endpoint_name,omitempty"`
-	Model           string                 `json:"model,omitempty"`
-	Query           string                 `json:"query"`
-	Content         string                 `json:"content"`
-	SourceURLs      []string               `json:"source_urls"`
-	SourcesCount    int                    `json:"sources_count"`
-	Fallback        string                 `json:"fallback,omitempty"`
-	GrokError       string                 `json:"grok_error,omitempty"`
-	CallerTimeout   string                 `json:"caller_timeout,omitempty"`
-	GrokPoolTimeout string                 `json:"grok_pool_timeout,omitempty"`
-	NoFallback      bool                   `json:"no_fallback,omitempty"`
-	RouteDecision   []router.RouteDecision `json:"route_decision,omitempty"`
+	Engine           string                 `json:"engine"`
+	EndpointName     string                 `json:"endpoint_name,omitempty"`
+	Model            string                 `json:"model,omitempty"`
+	RequestedProfile string                 `json:"requested_profile"`
+	EffectiveProfile string                 `json:"effective_profile"`
+	ProfileReason    string                 `json:"profile_reason,omitempty"`
+	Query            string                 `json:"query"`
+	Content          string                 `json:"content"`
+	SourceURLs       []string               `json:"source_urls"`
+	SourcesCount     int                    `json:"sources_count"`
+	Fallback         string                 `json:"fallback,omitempty"`
+	GrokError        string                 `json:"grok_error,omitempty"`
+	CallerTimeout    string                 `json:"caller_timeout,omitempty"`
+	GrokPoolTimeout  string                 `json:"grok_pool_timeout,omitempty"`
+	NoFallback       bool                   `json:"no_fallback,omitempty"`
+	RouteDecision    []router.RouteDecision `json:"route_decision,omitempty"`
 }
 
 func runSearch(args []string) int {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	model := fs.String("model", "", "One-shot Grok model override (e.g. grok-4.20-fast)")
-	profile := fs.String("profile", "", "Grok endpoint profile to use, e.g. 'heavy' (default: default)")
+	profile := fs.String("profile", "", "Grok endpoint profile to use: default, auto, heavy, or another configured profile (default: default)")
 	platform := fs.String("platform", "", "Focus a platform, e.g. 'Twitter', 'GitHub, Reddit'")
 	timeout := fs.Duration("timeout", 60*time.Second, "Per-call timeout")
 	grokPoolTimeout := fs.Duration("grok-pool-timeout", 0, "Override configured Grok pool timeout; 0 disables the pool cap")
@@ -90,19 +93,22 @@ func runSearch(args []string) int {
 		return reportSearchErr(*jsonOut, query, err.Error())
 	}
 	return emitSearch(*jsonOut, searchOutput{
-		Engine:          res.Engine,
-		EndpointName:    res.EndpointName,
-		Model:           res.Model,
-		Query:           res.Query,
-		Content:         res.Content,
-		SourceURLs:      res.SourceURLs,
-		SourcesCount:    res.SourcesCount,
-		Fallback:        res.Fallback,
-		GrokError:       res.GrokError,
-		CallerTimeout:   timeout.String(),
-		GrokPoolTimeout: effectiveGrokPoolTimeout.String(),
-		NoFallback:      *noFallback,
-		RouteDecision:   res.RouteTrace.Decisions,
+		Engine:           res.Engine,
+		EndpointName:     res.EndpointName,
+		Model:            res.Model,
+		RequestedProfile: res.RequestedProfile,
+		EffectiveProfile: res.EffectiveProfile,
+		ProfileReason:    res.ProfileReason,
+		Query:            res.Query,
+		Content:          res.Content,
+		SourceURLs:       res.SourceURLs,
+		SourcesCount:     res.SourcesCount,
+		Fallback:         res.Fallback,
+		GrokError:        res.GrokError,
+		CallerTimeout:    timeout.String(),
+		GrokPoolTimeout:  effectiveGrokPoolTimeout.String(),
+		NoFallback:       *noFallback,
+		RouteDecision:    res.RouteTrace.Decisions,
 	})
 }
 
@@ -117,6 +123,9 @@ func emitSearch(asJSON bool, out searchOutput) int {
 		fmt.Printf("engine: %s (fallback)\n", out.Engine)
 	} else {
 		fmt.Printf("engine: %s (%s)\n", out.Engine, out.Model)
+	}
+	if out.RequestedProfile != "" || out.EffectiveProfile != "" {
+		fmt.Printf("profile: requested=%s effective=%s\n", out.RequestedProfile, out.EffectiveProfile)
 	}
 	fmt.Printf("sources_count: %d\n\n", out.SourcesCount)
 	if len(out.RouteDecision) > 0 {

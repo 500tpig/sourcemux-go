@@ -17,17 +17,19 @@ import (
 )
 
 const (
-	researchFetchExcerptRunes = 1200
-	researchHumanExcerptRunes = 700
-	researchMaxFetches        = 12
-	researchPerCallTimeout    = 25 * time.Second
-	mcpResearchPlanLimit      = 4
-	mcpResearchSearchLimit    = 4
-	mcpResearchSourceLimit    = 6
-	mcpResearchPageLimit      = 4
-	mcpResearchListLimit      = 4
-	mcpResearchSnippetRunes   = 180
-	mcpResearchExcerptRunes   = 260
+	researchFetchExcerptRunes  = 1200
+	researchHumanExcerptRunes  = 700
+	researchMaxFetches         = 12
+	researchPerCallTimeout     = 25 * time.Second
+	researchHeavySearchTimeout = 180 * time.Second
+	researchHeavyFallbackAfter = 60 * time.Second
+	mcpResearchPlanLimit       = 4
+	mcpResearchSearchLimit     = 4
+	mcpResearchSourceLimit     = 6
+	mcpResearchPageLimit       = 4
+	mcpResearchListLimit       = 4
+	mcpResearchSnippetRunes    = 180
+	mcpResearchExcerptRunes    = 260
 )
 
 func researchConcurrency(depth string) int {
@@ -39,6 +41,13 @@ func researchConcurrency(depth string) int {
 	default:
 		return 3
 	}
+}
+
+func researchSearchTimeout(profile string) time.Duration {
+	if normalizeSearchProfile(profile) == engine.HeavyGrokEndpointProfile {
+		return researchHeavySearchTimeout
+	}
+	return researchPerCallTimeout
 }
 
 var dateInURLPattern = regexp.MustCompile(`20(2[4-9]|3[0-9])`)
@@ -57,6 +66,9 @@ type ResearchOptions struct {
 type ResearchPack struct {
 	Query               string                  `json:"query"`
 	EffectiveDepth      string                  `json:"effective_depth"`
+	RequestedProfile    string                  `json:"requested_profile"`
+	EffectiveProfile    string                  `json:"effective_profile"`
+	ProfileReason       string                  `json:"profile_reason,omitempty"`
 	Platform            string                  `json:"platform,omitempty"`
 	Domains             []string                `json:"domains,omitempty"`
 	MaxFetches          int                     `json:"max_fetches"`
@@ -133,6 +145,12 @@ type ResearchSearchProvider interface {
 	Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error)
 }
 
+// ResearchSearchProfileResolver lets production searchers resolve profile=auto
+// before the executor fans out concurrent searches.
+type ResearchSearchProfileResolver interface {
+	ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error)
+}
+
 // ResearchFetchProvider abstracts web_fetch execution for fakes in tests.
 type ResearchFetchProvider interface {
 	Fetch(ctx context.Context, rawURL string) (*WebFetchResult, error)
@@ -183,8 +201,42 @@ type webSearchResearchProvider struct {
 	clients WebSearchClients
 }
 
+func (p webSearchResearchProvider) ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error) {
+	return ResolveSearchProfile(p.clients.Pool, requested, SearchProfileContext{
+		Flow:     searchProfileFlowResearch,
+		Depth:    normalizeDepth(opts.Depth),
+		Query:    opts.Query,
+		Platform: opts.Platform,
+	})
+}
+
 func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
-	return RunWebSearch(ctx, p.clients, query, platform, "", profile)
+	clients := p.clients
+	profileCtx := SearchProfileContext{
+		Flow:     searchProfileFlowResearch,
+		Query:    query,
+		Platform: platform,
+	}
+	resolution, err := ResolveSearchProfile(p.clients.Pool, profile, profileCtx)
+	if err != nil {
+		return nil, err
+	}
+	if resolution.EffectiveProfile == engine.HeavyGrokEndpointProfile {
+		clients = withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
+	}
+	return RunWebSearchWithOptions(ctx, clients, WebSearchOptions{
+		Query:          query,
+		Platform:       platform,
+		Profile:        profile,
+		ProfileContext: profileCtx,
+	})
+}
+
+func withResearchGrokPoolTimeout(clients WebSearchClients, timeout time.Duration) WebSearchClients {
+	if clients.Pool == nil || timeout <= 0 {
+		return clients
+	}
+	return clients.WithGrokPoolTimeout(timeout)
 }
 
 type webFetchResearchProvider struct {
@@ -233,7 +285,7 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 		mcp.WithDescription("Run a bounded in-memory research workflow: plan queries, execute web_search rounds, optionally select a Grok search profile, read sources, rank/dedup URLs, fetch top pages, optionally map/crawl target domains, and return a compact research pack."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Research question or topic")),
 		mcp.WithString("depth", mcp.Description("Research depth: quick, standard, or deep (default standard)"), mcp.Enum("quick", "standard", "deep")),
-		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile for web_search, e.g. 'heavy'")),
+		mcp.WithString("profile", mcp.Description("Grok endpoint profile for web_search: auto (default), default, heavy, or another configured profile")),
 		mcp.WithString("platform", mcp.Description("Optional platform focus, e.g. 'GitHub, Reddit'")),
 		mcp.WithArray("domains",
 			mcp.Description("Optional allow-list of domains or site roots to prioritize/filter; may also drive web_map/web_crawl expansion"),
@@ -252,6 +304,7 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 		}
 		depth, _ := req.Params.Arguments["depth"].(string)
 		profile, _ := req.Params.Arguments["profile"].(string)
+		profile = defaultResearchProfile(profile)
 		platform, _ := req.Params.Arguments["platform"].(string)
 		pack, err := executor.Run(ctx, ResearchOptions{
 			Query:      query,
@@ -275,10 +328,19 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 	domains := normalizeAllowedDomains(opts.Domains)
 	maxFetches := effectiveMaxFetches(depth, opts.MaxFetches)
 	platform := strings.TrimSpace(opts.Platform)
+	requestedProfile := defaultResearchProfile(opts.Profile)
+	profileResolution := SearchProfileResolution{
+		RequestedProfile: requestedProfile,
+		EffectiveProfile: requestedProfile,
+		ProfileReason:    "profile passed through by research searcher",
+	}
 
 	pack := ResearchPack{
 		Query:               query,
 		EffectiveDepth:      depth,
+		RequestedProfile:    profileResolution.RequestedProfile,
+		EffectiveProfile:    profileResolution.EffectiveProfile,
+		ProfileReason:       profileResolution.ProfileReason,
 		Platform:            platform,
 		Domains:             domains,
 		MaxFetches:          maxFetches,
@@ -299,6 +361,29 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 		pack.Error = "research searcher is not configured"
 		return pack, fmt.Errorf("research searcher is not configured")
 	}
+	if resolver, ok := e.Searcher.(ResearchSearchProfileResolver); ok {
+		resolved, err := resolver.ResolveSearchProfile(requestedProfile, ResearchOptions{
+			Query:      query,
+			Depth:      depth,
+			Profile:    requestedProfile,
+			Platform:   platform,
+			Domains:    domains,
+			MaxFetches: maxFetches,
+		})
+		if err != nil {
+			pack.RequestedProfile = resolved.RequestedProfile
+			pack.EffectiveProfile = resolved.EffectiveProfile
+			pack.ProfileReason = resolved.ProfileReason
+			pack.Error = err.Error()
+			return pack, err
+		}
+		profileResolution = resolved
+		pack.RequestedProfile = resolved.RequestedProfile
+		pack.EffectiveProfile = resolved.EffectiveProfile
+		pack.ProfileReason = resolved.ProfileReason
+	}
+	searchProfile := profileResolution.EffectiveProfile
+	searchTimeout := researchSearchTimeout(searchProfile)
 
 	plan := BuildSearchPlan(query, depth, platform)
 	pack.PlanQueries = uniqueStrings(ExtractPlanQueries(plan))
@@ -320,9 +405,9 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 			defer func() { <-searchSem }()
 
 			summary := ResearchSearchSummary{Query: plannedQuery}
-			subCtx, cancel := context.WithTimeout(ctx, researchPerCallTimeout)
+			subCtx, cancel := context.WithTimeout(ctx, searchTimeout)
 			defer cancel()
-			res, err := e.Searcher.Search(subCtx, plannedQuery, platform, opts.Profile)
+			res, err := e.Searcher.Search(subCtx, plannedQuery, platform, searchProfile)
 			if err != nil {
 				summary.Error = err.Error()
 				searchSummaries[idx] = summary
@@ -1167,6 +1252,9 @@ func buildOpenQuestions(pack ResearchPack, maxFetches int) []string {
 func FormatResearchPack(pack ResearchPack) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "research_pack\nquery: %s\ndepth: %s\n", pack.Query, pack.EffectiveDepth)
+	if pack.RequestedProfile != "" || pack.EffectiveProfile != "" {
+		fmt.Fprintf(&sb, "profile: requested=%s effective=%s\n", pack.RequestedProfile, pack.EffectiveProfile)
+	}
 	if pack.Platform != "" {
 		fmt.Fprintf(&sb, "platform: %s\n", pack.Platform)
 	}
@@ -1245,6 +1333,9 @@ func FormatResearchPack(pack ResearchPack) string {
 func FormatResearchPackMCP(pack ResearchPack) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "research_pack\nquery: %s\ndepth: %s\n", pack.Query, pack.EffectiveDepth)
+	if pack.RequestedProfile != "" || pack.EffectiveProfile != "" {
+		fmt.Fprintf(&sb, "profile: requested=%s effective=%s\n", pack.RequestedProfile, pack.EffectiveProfile)
+	}
 	if pack.Platform != "" {
 		fmt.Fprintf(&sb, "platform: %s\n", pack.Platform)
 	}

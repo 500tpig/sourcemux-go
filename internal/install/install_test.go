@@ -138,6 +138,12 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"exa-search",
 		"exa-contents",
 		"plan \"research question\" --depth standard",
+		"research \"topic\" --depth standard --profile auto --json",
+		"research \"topic\" --depth deep --profile auto --json",
+		"smart-answer \"complex research question\" --profile auto --json",
+		"--grok-pool-timeout 0 --no-fallback",
+		"diagnostics-only",
+		"grokEndpoints[]",
 		"fetch --json",
 		"Jina Reader",
 	} {

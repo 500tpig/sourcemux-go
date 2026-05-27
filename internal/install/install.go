@@ -1084,9 +1084,10 @@ func routingSkill(binary, configPath string, mcpMode bool) string {
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- Treat multi-agent or otherwise high-effort reasoning models as final-synthesis tools first, not routine evidence-search tools.
-- Do not pass a known slow multi-agent model override to routine search unless the user explicitly wants to force that model.
-- Do not assume any specific endpoint name or a dedicated xhigh search profile exists; rely on the active sourcemux.json.
+- Plain search stays fast on the default Grok profile; research and smart-answer should use --profile auto so SourceMux can choose heavy when appropriate.
+- Do not pass a known slow multi-agent model override to routine one-hop search unless the user explicitly wants to force that model.
+- Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
+- Do not assume any specific endpoint name; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	if mcpMode {
 		cliPolicy = `- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
@@ -1096,9 +1097,10 @@ func routingSkill(binary, configPath string, mcpMode bool) string {
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- Treat multi-agent or otherwise high-effort reasoning models as final-synthesis tools first, not routine evidence-search tools.
-- Do not pass a known slow multi-agent model override to routine search unless the user explicitly wants to force that model.
-- Do not assume any specific endpoint name or a dedicated xhigh search profile exists; rely on the active sourcemux.json.
+- Plain search stays fast on the default Grok profile; research and smart-answer should use --profile auto so SourceMux can choose heavy when appropriate.
+- Do not pass a known slow multi-agent model override to routine one-hop search unless the user explicitly wants to force that model.
+- Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
+- Do not assume any specific endpoint name; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	}
 	return fmt.Sprintf(`---
@@ -1121,10 +1123,10 @@ Choose one mode before running commands:
 | Mode | Use when | Command pattern |
 | --- | --- | --- |
 | Quick search | Fresh/current facts, community feedback, one-hop discovery | search "query" --json |
-| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | research "topic" --depth standard --json |
-| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | research "topic" --depth deep --profile heavy --json |
+| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | research "topic" --depth standard --profile auto --json |
+| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | research "topic" --depth deep --profile auto --json |
 | Explicit heavy search | User asks to use heavy/multi-agent search directly | search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
-| Final synthesis | Evidence is collected and the user wants an answer/plan | smart-answer "question" --json |
+| Final synthesis | Evidence is collected and the user wants an answer/plan | smart-answer "question" --profile auto --json |
 | Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | short probe with --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
 
 If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, treat that as a valid source-discovery result. Fetch key URLs next; do not rerun with --no-fallback unless the user is debugging the Grok profile itself.
@@ -1133,8 +1135,9 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 
 | Profile | Intended use | Notes |
 | --- | --- | --- |
-| default | Routine search/research | Normal search should rely on the configured default pool without pinning endpoint names. |
-| heavy | Deep evidence collection or explicit multi-agent search | Use --profile heavy; keep fallback available with --fallback-after for user-facing search. |
+| default | Routine one-hop search | Normal search should rely on the configured default pool without pinning endpoint names. |
+| auto | Agent/research default | Resolves to heavy for research/deep/current/comparison/high-risk flows when a heavy Grok profile exists; otherwise safely resolves to default. |
+| heavy | Explicit multi-agent search | Use --profile heavy when the user asks to force heavy; keep fallback available with --fallback-after for user-facing search. |
 
 ## Capability routing
 
@@ -1147,7 +1150,7 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
 | Explicit slow heavy or multi-agent Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | search "short probe" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
-| Multi-source investigation with synthesis | research --depth standard --json or research --depth deep --profile heavy --json | Runs the composable SourceMux research workflow. Keep routine evidence collection on configured search profiles; reserve slower reasoning routes for explicit requests or final synthesis. |
+| Multi-source investigation with synthesis | research --depth standard --profile auto --json or research --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
 | Planning/decomposition without executing the research | plan --depth standard or plan --depth deep | Produces a deterministic search plan before running provider calls. |
 
 ## Diagnostics workflow
@@ -1186,9 +1189,9 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 %s %s exa-search "official docs API reference" --type deep --json
 %s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 %s %s plan "research question" --depth standard
-%s %s research "topic" --depth standard --json
-%s %s research "topic" --depth deep --profile heavy --json
-%s %s smart-answer "complex research question" --json
+%s %s research "topic" --depth standard --profile auto --json
+%s %s research "topic" --depth deep --profile auto --json
+%s %s smart-answer "complex research question" --profile auto --json
 
 Diagnostics only; do not use for user-facing research answers:
 

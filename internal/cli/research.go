@@ -36,7 +36,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	fs := flag.NewFlagSet("research", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	depth := fs.String("depth", "standard", "Research depth: quick, standard, or deep")
-	profile := fs.String("profile", "", "Grok endpoint profile to use, e.g. 'heavy' (default: default)")
+	profile := fs.String("profile", tools.SearchProfileAuto, "Grok endpoint profile to use: auto, default, heavy, or another configured profile")
 	platform := fs.String("platform", "", "Optional platform focus, e.g. 'GitHub, Reddit'")
 	maxFetches := fs.Int("max-fetches", 0, "Maximum number of ranked URLs to fetch")
 	timeout := fs.Duration("timeout", 180*time.Second, "End-to-end research timeout")

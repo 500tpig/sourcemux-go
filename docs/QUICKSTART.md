@@ -99,12 +99,14 @@ Then edit placeholders. Never commit `sourcemux.json`.
 ./sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 ./sourcemux fetch "https://example.com" --json
 ./sourcemux plan "Evaluate current Go module proxy behavior" --depth standard
-./sourcemux research "Evaluate the current status of Go modules" --depth standard --json
+./sourcemux research "Evaluate the current status of Go modules" --depth standard --profile auto --json
 ```
 
 Use `search --platform Twitter` for freshness/community discovery, `docs-search`
 or direct `exa-search` for source-first docs/API discovery, and `fetch` to
-verify key URLs before source-critical claims.
+verify key URLs before source-critical claims. Plain `search` stays on the
+default Grok profile; `research` defaults to `profile=auto` so configured heavy
+search is used for research/deep/current/comparison/high-risk flows.
 
 ## 5. Install agent routing skill and MCP snippets
 

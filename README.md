@@ -27,8 +27,8 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的搜索
 | `web_search` / `sourcemux search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
 | `web_fetch` / `sourcemux fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
 | `docs_search` / `sourcemux docs-search` | Exa docs/web search fallback |
-| `research_run` / `sourcemux research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面（可用 `--profile heavy`） |
-| `smart_answer` / `sourcemux smart-answer` | 先跑 bounded research，再交给配置好的 reasoning endpoint 综合回答 |
+| `research_run` / `sourcemux research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面（默认 `--profile auto`） |
+| `smart_answer` / `sourcemux smart-answer` | 先跑 bounded research（默认 `--profile auto`），再交给配置好的 reasoning endpoint 综合回答 |
 
 ### 安装
 
@@ -115,7 +115,7 @@ sourcemux docs-search "next.js middleware auth" --json
 生成研究包：
 
 ```bash
-sourcemux research "Evaluate the current status of Go modules" --depth deep --profile heavy --json
+sourcemux research "Evaluate the current status of Go modules" --depth deep --profile auto --json
 ```
 
 ### 配置文件
@@ -277,8 +277,8 @@ The default routing is:
 - `web_search` / `sourcemux search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
 - `web_fetch` / `sourcemux fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
 - `docs_search` / `sourcemux docs-search`: Exa docs/web search fallback
-- `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages (use `--profile heavy` for explicit heavy pools)
-- `smart_answer` / `sourcemux smart-answer`: run bounded research, then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
+- `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages (defaults to `--profile auto`)
+- `smart_answer` / `sourcemux smart-answer`: run bounded research (defaults to `--profile auto`), then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
 
 ## Features
 
@@ -416,7 +416,7 @@ Config fields:
 | `grokEndpoints[].apiKey` | Yes | Bearer token. Never commit real keys. |
 | `grokEndpoints[].model` | No | Defaults to `grok-3-mini`. |
 | `grokEndpoints[].enabled` | No | Defaults to `true`. Set `false` to keep an endpoint in config without using it. |
-| `grokEndpoints[].profile` | No | Defaults to `default`. Normal `search` uses only `default`; use `--profile heavy` for heavy endpoints. |
+| `grokEndpoints[].profile` | No | Defaults to `default`. Plain `search` uses `default`; `research`/`smart-answer` default to `auto`, which uses `heavy` for research/deep/current/comparison/high-risk flows when configured. |
 | `grokEndpoints[].sendSearchFlag` | No | Usually `true` for native xAI search; often `false` for grok2api proxies. |
 | `grokEndpoints[].apiType` | No | `chat` or `responses`. |
 | `grokEndpoints[].responseTools` | No | Responses API built-in tools to send when `sendSearchFlag` is true. Supported: `web_search`, `x_search`. Empty defaults to `web_search`. |
@@ -430,13 +430,13 @@ Config fields:
 | `tinyfish` | No | TinyFish Search / Fetch fallback with multi-key rotation. |
 | `grokPoolTimeoutSec` | No | Default overall Grok pool wall-clock budget in seconds. Override per search with `--grok-pool-timeout`; `0` disables the pool cap. |
 
-Heavy Grok models such as `grok-4.20-multi-agent-xhigh` should not be first in
-the default search pool. Put them in either:
-
-- `reasoningEndpoints[]` for `smart-answer --reasoning-endpoint ...`
-- `grokEndpoints[]` with `"profile": "heavy"` for explicit heavy search:
+Heavy Grok search models such as `grok-4.20-multi-agent-xhigh` should not be
+first in the default search pool. If they are used for search, put them in
+`grokEndpoints[]` with `"profile": "heavy"`; `reasoningEndpoints[]` alone is
+only for final synthesis and is not used by `web_search` / `research`.
 
 ```bash
+sourcemux research "complex current topic" --depth deep --profile auto --json
 sourcemux search "complex current topic" --profile heavy --fallback-after 60s --timeout 180s --json
 sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
@@ -462,9 +462,9 @@ See:
 ./sourcemux fetch "https://example.com" --json
 ./sourcemux plan "Evaluate a new open-source project" --depth deep
 ./sourcemux research "Evaluate a new open-source project" \
-  --depth deep --domain github.com --max-fetches 6 --json
+  --depth deep --profile auto --domain github.com --max-fetches 6 --json
 ./sourcemux smart-answer "Should I use project X?" \
-  --depth standard --reasoning-endpoint deepseek-flash --json
+  --depth standard --profile auto --reasoning-endpoint deepseek-flash --json
 ```
 
 Main subcommands:
@@ -479,8 +479,8 @@ Main subcommands:
 | `map <url>` | Tavily URL discovery. |
 | `crawl <url>` | Tavily site crawl with extracted content. |
 | `plan <query>` | Offline search plan, no network calls. |
-| `research <query>` | Bounded multi-step research pack (`--profile heavy` selects the heavy Grok pool). |
-| `smart-answer <query>` | Research pack plus reasoning endpoint synthesis. |
+| `research <query>` | Bounded multi-step research pack (defaults to `--profile auto`). |
+| `smart-answer <query>` | Research pack plus reasoning endpoint synthesis (passes `--profile` into research; default `auto`). |
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
 | `doctor` / `probe` | Local config overview; opt-in live provider probes. |
@@ -489,7 +489,7 @@ Main subcommands:
 
 Search-specific controls:
 
-- `--profile heavy|xhigh` selects an explicit Grok endpoint profile.
+- `--profile auto|default|heavy|xhigh` selects or resolves a Grok endpoint profile. Plain `search` defaults to `default`; `research` and `smart-answer` default to `auto`.
 - `--grok-pool-timeout <dur>` overrides `grokPoolTimeoutSec` for that call; `0` disables the Grok pool cap and leaves cancellation to `--timeout` or the caller.
 - `--fallback-after <dur>` is an alias for `--grok-pool-timeout` when you want the selected Grok pool to give way to fallback providers after a bounded wait.
 - `--no-fallback` disables TinyFish/Exa/Tavily fallback so failures from the selected Grok pool are visible; use it for diagnostics only, not user-facing research/search.
@@ -569,8 +569,8 @@ MCP tools:
 | `web_map` | Discover site URLs with Tavily Map. |
 | `web_crawl` | Crawl a site and extract page content with Tavily Crawl. |
 | `search_planning` | Build a staged search plan before research. |
-| `research_run` | Run the bounded research workflow and return a compact MCP pack (`profile` optional). |
-| `smart_answer` | Research first, then synthesize with `reasoningEndpoints`. |
+| `research_run` | Run the bounded research workflow and return a compact MCP pack (`profile` optional; omitted means `auto`). |
+| `smart_answer` | Research first, then synthesize with `reasoningEndpoints` (`profile` controls the research phase; omitted means `auto`). |
 | `get_config_info` | Diagnostic config output and Grok `/models` probing. |
 
 ## Smart answer and reasoning endpoints
@@ -604,7 +604,9 @@ For native xAI Responses API endpoints, enable X search by opting into response 
 Leave `responseTools` empty to keep the backward-compatible `web_search` default. Set `sendSearchFlag` to `false` for proxies that auto-search or reject tool flags.
 
 For heavy multi-agent search, keep the endpoint out of the default pool and
-select it explicitly:
+configure it in `grokEndpoints[]` with `profile: "heavy"`. Agent/research
+flows can then use `--profile auto`; explicit direct heavy searches can force
+`--profile heavy`:
 
 ```json
 {
@@ -622,6 +624,7 @@ select it explicitly:
 ```
 
 ```bash
+sourcemux research "complex current topic" --depth deep --profile auto --json
 sourcemux search "complex current topic" --profile heavy --fallback-after 60s --timeout 180s --json
 sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```

@@ -220,13 +220,19 @@ result, err := pool.Fetch(ctx, request)
 - Research depth (`quick`, `standard`, `deep`) controls breadth/concurrency and fetch limits, not model tier selection.
 - A separate `profile` option controls which Grok endpoint profile the research search phase uses.
 - `profile` must be threaded through the CLI, MCP tool, and shared research executor to the underlying `web_search` call.
-- Heavy pools such as `heavy` or `xhigh` must remain opt-in; default research should continue using the default profile.
+- Plain one-shot `search` stays on the default Grok profile unless the caller passes `--profile`.
+- Agent/research flows default to `profile=auto`.
+- `auto` resolves to `heavy` for research/deep/current/comparison/high-risk flows when a heavy Grok profile exists, otherwise it safely resolves to `default`.
+- Explicit `profile=default` forces default; explicit `profile=heavy` forces heavy and should return a clear error when no heavy profile is configured.
+- Heavy/multi-agent search models must be configured in `grokEndpoints[]`; `reasoningEndpoints[]` alone is only for final synthesis and is not part of `web_search` / `research_run`.
+- User-facing research/search must preserve fallback. `--no-fallback` is diagnostics-only.
 
 #### 3. Validation
 
 - Tests must cover that a passed research profile reaches the shared search provider.
+- Tests must cover profile introspection/resolution for default, explicit heavy, auto-with-heavy, and auto-without-heavy.
 - Documentation must distinguish research depth from search profile selection.
-- If `profile` is omitted, research must preserve historical default behavior.
+- If `profile` is omitted, `research` and `smart-answer` must report requested/effective profile metadata and use `auto`.
 
 ---
 

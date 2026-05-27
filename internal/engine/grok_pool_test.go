@@ -153,6 +153,29 @@ func TestNewGrokPool_SkipsDisabledEndpoints(t *testing.T) {
 	}
 }
 
+func TestGrokPool_ProfileIntrospection(t *testing.T) {
+	disabled := false
+	pool := NewGrokPool([]GrokEndpoint{
+		{Name: "default-a", BaseURL: "http://default-a", APIKey: "k", Model: "m"},
+		{Name: "default-disabled", BaseURL: "http://default-disabled", APIKey: "k", Model: "m", Enabled: &disabled},
+		{Name: "heavy-a", BaseURL: "http://heavy-a", APIKey: "k", Model: "m", Profile: "heavy"},
+		{Name: "heavy-b", BaseURL: "http://heavy-b", APIKey: "k", Model: "m", Profile: " HEAVY "},
+	})
+
+	if got := pool.ProfileLen(""); got != 1 {
+		t.Fatalf("default ProfileLen = %d, want 1", got)
+	}
+	if got := pool.ProfileLen("heavy"); got != 2 {
+		t.Fatalf("heavy ProfileLen = %d, want 2", got)
+	}
+	if !pool.HasProfile("HEAVY") {
+		t.Fatalf("HasProfile(HEAVY) = false, want true")
+	}
+	if pool.HasProfile("missing") {
+		t.Fatalf("HasProfile(missing) = true, want false")
+	}
+}
+
 func TestGrokPool_ProfileSelectsOnlyMatchingEndpoints(t *testing.T) {
 	var defaultCalls, heavyCalls int32
 	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -36,17 +36,30 @@ type WebSearchClients struct {
 // WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
 // and the higher-level research workflow.
 type WebSearchResult struct {
-	Query        string            `json:"query"`
-	Engine       string            `json:"engine"`
-	EndpointName string            `json:"endpoint_name,omitempty"`
-	Model        string            `json:"model,omitempty"`
-	SessionID    string            `json:"session_id,omitempty"`
-	Content      string            `json:"content"`
-	SourceURLs   []string          `json:"source_urls"`
-	SourcesCount int               `json:"sources_count"`
-	Fallback     string            `json:"fallback,omitempty"`
-	GrokError    string            `json:"grok_error,omitempty"`
-	RouteTrace   router.RouteTrace `json:"route_trace,omitempty"`
+	Query            string            `json:"query"`
+	Engine           string            `json:"engine"`
+	EndpointName     string            `json:"endpoint_name,omitempty"`
+	Model            string            `json:"model,omitempty"`
+	RequestedProfile string            `json:"requested_profile"`
+	EffectiveProfile string            `json:"effective_profile"`
+	ProfileReason    string            `json:"profile_reason,omitempty"`
+	SessionID        string            `json:"session_id,omitempty"`
+	Content          string            `json:"content"`
+	SourceURLs       []string          `json:"source_urls"`
+	SourcesCount     int               `json:"sources_count"`
+	Fallback         string            `json:"fallback,omitempty"`
+	GrokError        string            `json:"grok_error,omitempty"`
+	RouteTrace       router.RouteTrace `json:"route_trace,omitempty"`
+}
+
+// WebSearchOptions is the shared input contract for direct search and
+// higher-level research callers.
+type WebSearchOptions struct {
+	Query          string
+	Platform       string
+	Model          string
+	Profile        string
+	ProfileContext SearchProfileContext
 }
 
 // RegisterSearch registers the web_search tool.
@@ -64,7 +77,7 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
-		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile, e.g. 'heavy'")),
+		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile: default, auto, heavy, or another configured profile")),
 		mcp.WithNumber("grok_pool_timeout_sec", mcp.Description("Optional per-call Grok pool timeout in seconds; 0 disables the pool cap and leaves cancellation to the caller context")),
 		mcp.WithBoolean("no_fallback", mcp.Description("Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")),
 		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
@@ -118,6 +131,22 @@ func (c WebSearchClients) WithGrokPoolTimeout(timeout time.Duration) WebSearchCl
 // the single shared implementation so higher-level workflows do not fork the
 // provider fallback order.
 func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform, model, profile string) (*WebSearchResult, error) {
+	return RunWebSearchWithOptions(ctx, clients, WebSearchOptions{
+		Query:    query,
+		Platform: platform,
+		Model:    model,
+		Profile:  profile,
+		ProfileContext: SearchProfileContext{
+			Flow:  searchProfileFlowSearch,
+			Query: query,
+		},
+	})
+}
+
+// RunWebSearchWithOptions executes the production web_search routing chain
+// with explicit caller intent for profile=auto resolution.
+func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts WebSearchOptions) (*WebSearchResult, error) {
+	query, platform, model, profile := opts.Query, opts.Platform, opts.Model, opts.Profile
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
@@ -130,12 +159,27 @@ func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform
 		query = fmt.Sprintf("[Focus: %s] %s", platform, query)
 	}
 
+	profileCtx := opts.ProfileContext
+	if profileCtx.Flow == "" {
+		profileCtx.Flow = searchProfileFlowSearch
+	}
+	if profileCtx.Query == "" {
+		profileCtx.Query = query
+	}
+	if profileCtx.Platform == "" {
+		profileCtx.Platform = platform
+	}
+	profileResolution, err := ResolveSearchProfile(clients.Pool, profile, profileCtx)
+	if err != nil {
+		return nil, err
+	}
+
 	r := router.New(searchProviders(clients)...)
 	res, trace := r.Run(ctx, capability.MainSearch, capability.Request{
 		Query: query,
 		Options: map[string]any{
 			"model":   model,
-			"profile": profile,
+			"profile": profileResolution.EffectiveProfile,
 		},
 	})
 	if strings.TrimSpace(res.Content) == "" {
@@ -149,17 +193,20 @@ func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform
 	urls := sourceURLsFromCapability(res.Sources)
 	cacheSources(clients.Cache, sessionID, urls)
 	return &WebSearchResult{
-		Query:        query,
-		Engine:       metadataString(res.Metadata, "engine", trace.FinalProvider),
-		EndpointName: metadataString(res.Metadata, "endpoint_name", ""),
-		Model:        metadataString(res.Metadata, "model", ""),
-		SessionID:    sessionID,
-		Content:      res.Content,
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-		Fallback:     metadataString(res.Metadata, "fallback", ""),
-		GrokError:    grokFailureDetail(trace),
-		RouteTrace:   trace,
+		Query:            query,
+		Engine:           metadataString(res.Metadata, "engine", trace.FinalProvider),
+		EndpointName:     metadataString(res.Metadata, "endpoint_name", ""),
+		Model:            metadataString(res.Metadata, "model", ""),
+		RequestedProfile: profileResolution.RequestedProfile,
+		EffectiveProfile: profileResolution.EffectiveProfile,
+		ProfileReason:    profileResolution.ProfileReason,
+		SessionID:        sessionID,
+		Content:          res.Content,
+		SourceURLs:       urls,
+		SourcesCount:     len(urls),
+		Fallback:         metadataString(res.Metadata, "fallback", ""),
+		GrokError:        grokFailureDetail(trace),
+		RouteTrace:       trace,
 	}, nil
 }
 

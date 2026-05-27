@@ -8,6 +8,15 @@
       "enabled": true,
       "profile": "default",
       "sendSearchFlag": false
+    },
+    {
+      "name": "grok-multi-agent-search",
+      "baseURL": "https://your-grok-compatible-endpoint.example/v1",
+      "apiKey": "sk-your-grok-key",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "enabled": true,
+      "profile": "heavy",
+      "sendSearchFlag": false
     }
   ],
   "reasoningEndpoints": [

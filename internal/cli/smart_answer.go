@@ -26,6 +26,7 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	fs := flag.NewFlagSet("smart-answer", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	depth := fs.String("depth", "standard", "Research depth: quick, standard, or deep")
+	profile := fs.String("profile", tools.SearchProfileAuto, "Research search profile: auto, default, heavy, or another configured profile")
 	platform := fs.String("platform", "", "Optional platform focus, e.g. 'GitHub, Reddit'")
 	maxFetches := fs.Int("max-fetches", 0, "Maximum ranked URLs to fetch during research")
 	reasoningEndpoint := fs.String("reasoning-endpoint", "", "Optional reasoning endpoint name from reasoningEndpoints")
@@ -48,6 +49,7 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	opts := tools.SmartAnswerOptions{
 		Query:             query,
 		Depth:             *depth,
+		Profile:           *profile,
 		Platform:          *platform,
 		Domains:           domains,
 		MaxFetches:        *maxFetches,

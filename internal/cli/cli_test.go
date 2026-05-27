@@ -604,6 +604,80 @@ func TestRunSearchGrokPoolTimeoutZeroOverrideDisablesConfiguredCap(t *testing.T)
 	}
 }
 
+func TestRunSearchProfileAutoUsesHeavyButPlainSearchUsesDefault(t *testing.T) {
+	var defaultCalls, heavyCalls int32
+	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&defaultCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"default ok"}}]}`)
+	}))
+	defer defaultSrv.Close()
+	heavySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&heavyCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"heavy ok"}}]}`)
+	}))
+	defer heavySrv.Close()
+
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [
+	    {"name":"default","baseURL":"`+defaultSrv.URL+`","apiKey":"sk-default","model":"grok-fast"},
+	    {"name":"heavy","baseURL":"`+heavySrv.URL+`","apiKey":"sk-heavy","model":"grok-heavy","profile":"heavy"}
+	  ]
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "quick lookup", "--json"}); got != 0 {
+			t.Fatalf("Run(plain search) = %d, want 0", got)
+		}
+	})
+	var plain searchOutput
+	if err := json.Unmarshal([]byte(out), &plain); err != nil {
+		t.Fatalf("decode plain output: %v\n%s", err, out)
+	}
+	if plain.Engine != "default" || plain.RequestedProfile != "default" || plain.EffectiveProfile != "default" {
+		t.Fatalf("plain output = %+v, want default profile", plain)
+	}
+
+	out = captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "complex current comparison", "--profile", "auto", "--json"}); got != 0 {
+			t.Fatalf("Run(auto search) = %d, want 0", got)
+		}
+	})
+	var auto searchOutput
+	if err := json.Unmarshal([]byte(out), &auto); err != nil {
+		t.Fatalf("decode auto output: %v\n%s", err, out)
+	}
+	if auto.Engine != "heavy" || auto.RequestedProfile != "auto" || auto.EffectiveProfile != "heavy" {
+		t.Fatalf("auto output = %+v, want auto/heavy", auto)
+	}
+	if atomic.LoadInt32(&defaultCalls) != 1 || atomic.LoadInt32(&heavyCalls) != 1 {
+		t.Fatalf("calls default=%d heavy=%d, want 1/1", defaultCalls, heavyCalls)
+	}
+}
+
+func TestRunSearchExplicitHeavyErrorsWhenProfileMissing(t *testing.T) {
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [
+	    {"name":"default","baseURL":"https://default.example/v1","apiKey":"sk-default","model":"grok-fast"}
+	  ],
+	  "exa": {"apiURL": "https://exa.example", "apiKey": "exa-test", "enabled": true}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "q", "--profile", "heavy", "--json"}); got != 1 {
+			t.Fatalf("Run(search --profile heavy) = %d, want 1", got)
+		}
+	})
+	var decoded searchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if !strings.Contains(decoded.GrokError, `profile "heavy"`) {
+		t.Fatalf("grok_error = %q, want missing heavy profile", decoded.GrokError)
+	}
+}
+
 func TestFetchOutputJSONShape(t *testing.T) {
 	f := fetchOutput{Source: "jina", URL: "https://x", Content: "md"}
 	b, err := json.Marshal(f)
@@ -763,12 +837,28 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	}
 }
 
+func TestRunResearchDefaultsProfileAuto(t *testing.T) {
+	runner := &fakeCLIResearchRunner{}
+	_ = captureStdout(t, func() {
+		if got := runResearchWithRunner([]string{
+			"SourceMux MCP",
+			"--json",
+		}, runner); got != 0 {
+			t.Fatalf("runResearchWithRunner = %d, want 0", got)
+		}
+	})
+	if runner.opts.Profile != "auto" {
+		t.Fatalf("default research profile = %q, want auto", runner.opts.Profile)
+	}
+}
+
 func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
 	runner := &fakeCLISmartAnswerRunner{}
 	out := captureStdout(t, func() {
 		if got := runSmartAnswerWithRunner([]string{
 			"Should I use DeepSeek?",
 			"--depth", "quick",
+			"--profile", "heavy",
 			"--platform", "GitHub",
 			"--domain", "example.com",
 			"--max-fetches", "2",
@@ -783,6 +873,9 @@ func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
 	if runner.opts.Query != "Should I use DeepSeek?" || runner.opts.Depth != "quick" || runner.opts.Platform != "GitHub" {
 		t.Fatalf("runner opts = %+v", runner.opts)
 	}
+	if runner.opts.Profile != "heavy" {
+		t.Fatalf("profile opts = %+v", runner.opts)
+	}
 	if strings.Join(runner.opts.Domains, ",") != "example.com" || runner.opts.MaxFetches != 2 {
 		t.Fatalf("domain/max_fetches opts = %+v", runner.opts)
 	}
@@ -796,6 +889,21 @@ func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
 	}
 	if decoded.Answer == "" || decoded.ReasoningModel != "deepseek-v4-pro" {
 		t.Fatalf("decoded = %+v", decoded)
+	}
+}
+
+func TestRunSmartAnswerDefaultsProfileAuto(t *testing.T) {
+	runner := &fakeCLISmartAnswerRunner{}
+	_ = captureStdout(t, func() {
+		if got := runSmartAnswerWithRunner([]string{
+			"Should I use DeepSeek?",
+			"--json",
+		}, runner); got != 0 {
+			t.Fatalf("runSmartAnswerWithRunner = %d, want 0", got)
+		}
+	})
+	if runner.opts.Profile != "auto" {
+		t.Fatalf("default smart-answer profile = %q, want auto", runner.opts.Profile)
 	}
 }
 
@@ -972,12 +1080,14 @@ type fakeCLIResearchRunner struct {
 func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOptions) (tools.ResearchPack, error) {
 	r.opts = opts
 	return tools.ResearchPack{
-		Query:          opts.Query,
-		EffectiveDepth: opts.Depth,
-		Platform:       opts.Platform,
-		Domains:        opts.Domains,
-		MaxFetches:     opts.MaxFetches,
-		PlanQueries:    []string{opts.Query},
+		Query:            opts.Query,
+		EffectiveDepth:   opts.Depth,
+		RequestedProfile: opts.Profile,
+		EffectiveProfile: opts.Profile,
+		Platform:         opts.Platform,
+		Domains:          opts.Domains,
+		MaxFetches:       opts.MaxFetches,
+		PlanQueries:      []string{opts.Query},
 		ExecutedSearches: []tools.ResearchSearchSummary{{
 			Query:        opts.Query,
 			Engine:       "fake",
@@ -1019,10 +1129,12 @@ func (r *fakeCLISmartAnswerRunner) Run(ctx context.Context, opts tools.SmartAnsw
 		ReasoningEndpoint: opts.ReasoningEndpoint,
 		ReasoningModel:    opts.ReasoningModel,
 		Research: tools.ResearchPack{
-			Query:          opts.Query,
-			EffectiveDepth: opts.Depth,
-			MaxFetches:     opts.MaxFetches,
-			SourceSummary:  tools.ResearchSourceSummary{UniqueURLs: 1},
+			Query:            opts.Query,
+			EffectiveDepth:   opts.Depth,
+			RequestedProfile: opts.Profile,
+			EffectiveProfile: opts.Profile,
+			MaxFetches:       opts.MaxFetches,
+			SourceSummary:    tools.ResearchSourceSummary{UniqueURLs: 1},
 		},
 	}, nil
 }

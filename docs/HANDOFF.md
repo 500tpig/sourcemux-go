@@ -113,8 +113,8 @@ MCP:
 3. Call `get_sources` with the returned `session_id`.
 4. Call `web_fetch` on one returned URL or `https://example.com`.
 5. If Tavily is configured, call `web_map` and `web_crawl`.
-6. Call `research_run` for a bounded research pack; pass `profile` when you need an explicit heavy Grok pool.
-7. If `reasoningEndpoints[]` is configured, call `smart_answer`.
+6. Call `research_run` for a bounded research pack; it defaults to `profile=auto` so configured heavy search is used when appropriate.
+7. If `reasoningEndpoints[]` is configured, call `smart_answer`; pass `profile` if you need to force `default` or `heavy` for its research phase.
 
 Expected behavior:
 
@@ -190,20 +190,24 @@ example:
 ```
 
 This bounds the total wall-clock time spent across the selected Grok endpoint
-profile. Use `search --profile heavy` or `research --profile heavy` only when
-you explicitly want the heavy pool. Multi-agent models (e.g.
-`grok-4.20-multi-agent-xhigh`) typically need 90–120 s; set
-`grokPoolTimeoutSec` to 300 (5 min) so the pool does not time out before the
-model responds.
+profile. Plain `search` stays on `default`; `research` and `smart-answer`
+default to `profile=auto`, which resolves to `heavy` for research/deep/current/
+comparison/high-risk flows when a heavy Grok profile exists. Multi-agent search
+models (e.g. `grok-4.20-multi-agent-xhigh`) must be in `grokEndpoints[]` with
+`profile: "heavy"`; placing them only in `reasoningEndpoints[]` makes them
+available for final synthesis, not search.
 
 For heavy multi-agent searches, always pass `--timeout` above the pool cap:
 
 ```bash
 ./sourcemux --config /path/to/sourcemux.json search "complex current topic" \
-  --profile heavy --timeout 360s --json
+  --profile heavy --fallback-after 60s --timeout 180s --json
+
+./sourcemux --config /path/to/sourcemux.json research "complex current topic" \
+  --depth deep --profile auto --json
 
 ./sourcemux --config /path/to/sourcemux.json search "ping" \
-  --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 360s --json
+  --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
 `--fallback-after` and `--grok-pool-timeout` both override
