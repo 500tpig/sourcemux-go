@@ -484,3 +484,37 @@ Added Grok endpoint profiles plus caller-controlled search fallback timing, no-f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: SourceMux open-source roadmap P0 implementation
+
+**Date**: 2026-06-02
+**Task**: SourceMux open-source roadmap P0 implementation
+**Branch**: `main`
+
+### Summary
+
+Implemented P0 open-source readiness slice: fixed user/project bootstrap config defaults, hardened generated sourcemux-routing skill path guidance, adjusted research fallback timing, separated public-user and development docs, and updated backend installer spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0ce6bc6` | (see git log) |
+| `1fd1b57` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
