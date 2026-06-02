@@ -621,3 +621,36 @@ Aligned public release docs with verified v0.2.1 channels, added release closeou
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: SourceMux npm wrapper scaffold
+
+**Date**: 2026-06-02
+**Task**: SourceMux npm wrapper scaffold
+**Branch**: `main`
+
+### Summary
+
+Added npm wrapper scaffold with platform optional dependency packages, JS launcher, staging script, Node tests, and public docs caveats while keeping Go as the core CLI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8554daa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
