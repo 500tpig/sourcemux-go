@@ -953,6 +953,10 @@ Use the SourceMux CLI by default.
   - Example configs must use placeholder secrets and generic endpoint URLs.
   - Public install docs must not present GitHub Release assets, Homebrew taps/casks, Scoop manifests, or other package-manager channels as available until the corresponding artifact actually exists.
   - Before release artifacts exist, public preview/self-use docs should lead with `go install` or source builds and label package-manager snippets as intended future release channels.
+  - After release artifacts exist, public docs may claim package-manager availability only with a verified baseline version/date and source-of-truth locations (GitHub Release tag/assets, raw Homebrew tap cask, raw Scoop bucket manifest). Future versions must still be reverified before docs claim their package-manager channels are available.
+  - Maintainer release docs must include a closeout checklist for preflight, tag publish, GitHub Release assets/checksums, Homebrew tap cask, Scoop manifest, install smoke, generated-skill lifecycle smoke, and rollback/known-failure handling.
+  - Local `dist/*` files from GoReleaser snapshot runs are generated artifacts for shape inspection only. Do not use them as proof of public release/package-manager state; verify public state from GitHub Releases and raw tap/bucket files.
+  - Release smoke that exercises user-scope generated skills must use an isolated temporary `HOME` plus an explicit `--config <temp-path>` so it does not read or modify the maintainer's real agent configs or provider config.
 - Product behavior:
   - User-visible missing-config errors must point to the relevant config field or example docs.
   - Config examples must remain loadable JSON and align with the current config loader.
@@ -965,6 +969,9 @@ Use the SourceMux CLI by default.
 | Local workflow directories absent from disk during an active Trellis task | Stop and restore/ask before proceeding; do not break the local workflow |
 | Public docs contain `/Users/`, real names, private hosts, or real-looking keys | Generalize or remove before release |
 | Public docs claim release/package-manager install paths that have not been published | Rewrite as conditional/future release-channel guidance, or remove until the artifact exists |
+| Public docs claim release/package-manager install paths that have been published | Include the verified version/date and verify GitHub Release, tap/cask, and bucket manifest source-of-truth paths |
+| Release docs cite local `dist/*` snapshot output as current public state | Replace with GitHub Release plus raw tap/bucket verification |
+| Release smoke uses real user `HOME` for `bootstrap --scope user`, status, update, or uninstall | Move the smoke to a temporary `HOME` and pass an explicit temporary `--config` path |
 | Example config has invalid JSON | Fix before merge |
 | Example config requires real credentials to parse | Replace with safe placeholders |
 | CI does not cover test, vet, and build | Add or fix CI workflow |
@@ -972,8 +979,10 @@ Use the SourceMux CLI by default.
 #### 5. Good/Base/Bad Cases
 
 - Good: `.gitignore` marks `.trellis/`, `.agents/`, `.codex/`, and `.claude/` as local AI workflow state, while `docs/QUICKSTART.md` contains generic MCP setup instructions.
+- Good: release docs say "verified public baseline vX.Y.Z (checked YYYY-MM-DD)" and point to the GitHub Release, raw Homebrew cask, and raw Scoop manifest before listing package-manager commands as available.
+- Good: lifecycle smoke runs with `HOME="$(mktemp -d)"` and `--config "$HOME/.config/sourcemux/sourcemux.json"` before calling `sourcemux bootstrap codex --scope user`, `bootstrap status`, `bootstrap update`, or `uninstall`.
 - Base: `configs/sourcemux.example.json` and `configs/sourcemux.reasoning.example.json` parse with `python3 -m json.tool` and use placeholders such as `sk-your-key`.
-- Bad: committing `.trellis/tasks/archive/...`, `.codex/config.toml`, `.claude/settings.json`, docs that tell users to run binaries from `/Users/<name>/...`, or docs that tell users `brew install sourcemux` before a real Homebrew formula/cask exists.
+- Bad: committing `.trellis/tasks/archive/...`, `.codex/config.toml`, `.claude/settings.json`, docs that tell users to run binaries from `/Users/<name>/...`, docs that tell users `brew install sourcemux` before a real Homebrew formula/cask exists, or docs that treat stale local `dist/*` snapshots as public release evidence.
 
 #### 6. Tests Required
 
@@ -983,6 +992,8 @@ Use the SourceMux CLI by default.
 - Docs/config:
   - Search public docs/examples for personal paths, developer names, private endpoint names, and raw secrets.
   - Check install docs against actual release artifacts before presenting package-manager commands as available.
+  - When docs claim package-manager availability, verify and record the current baseline against GitHub Release assets, raw Homebrew cask, and raw Scoop manifest.
+  - Confirm release docs include closeout steps for install smoke and isolated generated-skill lifecycle smoke.
   - Validate every `configs/*.json` example with a JSON parser.
 - Product quality:
   - Run `go test ./...`, `go vet ./...`, and `go build ./...`.

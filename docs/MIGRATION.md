@@ -2,7 +2,7 @@
 
 ## Product rename: grok-search -> SourceMux
 
-SourceMux is the new public project name. The intended GitHub repository is:
+SourceMux is the new public project name. The public GitHub repository is:
 
 ```text
 https://github.com/500tpig/sourcemux-go
@@ -14,7 +14,7 @@ After renaming the GitHub repository, update existing local clones:
 git remote set-url origin https://github.com/500tpig/sourcemux-go.git
 ```
 
-Until the first tagged SourceMux release is published, build from source:
+If you need to develop or test from a checkout, build from source:
 
 ```bash
 git clone https://github.com/500tpig/sourcemux-go.git
@@ -22,7 +22,8 @@ cd sourcemux-go
 go build -o sourcemux .
 ```
 
-After a tagged SourceMux release exists, new `go install` installs should use:
+Tagged SourceMux releases now exist; the current verified public baseline
+(checked 2026-06-02) is `v0.2.1`. New `go install` installs should use:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest

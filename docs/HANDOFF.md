@@ -24,10 +24,13 @@ Use the config path explicitly in runtime commands:
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 ```
 
-Do not present release assets, Homebrew, or Scoop as available until the
-corresponding tag, GitHub Release asset, tap/cask, or manifest has actually
-been published. Before that, public preview/self-use should use `go install` or
-a source build plus the same explicit config path.
+Current verified public release channels (checked 2026-06-02) point at
+`v0.2.1`: GitHub Release assets, the Homebrew cask in
+`500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket`.
+Do not present future release assets, Homebrew, or Scoop updates as available
+until the corresponding tag, GitHub Release asset, tap/cask, or manifest has
+actually been published. Before an artifact exists, public preview/self-use
+should use `go install` or a source build plus the same explicit config path.
 
 Project development from source:
 

@@ -11,10 +11,11 @@
 > Grok research when configured, and Jina-first URL fetch with provider
 > fallbacks.
 >
-> Packaging status: use `go install` or a source build for preview/self-use
-> unless a real tag, GitHub Release asset, Homebrew tap/cask, or Scoop manifest
-> already exists. Package-manager snippets below describe the intended release
-> channels, not a guarantee that every channel is published today.
+> Packaging status: the current verified public baseline is `v0.2.1`
+> (checked 2026-06-02): GitHub Release assets, the Homebrew cask in
+> `500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket`
+> are published. Future package-manager claims still need per-release
+> verification before the docs describe them as available.
 
 ## 中文
 
@@ -48,13 +49,24 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 
 ### 公开用户快速开始
 
-公开用户流程只假设 `sourcemux` 已安装到 `PATH`。预览 / 自用阶段优先使用
-`go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest` 或源码构建；
-只有在实际 tag、GitHub Release、Homebrew tap/cask 或 Scoop manifest 已发布后，
-才把对应包管理器命令当成可用安装路径。普通用户建议显式使用全局配置文件：
+公开用户流程需要先把 `sourcemux` 安装到 `PATH`。当前已核验的公开发布基线
+（2026-06-02）是 `v0.2.1`：GitHub Release assets、`500tpig/homebrew-tap`
+里的 Homebrew cask、以及 `500tpig/scoop-bucket` 里的 Scoop manifest 都已发布。
+之后每个版本仍必须先核验 tag、GitHub Release、tap/cask 和 bucket manifest，
+再在文档中声称对应包管理器通道可用。普通用户建议显式使用全局配置文件：
 `~/.config/sourcemux/sourcemux.json`。
 
-发布 tag、GitHub Release 和包管理器 manifest 实际存在后，预计可用的发布通道命令：
+任选一个已发布安装通道：
+
+```bash
+go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
+```
+
+GitHub Release 下载页：
+
+```text
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+```
 
 ```bash
 brew tap 500tpig/tap
@@ -67,10 +79,6 @@ core；本项目发布路径是上面的 tap/cask。
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
-```
-
-```bash
-go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
 
 确认安装：
@@ -365,16 +373,24 @@ Why not just Jina or simple search?
 
 ## Public user install
 
-The public user flow only assumes `sourcemux` is installed on your `PATH`.
-For preview/self-use, prefer `go install` or a source build unless a real tag,
-GitHub Release asset, Homebrew tap/cask, or Scoop manifest already exists:
+Install `sourcemux` on your `PATH` before starting the public user flow.
+The current verified public baseline (checked 2026-06-02) is `v0.2.1`:
+GitHub Release assets, the Homebrew cask in `500tpig/homebrew-tap`, and the
+Scoop manifest in `500tpig/scoop-bucket` are published. Future versions must
+still be verified in the release, tap, and bucket before docs claim their
+package-manager channels are available.
+
+Choose one published install channel:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
 
-Expected release-channel commands after the tag, GitHub Release, and package
-manifests exist:
+GitHub Release downloads:
+
+```text
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+```
 
 ```bash
 brew tap 500tpig/tap

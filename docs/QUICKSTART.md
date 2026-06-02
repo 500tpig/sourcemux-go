@@ -15,12 +15,36 @@ providers. For most users there are two narrow setup paths:
 
 ## Public user flow
 
-Assumption: `sourcemux` is already installed on your `PATH`. For
-preview/self-use, prefer `go install` or a source build unless a real tag,
-GitHub Release asset, Homebrew tap/cask, or Scoop manifest already exists:
+Install `sourcemux` on your `PATH` first. The current verified public baseline
+(checked 2026-06-02) is `v0.2.1`: GitHub Release assets, the Homebrew cask in
+`500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket` are
+published. For future versions, verify the release, tap, and bucket before
+describing package-manager channels as available.
+
+Choose one published install channel:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
+```
+
+GitHub Release downloads:
+
+```text
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+```
+
+Homebrew cask:
+
+```bash
+brew tap 500tpig/tap
+brew install --cask sourcemux
+```
+
+Scoop:
+
+```powershell
+scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
+scoop install 500tpig/sourcemux
 ```
 
 Use one explicit user config file:
