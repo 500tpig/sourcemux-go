@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-06-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~520 | Active |
+| `journal-1.md` | ~553 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-06-02 | Polish SourceMux open-source packaging docs | `46374d6` | `main` |
 | 15 | 2026-06-02 | SourceMux open-source roadmap P0 implementation | `0ce6bc6`, `1fd1b57` | `main` |
 | 14 | 2026-05-25 | SourceMux heavy search controls | `09f0111` | `main` |
 | 13 | 2026-05-14 | Installer safe config merge | `945b5dd` | `main` |

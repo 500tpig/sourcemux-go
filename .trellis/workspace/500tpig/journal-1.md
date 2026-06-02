@@ -518,3 +518,36 @@ Implemented P0 open-source readiness slice: fixed user/project bootstrap config 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Polish SourceMux open-source packaging docs
+
+**Date**: 2026-06-02
+**Task**: Polish SourceMux open-source packaging docs
+**Branch**: `main`
+
+### Summary
+
+Updated README, Quickstart, AI usage, and handoff docs to clarify SourceMux's single-binary CLI plus stdio MCP research-router positioning, honest preview/package-manager install guidance, Jina fetch-first fallback role, and SourceMux-vs-simple-search narrative. Added a backend quality spec rule that package-manager install docs must stay conditional until real release artifacts exist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46374d6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
