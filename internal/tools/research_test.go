@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -231,6 +234,9 @@ func TestResearchExecutorUsesLongerTimeoutForHeavySearchProfile(t *testing.T) {
 	if researchSearchTimeout("default") >= researchSearchTimeout("heavy") {
 		t.Fatalf("default timeout should remain shorter than heavy timeout")
 	}
+	if researchGrokFallbackAfter("default") >= researchSearchTimeout("default") {
+		t.Fatalf("default Grok fallback cap should leave fallback budget")
+	}
 }
 
 func TestWithResearchGrokPoolTimeoutSetsBoundedFallbackCap(t *testing.T) {
@@ -258,6 +264,56 @@ func TestWithResearchGrokPoolTimeoutSetsBoundedFallbackCap(t *testing.T) {
 	got = withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
 	if got.Pool.OverallTimeout != researchHeavyFallbackAfter {
 		t.Fatalf("long timeout override = %s, want %s", got.Pool.OverallTimeout, researchHeavyFallbackAfter)
+	}
+}
+
+func TestWebSearchResearchProviderAutoDefaultLeavesTimeForFallbackAfterGrokTimeout(t *testing.T) {
+	var grokCalls int32
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&grokCalls, 1)
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"late grok"}}]}`)
+	}))
+	defer grok.Close()
+
+	var tinyfishCalls int32
+	tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tinyfishCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"results":[{"title":"fallback","url":"https://example.com/fallback","snippet":"fallback result"}]}`)
+	}))
+	defer tinyfish.Close()
+
+	pool := engine.NewGrokPool([]engine.GrokEndpoint{
+		{Name: "default", BaseURL: grok.URL, APIKey: "sk-local", Model: "grok-test", Profile: "default"},
+	})
+	var fallbackProfile string
+	provider := webSearchResearchProvider{
+		clients: WebSearchClients{
+			Pool:     pool,
+			TinyFish: engine.NewTinyFishPool([]engine.TinyFishKey{{Name: "tf", APIKey: "tf-secret"}}, tinyfish.URL, ""),
+		},
+		grokFallbackAfter: func(profile string) time.Duration {
+			fallbackProfile = profile
+			return 20 * time.Millisecond
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	res, err := provider.Search(ctx, "research fallback query", "", SearchProfileAuto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallbackProfile != engine.DefaultGrokEndpointProfile {
+		t.Fatalf("fallback profile = %q, want default", fallbackProfile)
+	}
+	if res.Fallback != "tinyfish" || res.Engine != "TinyFish Search" {
+		t.Fatalf("result = %+v, want TinyFish fallback", res)
+	}
+	if atomic.LoadInt32(&grokCalls) == 0 || atomic.LoadInt32(&tinyfishCalls) == 0 {
+		t.Fatalf("calls: grok=%d tinyfish=%d, want both", grokCalls, tinyfishCalls)
 	}
 }
 

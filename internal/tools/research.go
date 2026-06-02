@@ -17,19 +17,21 @@ import (
 )
 
 const (
-	researchFetchExcerptRunes  = 1200
-	researchHumanExcerptRunes  = 700
-	researchMaxFetches         = 12
-	researchPerCallTimeout     = 25 * time.Second
-	researchHeavySearchTimeout = 180 * time.Second
-	researchHeavyFallbackAfter = 60 * time.Second
-	mcpResearchPlanLimit       = 4
-	mcpResearchSearchLimit     = 4
-	mcpResearchSourceLimit     = 6
-	mcpResearchPageLimit       = 4
-	mcpResearchListLimit       = 4
-	mcpResearchSnippetRunes    = 180
-	mcpResearchExcerptRunes    = 260
+	researchFetchExcerptRunes    = 1200
+	researchHumanExcerptRunes    = 700
+	researchMaxFetches           = 12
+	researchPerCallTimeout       = 25 * time.Second
+	researchDefaultSearchTimeout = 60 * time.Second
+	researchDefaultFallbackAfter = 20 * time.Second
+	researchHeavySearchTimeout   = 180 * time.Second
+	researchHeavyFallbackAfter   = 60 * time.Second
+	mcpResearchPlanLimit         = 4
+	mcpResearchSearchLimit       = 4
+	mcpResearchSourceLimit       = 6
+	mcpResearchPageLimit         = 4
+	mcpResearchListLimit         = 4
+	mcpResearchSnippetRunes      = 180
+	mcpResearchExcerptRunes      = 260
 )
 
 func researchConcurrency(depth string) int {
@@ -47,7 +49,14 @@ func researchSearchTimeout(profile string) time.Duration {
 	if normalizeSearchProfile(profile) == engine.HeavyGrokEndpointProfile {
 		return researchHeavySearchTimeout
 	}
-	return researchPerCallTimeout
+	return researchDefaultSearchTimeout
+}
+
+func researchGrokFallbackAfter(profile string) time.Duration {
+	if normalizeSearchProfile(profile) == engine.HeavyGrokEndpointProfile {
+		return researchHeavyFallbackAfter
+	}
+	return researchDefaultFallbackAfter
 }
 
 var dateInURLPattern = regexp.MustCompile(`20(2[4-9]|3[0-9])`)
@@ -198,7 +207,8 @@ func NewResearchExecutor(deps ResearchExecutorDeps) *ResearchExecutor {
 }
 
 type webSearchResearchProvider struct {
-	clients WebSearchClients
+	clients           WebSearchClients
+	grokFallbackAfter func(profile string) time.Duration
 }
 
 func (p webSearchResearchProvider) ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error) {
@@ -221,8 +231,12 @@ func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, 
 	if err != nil {
 		return nil, err
 	}
-	if resolution.EffectiveProfile == engine.HeavyGrokEndpointProfile {
-		clients = withResearchGrokPoolTimeout(clients, researchHeavyFallbackAfter)
+	fallbackAfter := researchGrokFallbackAfter(resolution.EffectiveProfile)
+	if p.grokFallbackAfter != nil {
+		fallbackAfter = p.grokFallbackAfter(resolution.EffectiveProfile)
+	}
+	if fallbackAfter > 0 && researchSearchFallbackConfigured(clients) {
+		clients = withResearchGrokPoolTimeout(clients, fallbackAfter)
 	}
 	return RunWebSearchWithOptions(ctx, clients, WebSearchOptions{
 		Query:          query,
@@ -237,6 +251,15 @@ func withResearchGrokPoolTimeout(clients WebSearchClients, timeout time.Duration
 		return clients
 	}
 	return clients.WithGrokPoolTimeout(timeout)
+}
+
+func researchSearchFallbackConfigured(clients WebSearchClients) bool {
+	if clients.DisableFallbacks {
+		return false
+	}
+	return (clients.TinyFish != nil && clients.TinyFish.Len() > 0) ||
+		clients.Exa != nil ||
+		clients.Tavily != nil
 }
 
 type webFetchResearchProvider struct {

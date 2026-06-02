@@ -12,12 +12,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/500tpig/sourcemux-go/internal/config"
 )
 
 const (
-	defaultScope = "project"
-	manifestName = ".sourcemux-install.json"
-	skillName    = "sourcemux-routing"
+	defaultScope          = "project"
+	defaultUserConfigPath = "~/.config/sourcemux/sourcemux.json"
+	manifestName          = ".sourcemux-install.json"
+	skillName             = "sourcemux-routing"
 )
 
 const installUsage = `Usage: sourcemux bootstrap <target...> [flags]
@@ -38,6 +41,7 @@ Flags:
   --scope <scope>     Install scope: project or user (default: project).
   --binary <path>     SourceMux binary path for generated commands.
   --config <path>     SourceMux config path passed to MCP/CLI snippets.
+                      Defaults by scope: user=~/.config/sourcemux/sourcemux.json, project=./sourcemux.json.
   --write-config      Safely merge supported MCP client config files.
   --dry-run           Print planned changes without writing files.
   --force             Back up and replace conflicting generated skill files.
@@ -46,8 +50,9 @@ Flags:
 
 Examples:
   sourcemux bootstrap list-agents
-  sourcemux bootstrap codex claude-code --scope user --config ~/.config/sourcemux/sourcemux.json
-  sourcemux bootstrap update codex --config ~/.config/sourcemux/sourcemux.json
+  sourcemux bootstrap codex claude-code --scope user
+  sourcemux bootstrap update codex --scope user
+  sourcemux bootstrap codex --scope project
   sourcemux bootstrap --agent codex --agent opencode --dry-run --json
   sourcemux bootstrap --all --dry-run
 `
@@ -387,7 +392,7 @@ func runStatus(args []string, configPath string) int {
 			fmt.Fprintf(os.Stderr, "install status error: %v\n", err)
 			return 2
 		}
-		cfgPath, err = filepath.Abs(opts.ConfigPath)
+		cfgPath, err = resolveConfigPath(opts.Scope, opts.ConfigPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "install status error: resolve config path: %v\n", err)
 			return 2
@@ -432,9 +437,6 @@ func BuildPlan(mode string, opts options) (Plan, error) {
 	if opts.Scope == "" {
 		opts.Scope = defaultScope
 	}
-	if opts.ConfigPath == "" {
-		opts.ConfigPath = "sourcemux.json"
-	}
 	if opts.Scope != "project" && opts.Scope != "user" {
 		return Plan{}, fmt.Errorf("unsupported scope %q (want project or user)", opts.Scope)
 	}
@@ -446,7 +448,7 @@ func BuildPlan(mode string, opts options) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	cfgPath, err := filepath.Abs(opts.ConfigPath)
+	cfgPath, err := resolveConfigPath(opts.Scope, opts.ConfigPath)
 	if err != nil {
 		return Plan{}, fmt.Errorf("resolve config path: %w", err)
 	}
@@ -491,7 +493,7 @@ func ApplyPlan(plan Plan, opts options) error {
 		action := &plan.Actions[i]
 		switch action.Type {
 		case "write_file":
-			content := []byte(routingSkill(plan.Binary, plan.ConfigFile, action.MCPMode))
+			content := []byte(routingSkill(plan.Binary, plan.ConfigFile, plan.Scope, action.MCPMode))
 			manifest := installManifest{
 				Version:       1,
 				Generator:     "sourcemux install",
@@ -542,7 +544,7 @@ func ApplyPlan(plan Plan, opts options) error {
 }
 
 func parseOptions(args []string, configPath string, uninstall bool) (options, error) {
-	opts := options{Scope: defaultScope, ConfigPath: configPath}
+	opts := options{Scope: defaultScope, ConfigPath: strings.TrimSpace(configPath)}
 	var positionals []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -923,6 +925,21 @@ func resolveBinaryPath(path string) (string, error) {
 	return expandPath(path)
 }
 
+func resolveConfigPath(scope, path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = defaultConfigPathForScope(scope)
+	}
+	return expandPath(path)
+}
+
+func defaultConfigPathForScope(scope string) string {
+	if scope == "user" {
+		return defaultUserConfigPath
+	}
+	return config.DefaultConfigPath()
+}
+
 func looksTemporaryExecutable(path string) bool {
 	cleaned := filepath.ToSlash(filepath.Clean(path))
 	return strings.Contains(cleaned, "/go-build") ||
@@ -1076,8 +1093,13 @@ func marshalSnippet(payload any) string {
 	return string(data)
 }
 
-func routingSkill(binary, configPath string, mcpMode bool) string {
+func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 	configFlag := "--config " + shellQuote(configPath)
+	commandPrefix := shellQuote(binary) + " " + configFlag
+	modeLabel := "project development mode"
+	if scope == "user" {
+		modeLabel = "public user mode"
+	}
 	deepIntentLabels := "Deep search, \u6df1\u5ea6\u641c\u7d22, deep research, \u6df1\u5ea6\u8c03\u7814, complex comparison, \u590d\u6742\u5bf9\u6bd4, or verification/\u6838\u9a8c"
 	cliPolicy := `- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
@@ -1123,13 +1145,13 @@ Choose one mode before running commands:
 
 | Mode | Use when | Command pattern |
 | --- | --- | --- |
-| Quick search | Fresh/current facts, community feedback, one-hop discovery | search "query" --json |
-| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | research "topic" --depth standard --profile auto --json |
-| Deep planning | %s where decomposition is useful before execution | plan "topic" --json --depth deep |
-| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | research "topic" --depth deep --profile auto --json |
-| Explicit heavy search | User asks to use heavy/multi-agent search directly | search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
-| Final synthesis | Evidence is collected and the user wants an answer/plan | smart-answer "question" --profile auto --json |
-| Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | short probe with --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
+| Quick search | Fresh/current facts, community feedback, one-hop discovery | %s search "query" --json |
+| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | %s research "topic" --depth standard --profile auto --json |
+| Deep planning | %s where decomposition is useful before execution | %s plan "topic" --json --depth deep |
+| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | %s research "topic" --depth deep --profile auto --json |
+| Explicit heavy search | User asks to use heavy/multi-agent search directly | %s search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
+| Final synthesis | Evidence is collected and the user wants an answer/plan | %s smart-answer "question" --profile auto --json |
+| Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
 
 If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, treat that as a valid source-discovery result. Fetch key URLs next; do not rerun with --no-fallback unless the user is debugging the Grok profile itself.
 
@@ -1145,25 +1167,25 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 
 | User intent | Prefer | Why |
 | --- | --- | --- |
-| Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | search --platform Twitter --json or search --json | Grok search is the freshness/community-first route and preserves SourceMux fallback tracing. |
-| Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | docs-search --json | Uses the configured source-first docs search path. |
-| Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | exa-search --type deep --json | Calls Exa directly when Exa-specific controls matter. |
-| Known URL page extraction | fetch --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
-| Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
-| Explicit slow heavy or multi-agent Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
-| Grok/profile diagnostics | search "short probe" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
-| %s where decomposition helps | plan --json --depth deep, then research --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
-| Multi-source investigation with synthesis | research --depth standard --profile auto --json or research --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
-| Planning/decomposition without executing the research | plan --json --depth standard or plan --json --depth deep | Produces a deterministic structured plan before running provider calls. Text output remains available with plan --depth. |
+| Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | %s search "query" --platform Twitter --json or %s search "query" --json | Grok search is the freshness/community-first route and preserves SourceMux fallback tracing. |
+| Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | %s docs-search "library or API question" --json | Uses the configured source-first docs search path. |
+| Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | %s exa-search "official docs API reference" --type deep --json | Calls Exa directly when Exa-specific controls matter. |
+| Known URL page extraction | %s fetch "https://example.com" --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
+| Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
+| Explicit slow heavy or multi-agent Grok search | %s search "query" --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
+| Grok/profile diagnostics | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
+| %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
+| Multi-source investigation with synthesis | %s research "topic" --depth standard --profile auto --json or %s research "topic" --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
+| Planning/decomposition without executing the research | %s plan "topic" --json --depth standard or %s plan "topic" --json --depth deep | Produces a deterministic structured plan before running provider calls. Text output remains available with plan --depth. |
 
 ## Diagnostics workflow
 
 Use this only when the user is asking why endpoints/profile/model behavior failed:
 
 1. Inspect redacted profile metadata, never secrets:
-   jq '{grokEndpoints: [.grokEndpoints[]? | {name, model, profile}], reasoningEndpoints: [.reasoningEndpoints[]? | {name, model, profile}]}' <config>
+   jq '{grokEndpoints: [.grokEndpoints[]? | {name, model, profile}], reasoningEndpoints: [.reasoningEndpoints[]? | {name, model, profile}]}' %s
 2. Run a short probe, not the user's broad research query:
-   search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
+   %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 3. Interpret results:
    - probe succeeds, broad query times out: endpoint is reachable; use --fallback-after or research.
    - probe fails: report the grok_error/route_decision and do not hide it with fallback.
@@ -1177,6 +1199,21 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 - In final answers, cite fetched or source URL evidence and mention the engine/provider when it matters.
 - A fetch result may show a provider such as Jina Reader; that verifies the URL content and does not mean Jina performed the original search.
 
+## Public user mode vs project development mode
+
+This generated skill was installed for scope: %s (%s).
+
+- Public user mode: bootstrap --scope user defaults the generated config path to ~/.config/sourcemux/sourcemux.json. User-scope skills should point at an installed SourceMux binary and a user config file, not at a maintainer's source checkout.
+- Project development mode: bootstrap --scope project defaults the generated config path to ./sourcemux.json. Project-scope skills may intentionally point at a source checkout binary/config for local development.
+- Explicit --config always wins. If the user intentionally installed a different config path, keep using the configured path shown below.
+
+The binary and config paths below are authoritative for this installed copy. If either path is missing, stale, points at a temporary Go build artifact, or does not match the intended scope, do not invent replacement paths and do not silently switch user-scope work to a maintainer-local project path. Run the equivalent of:
+
+%s bootstrap status --scope %s --config-status
+%s bootstrap update <target> --scope %s --binary /absolute/path/to/sourcemux
+
+If the binary path itself is missing, replace only the command binary with a known working sourcemux executable; keep the configured --config path shown here.
+
 ## Local installation
 
 - Binary: %s
@@ -1184,23 +1221,28 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 
 ## CLI examples
 
-%s %s search "query" --json
-%s %s search "query" --platform Twitter --json
-%s %s search "complex query" --profile heavy --fallback-after 60s --timeout 180s --json
-%s %s fetch "https://example.com" --json
-%s %s docs-search "library or API question" --json
-%s %s exa-search "official docs API reference" --type deep --json
-%s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-%s %s plan "research question" --depth standard
-%s %s plan "deep research question" --json --depth deep
-%s %s research "topic" --depth standard --profile auto --json
-%s %s research "topic" --depth deep --profile auto --json
-%s %s smart-answer "complex research question" --profile auto --json
+%s search "query" --json
+%s search "query" --platform Twitter --json
+%s search "complex query" --profile heavy --fallback-after 60s --timeout 180s --json
+%s fetch "https://example.com" --json
+%s docs-search "library or API question" --json
+%s exa-search "official docs API reference" --type deep --json
+%s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
+%s plan "research question" --depth standard
+%s plan "deep research question" --json --depth deep
+%s research "topic" --depth standard --profile auto --json
+%s research "topic" --depth deep --profile auto --json
+%s smart-answer "complex research question" --profile auto --json
 
 Diagnostics only; do not use for user-facing research answers:
 
-%s %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
-`, cliPolicy, deepIntentLabels, deepIntentLabels, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
+%s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
+`, cliPolicy,
+		commandPrefix, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
+		commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
+		shellQuote(configPath), commandPrefix,
+		scope, modeLabel, commandPrefix, scope, commandPrefix, scope, binary, configPath,
+		commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix)
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {

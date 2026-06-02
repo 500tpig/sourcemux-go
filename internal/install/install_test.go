@@ -154,7 +154,7 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 			t.Fatalf("generated skill missing %q:\n%s", want, text)
 		}
 	}
-	for _, bad := range []string{"grok-search-routing", "/Users/johnsmith/Project/Study/grok-search-go", "Use SourceMux MCP tools", "playwright", "browser"} {
+	for _, bad := range []string{"grok-search-routing", "/Users/johnsmith/Project/Study/grok-search-go", "Use SourceMux MCP tools", "playwright", "browser", "%!(EXTRA"} {
 		if strings.Contains(text, bad) {
 			t.Fatalf("generated skill contains non-portable %q:\n%s", bad, text)
 		}
@@ -174,6 +174,119 @@ func TestInstallCodexUserScopeWritesCodexSkillRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatalf("did not expect Codex user skill under ~/.agents/skills: %v", err)
+	}
+}
+
+func TestInstallUserScopeDefaultsToGlobalConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Setenv("HOME", dir)
+
+	if got := RunInstall([]string{"codex", "--scope", "user", "--binary", "/usr/local/bin/sourcemux"}, ""); got != 0 {
+		t.Fatalf("RunInstall(codex --scope user) = %d, want 0", got)
+	}
+	path := filepath.Join(dir, ".codex", "skills", skillName, "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated skill: %v", err)
+	}
+	expectedConfig := filepath.Join(dir, ".config", "sourcemux", "sourcemux.json")
+	manifest, err := readManifest(manifestPath(path))
+	if err != nil {
+		t.Fatalf("read generated manifest: %v", err)
+	}
+	if manifest.ConfigFile != expectedConfig {
+		t.Fatalf("manifest config = %q, want %q", manifest.ConfigFile, expectedConfig)
+	}
+	text := string(data)
+	commandPrefix := shellQuote("/usr/local/bin/sourcemux") + " --config " + shellQuote(expectedConfig)
+	for _, want := range []string{
+		"Public user mode vs project development mode",
+		"scope: user (public user mode)",
+		expectedConfig,
+		commandPrefix + " bootstrap status --scope user --config-status",
+		commandPrefix + " bootstrap update <target> --scope user --binary /absolute/path/to/sourcemux",
+		"missing, stale",
+		"| Quick search | Fresh/current facts, community feedback, one-hop discovery | " + commandPrefix + " search \"query\" --json |",
+		commandPrefix + " research \"topic\" --depth standard --profile auto --json",
+		commandPrefix + " search \"ping\" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated user skill missing %q:\n%s", want, text)
+		}
+	}
+	for _, bad := range []string{
+		"| search \"query\" --json |",
+		"| research \"topic\" --depth standard --profile auto --json |",
+		"\n   search \"ping\" --profile heavy --grok-pool-timeout 0 --no-fallback",
+	} {
+		if strings.Contains(text, bad) {
+			t.Fatalf("generated user skill contains unscoped CLI example %q:\n%s", bad, text)
+		}
+	}
+	if strings.Contains(text, filepath.Join(dir, "sourcemux.json")) {
+		t.Fatalf("user skill defaulted to project config path:\n%s", text)
+	}
+}
+
+func TestInstallProjectScopeDefaultsToProjectConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"codex", "--dry-run", "--json", "--binary", "/usr/local/bin/sourcemux"}, ""); got != 0 {
+			t.Fatalf("RunInstall(codex project dry-run) = %d, want 0", got)
+		}
+	})
+	var plan Plan
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, out)
+	}
+	expectedConfig, err := filepath.Abs("sourcemux.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConfigFile != expectedConfig {
+		t.Fatalf("plan config = %q, want %q", plan.ConfigFile, expectedConfig)
+	}
+}
+
+func TestInstallExplicitConfigWinsOverScopeDefault(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Setenv("HOME", dir)
+
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"codex", "--scope", "user", "--dry-run", "--json", "--config", "./custom.sourcemux.json"}, ""); got != 0 {
+			t.Fatalf("RunInstall(codex user explicit config) = %d, want 0", got)
+		}
+	})
+	var plan Plan
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, out)
+	}
+	expectedConfig, err := filepath.Abs("custom.sourcemux.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConfigFile != expectedConfig {
+		t.Fatalf("flag config = %q, want %q", plan.ConfigFile, expectedConfig)
+	}
+
+	out = captureStdout(t, func() {
+		if got := RunInstall([]string{"codex", "--scope", "user", "--dry-run", "--json"}, "./global.sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(codex user global config) = %d, want 0", got)
+		}
+	})
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("decode global plan: %v\n%s", err, out)
+	}
+	expectedConfig, err = filepath.Abs("global.sourcemux.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConfigFile != expectedConfig {
+		t.Fatalf("global config = %q, want %q", plan.ConfigFile, expectedConfig)
 	}
 }
 

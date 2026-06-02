@@ -50,7 +50,7 @@ func SetVersionInfo(version, commit, date string) {
 
 // Run routes between MCP stdio server mode and the one-shot CLI mode.
 func Run(args []string) int {
-	configPath, args, err := SplitGlobalConfigArg(args)
+	configPath, configExplicit, args, err := splitGlobalConfigArg(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "argument error: %v\n", err)
 		return 2
@@ -66,14 +66,18 @@ func Run(args []string) int {
 	if len(args) > 0 && isTopLevelCLICommand(args[0]) {
 		return cli.RunWithConfig(args, configPath)
 	}
+	installerConfigPath := ""
+	if configExplicit {
+		installerConfigPath = configPath
+	}
 	if len(args) > 0 && args[0] == "bootstrap" {
-		return install.RunInstall(args[1:], configPath)
+		return install.RunInstall(args[1:], installerConfigPath)
 	}
 	if len(args) > 0 && args[0] == "install" {
-		return install.RunInstall(args[1:], configPath)
+		return install.RunInstall(args[1:], installerConfigPath)
 	}
 	if len(args) > 0 && args[0] == "uninstall" {
-		return install.RunUninstall(args[1:], configPath)
+		return install.RunUninstall(args[1:], installerConfigPath)
 	}
 	if len(args) > 0 && args[0] == "version" {
 		return printVersion(args[1:])
@@ -148,28 +152,36 @@ func stringOr(value, fallback string) string {
 }
 
 func SplitGlobalConfigArg(args []string) (string, []string, error) {
+	configPath, _, out, err := splitGlobalConfigArg(args)
+	return configPath, out, err
+}
+
+func splitGlobalConfigArg(args []string) (string, bool, []string, error) {
 	var out []string
 	configPath := config.DefaultConfigPath()
+	explicit := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--config" || arg == "-c":
 			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("%s requires a path", arg)
+				return "", false, nil, fmt.Errorf("%s requires a path", arg)
 			}
 			if strings.TrimSpace(args[i+1]) == "" {
-				return "", nil, fmt.Errorf("%s requires a non-empty path", arg)
+				return "", false, nil, fmt.Errorf("%s requires a non-empty path", arg)
 			}
 			configPath = args[i+1]
+			explicit = true
 			i++
 		case strings.HasPrefix(arg, "--config="):
 			configPath = strings.TrimPrefix(arg, "--config=")
 			if strings.TrimSpace(configPath) == "" {
-				return "", nil, fmt.Errorf("--config requires a non-empty path")
+				return "", false, nil, fmt.Errorf("--config requires a non-empty path")
 			}
+			explicit = true
 		default:
 			out = append(out, arg)
 		}
 	}
-	return configPath, out, nil
+	return configPath, explicit, out, nil
 }

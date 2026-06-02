@@ -134,6 +134,32 @@ func TestRunTopLevelBootstrapDryRun(t *testing.T) {
 	}
 }
 
+func TestRunTopLevelBootstrapUserScopeUsesUserConfigDefaultUnlessGlobalConfigExplicit(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Setenv("HOME", dir)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"bootstrap", "codex", "--scope", "user", "--dry-run", "--json", "--binary", "/usr/local/bin/sourcemux"}); got != 0 {
+			t.Fatalf("Run(bootstrap codex user dry-run) = %d, want 0", got)
+		}
+	})
+	userConfig := filepath.Join(dir, ".config", "sourcemux", "sourcemux.json")
+	if !strings.Contains(out, userConfig) {
+		t.Fatalf("bootstrap user output missing default user config %q in %s", userConfig, out)
+	}
+
+	explicitConfig := filepath.Join(dir, "explicit.sourcemux.json")
+	out = captureStdout(t, func() {
+		if got := Run([]string{"--config", explicitConfig, "bootstrap", "codex", "--scope", "user", "--dry-run", "--json", "--binary", "/usr/local/bin/sourcemux"}); got != 0 {
+			t.Fatalf("Run(--config bootstrap codex user dry-run) = %d, want 0", got)
+		}
+	})
+	if !strings.Contains(out, explicitConfig) || strings.Contains(out, userConfig) {
+		t.Fatalf("explicit global config should win over user default; output: %s", out)
+	}
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 	old, err := os.Getwd()
