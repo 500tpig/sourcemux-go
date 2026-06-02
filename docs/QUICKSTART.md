@@ -21,6 +21,11 @@ Install `sourcemux` on your `PATH` first. The current verified public baseline
 published. For future versions, verify the release, tap, and bucket before
 describing package-manager channels as available.
 
+npm is not yet a published SourceMux install channel. The wrapper scaffold
+lives under `npm/` for local packaging smoke only. Do not use
+`npm install -g sourcemux` or `npx sourcemux` in public setup instructions until
+an approved npm publication has been completed and verified.
+
 Choose one published install channel:
 
 ```bash

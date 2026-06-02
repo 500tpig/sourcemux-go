@@ -9,10 +9,11 @@ The current verified public baseline is `v0.2.1` (checked 2026-06-02):
 * GitHub Release: `https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1`
 * Homebrew cask: `500tpig/homebrew-tap`, `Casks/sourcemux.rb`, version `0.2.1`
 * Scoop manifest: `500tpig/scoop-bucket`, `sourcemux.json`, version `0.2.1`
+* npm: not published. The npm wrapper under `npm/` is local scaffold only.
 
-For future releases, do not update public docs to claim Homebrew or Scoop
-availability until the corresponding GitHub Release assets, raw tap cask, and
-raw bucket manifest have been verified.
+For future releases, do not update public docs to claim Homebrew, Scoop, or npm
+availability until the corresponding GitHub Release assets, raw tap cask, raw
+bucket manifest, and npm registry packages have been verified.
 
 ## One-time setup
 
@@ -48,6 +49,12 @@ git status --short
 go test ./...
 go vet ./...
 go build ./...
+```
+
+If the npm wrapper changed, also run:
+
+```bash
+node --test npm/package/test
 ```
 
 If GoReleaser is installed, also validate the release config and create a local
@@ -155,7 +162,57 @@ Check:
 * `bin` includes both `sourcemux.exe` and `grok-search.exe` for the migration
   window.
 
-### 3. Install smoke
+### 3. npm wrapper local pack smoke
+
+The npm wrapper is not a public channel until explicitly approved and
+published. Keep it out of public install instructions until the registry state
+has been verified.
+
+For local smoke before a future npm publish, stage only the current platform's
+`sourcemux` binary into its platform package:
+
+```bash
+go build -o /tmp/sourcemux-local ./cmd/sourcemux
+node npm/scripts/stage-platform-binary.js --target darwin-arm64 --binary /tmp/sourcemux-local
+```
+
+Use the target that matches the binary you staged:
+
+* `darwin-x64`
+* `darwin-arm64`
+* `linux-x64`
+* `linux-arm64`
+* `win32-x64`
+
+Then pack the root package and the matching platform package into a temporary
+directory and inspect the tarballs before installing them into an isolated
+prefix:
+
+```bash
+PACK_DIR="$(mktemp -d)"
+npm pack ./npm/platforms/darwin-arm64 --pack-destination "$PACK_DIR"
+npm pack ./npm/package --pack-destination "$PACK_DIR"
+npm install --prefix "$PACK_DIR/smoke" "$PACK_DIR"/500tpig-sourcemux-darwin-arm64-0.0.0-development.tgz "$PACK_DIR"/sourcemux-0.0.0-development.tgz
+PATH="$PACK_DIR/smoke/node_modules/.bin:$PATH" sourcemux version
+```
+
+Before first real npm publication, do a separate publication precheck:
+
+* Recheck package-name availability and ownership for `sourcemux`; use
+  `@500tpig/sourcemux` only as the fallback root package name if unscoped
+  publication is not possible.
+* Remove `private: true` only after publication is approved.
+* Keep root package version and all platform package versions identical to the
+  SourceMux release version.
+* Run `npm pack --dry-run --json` for the root package and every platform
+  package, then verify no provider API keys, local configs, npm tokens, private
+  endpoints, dashboard exports, or unintended release artifacts are included.
+* Use maintainer-approved npm authentication, 2FA, or Trusted Publishing. Never
+  commit npm tokens or generated credential files.
+* Remember that npm packaging does not sign or notarize macOS binaries. Keep
+  Gatekeeper/quarantine caveats separate from npm availability.
+
+### 4. Install smoke
 
 Run at least one binary install smoke path. For `go install`, isolate `HOME`
 and `GOBIN` so the smoke does not write to the maintainer's normal Go bin or
@@ -191,7 +248,7 @@ sourcemux version
 scoop uninstall sourcemux
 ```
 
-### 4. Generated skill lifecycle smoke
+### 5. Generated skill lifecycle smoke
 
 Run generated skill lifecycle checks only inside an isolated temporary `HOME`.
 Do not point these commands at the maintainer's real `~/.codex`,
@@ -234,7 +291,7 @@ seed only disposable agent config files there. Confirm that uninstall with
 `--write-config` removes only the `sourcemux` MCP entry and preserves unrelated
 entries.
 
-### 5. Rollback and known failures
+### 6. Rollback and known failures
 
 If the GitHub Release is published but Homebrew or Scoop publishing fails:
 

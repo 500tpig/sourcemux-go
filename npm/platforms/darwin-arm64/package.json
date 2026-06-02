@@ -1,0 +1,16 @@
+{
+  "name": "@500tpig/sourcemux-darwin-arm64",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "SourceMux native binary for macOS arm64",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}

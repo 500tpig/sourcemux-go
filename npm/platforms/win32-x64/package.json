@@ -1,0 +1,16 @@
+{
+  "name": "@500tpig/sourcemux-win32-x64",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "SourceMux native binary for Windows x64",
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}

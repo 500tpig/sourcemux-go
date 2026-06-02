@@ -17,6 +17,11 @@ coverage.txt
 sourcemux_*.tar.gz
 grok-search_*.tar.gz
 checksums.txt
+*.tgz
+
+# npm wrapper staged native binaries
+npm/platforms/*/bin/sourcemux
+npm/platforms/*/bin/sourcemux.exe
 
 # IDE
 .idea/

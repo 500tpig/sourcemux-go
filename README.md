@@ -16,6 +16,11 @@
 > `500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket`
 > are published. Future package-manager claims still need per-release
 > verification before the docs describe them as available.
+>
+> npm status: a local wrapper scaffold exists under `npm/`, but no npm package
+> has been published. Do not present `npm install -g sourcemux` or
+> `npx sourcemux` as public install paths until an approved npm publish is
+> complete and verified.
 
 ## 中文
 
@@ -55,6 +60,10 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 之后每个版本仍必须先核验 tag、GitHub Release、tap/cask 和 bucket manifest，
 再在文档中声称对应包管理器通道可用。普通用户建议显式使用全局配置文件：
 `~/.config/sourcemux/sourcemux.json`。
+
+npm 包装器目前只是 `npm/` 下的本地 scaffold，尚未发布到 npm。不要把
+`npm install -g sourcemux` 或 `npx sourcemux` 写成公开安装方式，除非之后
+完成并核验了正式 npm 发布。
 
 任选一个已发布安装通道：
 
@@ -379,6 +388,13 @@ GitHub Release assets, the Homebrew cask in `500tpig/homebrew-tap`, and the
 Scoop manifest in `500tpig/scoop-bucket` are published. Future versions must
 still be verified in the release, tap, and bucket before docs claim their
 package-manager channels are available.
+
+npm note: the wrapper source exists under `npm/`, but `sourcemux` is not yet a
+published npm package. Do not use `npm install -g sourcemux` or `npx sourcemux`
+as public install instructions until the first approved npm publication is
+verified. If the unscoped package name cannot be published later,
+`@500tpig/sourcemux` is the fallback package name; the installed command should
+still be `sourcemux`.
 
 Choose one published install channel:
 

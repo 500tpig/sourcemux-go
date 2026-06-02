@@ -1,0 +1,16 @@
+{
+  "name": "@500tpig/sourcemux-linux-x64",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "SourceMux native binary for Linux x64",
+  "license": "MIT",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}
