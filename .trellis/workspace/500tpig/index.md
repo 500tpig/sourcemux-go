@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-06-02
+- **Total Sessions**: 20
+- **Last Active**: 2026-06-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~656 | Active |
+| `journal-1.md` | ~689 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-06-03 | Publish SourceMux npm packages | `1014e35` | `main` |
 | 19 | 2026-06-02 | SourceMux npm wrapper scaffold | `8554daa` | `main` |
 | 18 | 2026-06-02 | SourceMux release channel hardening | `9b42d1f` | `main` |
 | 17 | 2026-06-02 | Close remaining SourceMux Trellis tasks | - | `main` |

@@ -654,3 +654,45 @@ Added npm wrapper scaffold with platform optional dependency packages, JS launch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Publish SourceMux npm packages
+
+**Date**: 2026-06-03
+**Task**: Publish SourceMux npm packages
+**Branch**: `main`
+
+### Summary
+
+Published sourcemux@0.2.1 and platform npm packages, verified registry metadata and install smoke, updated docs/specs/manifests, and added npm pack dry-run verification.
+
+### Main Changes
+
+- Published `sourcemux@0.2.1` and the five scoped platform packages under `@500tpig/sourcemux-*`.
+- Updated npm manifests from scaffold state to published `0.2.1` manifests and kept root optional dependency versions aligned.
+- Added `npm/scripts/verify-pack-dry-run.js` so root and platform package file lists can be checked before future publishes.
+- Updated public docs, release docs, npm README files, and backend quality guidelines to reflect the verified npm channel.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1014e35` | (see git log) |
+
+### Testing
+
+- [OK] `npm --prefix npm/package test`
+- [OK] `npm --prefix npm/package run pack:dry-run`
+- [OK] `node npm/scripts/verify-pack-dry-run.js --require-staged-binaries`
+- [OK] `npm view sourcemux name version dist-tags bin optionalDependencies --json`
+- [OK] `npm view @500tpig/sourcemux-* name version dist-tags os cpu --json`
+- [OK] registry install smoke: `npm install sourcemux@0.2.1` then `sourcemux version`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
