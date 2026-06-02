@@ -779,9 +779,12 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
   - Without `--write-config`, install/uninstall may print warnings but must not modify MCP client config files or emit MCP-first routing guidance for generated skills.
   - With `--write-config`, only verified file-based writers are allowed. Unsupported targets must not invoke external agent CLIs as a fallback.
 - Generated skill routing:
+  - Installer config defaults are scope-specific: `--scope user` resolves a missing installer config path to `~/.config/sourcemux/sourcemux.json`; `--scope project` resolves it to `./sourcemux.json`; explicit `--config` from either the global parser or installer flags always wins.
   - Default generated skills are CLI-first. They must tell agents to use SourceMux CLI commands and must not tell agents to call SourceMux MCP tools.
   - MCP-aware generated skills are allowed only when MCP setup is explicitly requested (`--write-config`) or the selected target is an explicit MCP-print target such as `mcp-json` / `stdio`.
-  - Every generated CLI example must include the installed config path as `--config <path> <command> ...`; do not rely on project-local `./sourcemux.json` or environment variables.
+  - Every generated CLI example must include the installed binary plus config path as `<binary> --config <path> <command> ...`; do not rely on project-local `./sourcemux.json`, hidden home config, or environment variables.
+  - User-scope generated skills must not default to maintainer-local source checkout paths. They should clearly distinguish public user mode from project development mode and preserve the configured `--config` path in status/update/remediation examples.
+  - If a generated skill points at a missing/stale binary or config, tell agents to run `bootstrap status --scope <scope> --config-status` and then update/reinstall with a known binary while keeping the configured path; do not silently invent a replacement config path.
   - Prefer top-level short commands (`sourcemux search`, `sourcemux fetch`, `sourcemux docs-search`, `sourcemux research`) over the compatibility `sourcemux cli ...` form in generated guidance.
   - Generated routing skills must distinguish user-facing research from Grok/profile diagnostics. `--no-fallback` examples must be labeled diagnostics-only and use a short probe query; do not pair broad research queries with `--grok-pool-timeout 0 --no-fallback`.
   - Heavy or multi-agent search examples for user-facing work must preserve fallback, for example `search "query" --profile heavy --fallback-after 60s --timeout 180s --json`, so source-first fallback providers can still return useful evidence.
@@ -818,6 +821,9 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 | `--write-config` omitted on install | Generate CLI-first skill; no MCP guidance/actions except explicit print-only targets |
 | `--write-config` requested on supported MCP target | Generate MCP-aware skill and plan MCP config/snippet actions |
 | Unsupported target with `--write-config` | Emit informational action/warning; do not run external CLI |
+| `--scope user` with no explicit installer config | Generated plan/manifest uses `~/.config/sourcemux/sourcemux.json` |
+| `--scope project` with no explicit installer config | Generated plan/manifest uses `./sourcemux.json` resolved from the current project |
+| Explicit global or installer `--config` | The explicit config path wins over scope defaults |
 | Client config file missing | Create parent directory and config file with only the required `sourcemux` entry |
 | Existing matching `sourcemux` entry | Report `unchanged`; do not rewrite or create backup |
 | Existing drifted `sourcemux` entry | Plan update with backup path/reason and rewrite warning, create backup before write, then replace only that entry |
@@ -838,7 +844,7 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 
 - Good: `sourcemux install gemini --write-config --dry-run --json` reports a `merge_config` action with backup intent for an existing settings file and creates no files.
 - Base: `sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json` creates `.codex/config.toml` with `[mcp_servers.sourcemux]`.
-- Base: `sourcemux bootstrap codex --scope user --binary /usr/local/bin/sourcemux --config ~/.config/sourcemux/sourcemux.json` creates a CLI-first skill whose examples all include `--config ~/.config/sourcemux/sourcemux.json`.
+- Base: `sourcemux bootstrap codex --scope user --binary /usr/local/bin/sourcemux` creates a CLI-first skill whose examples all include `/usr/local/bin/sourcemux --config ~/.config/sourcemux/sourcemux.json ...`.
 - Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, calling `gemini mcp add` from tests, or generating a CLI-only skill that says to use MCP tools.
 
 #### 6. Tests Required
@@ -846,7 +852,8 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 - Install:
   - Dry-run JSON does not write config or backups.
   - CLI-only install emits only a generated skill action for normal skill targets and marks it non-MCP.
-  - Generated CLI examples include the configured `--config` path.
+  - User scope with no explicit config defaults to `~/.config/sourcemux/sourcemux.json`; project scope with no explicit config defaults to `./sourcemux.json`; explicit `--config` wins in both scopes.
+  - Generated CLI examples include the configured `<binary> --config <path>` prefix, including routing tables, diagnostics, status/update guidance, and standalone examples.
   - `--write-config` install marks the generated skill MCP-aware and plans the appropriate supported MCP config action.
   - Missing config creates the supported file and entry.
   - Existing config preserves unrelated keys and unrelated MCP entries.

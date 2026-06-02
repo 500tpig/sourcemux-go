@@ -124,15 +124,47 @@ Fetch routing note:
 
 ## Recommended host setup
 
-Use the installer first when possible:
+### Public user mode
+
+For normal users, install `sourcemux` on `PATH` and keep the provider config at
+`~/.config/sourcemux/sourcemux.json`. Runtime commands should pass that path
+explicitly:
+
+```bash
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "query" --json
+```
+
+Use the installer in user scope. `bootstrap --scope user` defaults generated
+skills to `~/.config/sourcemux/sourcemux.json`, so user-scope skills do not
+inherit a maintainer's source checkout path:
 
 ```bash
 sourcemux bootstrap list-agents
-sourcemux bootstrap codex claude-code gemini opencode --scope project --config ./sourcemux.json --dry-run
-sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap status --config-status
+sourcemux bootstrap codex claude-code gemini opencode --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap update codex --scope user
+sourcemux bootstrap status --scope user --config-status
+```
+
+Use `--write-config` only when the user explicitly wants SourceMux to safely
+merge supported MCP client config files:
+
+```bash
+sourcemux bootstrap codex --scope user --write-config --dry-run --json
+```
+
+### Project development mode
+
+Use project scope only when working from a source checkout or intentionally
+installing a skill for a repository. Project scope defaults generated skills to
+`./sourcemux.json`.
+
+```bash
+go build -o sourcemux .
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux"
+./sourcemux bootstrap update codex --scope project --binary "$(pwd)/sourcemux"
+./sourcemux bootstrap status --scope project --config-status
 ```
 
 Pass `--binary` when running from a source checkout or through `go run`. The
@@ -145,6 +177,10 @@ manifest records the target and content hash, so `bootstrap status` can report
 managed/modified state, `bootstrap update` can refresh unmodified generated
 skills, and `uninstall` can refuse to remove user-edited or pre-manifest files
 unless `--force` backs them up first.
+If a generated skill references a missing/stale binary or config path, run
+`sourcemux bootstrap status --scope <scope> --config-status` and then
+`sourcemux bootstrap update <target> --scope <scope> ...`; do not silently swap
+user-scope skills to a maintainer-local project config.
 Pass `--write-config` to safely merge supported MCP client config files for
 Codex, Gemini, and OpenCode without invoking external agent CLIs. Existing
 matching `sourcemux` entries are reported as unchanged; drifted entries may be

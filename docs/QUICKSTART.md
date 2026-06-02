@@ -1,67 +1,30 @@
 # Quick start
 
-This guide starts from a fresh clone and avoids any local-only paths.
+This guide puts the public user flow first. Source checkout examples are in the
+development section at the end.
 
-## Pick a path
+## Public user flow
 
-SourceMux has two first-use paths:
-
-* **Self-use CLI path:** build the single binary, create `sourcemux.json`, then
-  run `search`, `fetch`, or `research` with `--json`.
-* **Agent routing path:** after the same binary and config exist, run
-  `bootstrap <agent>` to generate a CLI-first `sourcemux-routing` skill, and
-  add MCP config only when you explicitly pass `--write-config`.
-
-## 1. Install or build
-
-The currently shareable path is to build from a source checkout that includes
-the SourceMux rename. Homebrew, Scoop, GitHub Releases, and `go install
-...@latest` become stable install paths only after the first tagged SourceMux
-release and matching package manifests are published.
-
-Build from source:
-
-```bash
-git clone https://github.com/500tpig/sourcemux-go.git
-cd sourcemux-go
-go build -o sourcemux .
-```
-
-Expected release-channel commands after the tag, GitHub Release, and package
-manifests exist:
-
-```bash
-brew tap 500tpig/tap
-brew install --cask sourcemux
-```
-
-Do not use plain `brew install sourcemux` unless SourceMux has also been
-accepted into Homebrew core; the project release path is the tap/cask above.
-
-```powershell
-scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
-scoop install 500tpig/sourcemux
-```
-
-After release, `@latest` also resolves to the published SourceMux version:
+Assumption: `sourcemux` is already installed on your `PATH` from a release
+asset, package manager, or:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
 
-If you are migrating from `grok-search`, use `sourcemux` for new commands and
-rename `grok-search.json` to `sourcemux.json` or pass the old file explicitly
-with `--config`.
+Use one explicit user config file:
 
-If you previously installed SourceMux agent skills or MCP config entries, see
-[`UNINSTALL.md`](UNINSTALL.md) for the cleanup and reinstall flow.
+```text
+~/.config/sourcemux/sourcemux.json
+```
 
-## 2. Create config
+SourceMux does not auto-scan `~/.config/sourcemux`; every runtime command uses
+that file because it is passed with `--config`.
 
-The recommended path is the setup command:
+## 1. Create user config
 
 ```bash
-./sourcemux setup --non-interactive \
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -71,7 +34,7 @@ The recommended path is the setup command:
 For a native xAI Responses API endpoint with both web and X search tools:
 
 ```bash
-./sourcemux setup --non-interactive \
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
   --api-url "https://api.x.ai/v1" \
   --api-key "sk-your-xai-key" \
   --model "grok-4.20-fast" \
@@ -81,110 +44,65 @@ For a native xAI Responses API endpoint with both web and X search tools:
   --json
 ```
 
-Or start from an example:
+Never commit a real `sourcemux.json`.
+
+## 2. Verify config
 
 ```bash
-cp configs/sourcemux.example.json sourcemux.json
-chmod 600 sourcemux.json
+sourcemux --config ~/.config/sourcemux/sourcemux.json config path
+sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 ```
 
-Then edit placeholders. Never commit `sourcemux.json`.
+`config list` masks secrets and does not probe the network. `doctor` is
+local-only by default; use `doctor --probe` or `probe` only when you explicitly
+want live provider checks.
 
-## 3. Verify config
-
-```bash
-./sourcemux config path
-./sourcemux config list --json
-./sourcemux doctor --json
-```
-
-`config list` masks secrets and does not probe the network. `doctor` is local-only by default; use `doctor --probe` or `probe` only when you explicitly want live provider checks.
-
-## 4. Run CLI commands
+## 3. Run CLI commands
 
 ```bash
-./sourcemux search "latest Go release notes" --json
-./sourcemux search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
-./sourcemux docs-search "next.js middleware auth" --json
-./sourcemux exa-search "OpenAI Responses API reference" --type deep --json
-./sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-./sourcemux fetch "https://example.com" --json
-./sourcemux plan "Evaluate current Go module proxy behavior" --depth standard
-./sourcemux plan "Compare current high-risk Go module proxy options" --json --depth deep
-./sourcemux research "Evaluate the current status of Go modules" --depth standard --profile auto --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest Go release notes" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json docs-search "next.js middleware auth" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json plan "Evaluate current Go module proxy behavior" --depth standard
+sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth standard --profile auto --json
 ```
 
 Use `search --platform Twitter` for freshness/community discovery, `docs-search`
 or direct `exa-search` for source-first docs/API discovery, and `fetch` to
 verify key URLs before source-critical claims. `plan` is offline and
-deterministic: text output stays available for humans, while `plan --json` emits
-a structured research plan for agents. For deep search, deep research, complex
-comparison, or verification work, use `plan --json --depth deep` first when
-decomposition helps, or go directly to `research --profile auto --json` when
-you want SourceMux to execute the workflow. Plain `search` stays on the default
-Grok profile; `research` defaults to `profile=auto` so configured heavy search
-is used for research/deep/current/comparison/high-risk flows.
+deterministic. `research` defaults to `profile=auto`, so configured heavy search
+is used for research/deep/current/comparison/high-risk flows while fallback
+providers remain available.
 
-`fetch` is Jina-first because Jina Reader is lightweight and can work without a
-key. Treat it as the first URL extraction attempt, not the whole capability
-ceiling: empty or failed Jina results can fall through to TinyFish Fetch, Exa
-Contents, and Tavily Extract when those providers are configured.
+## 4. Install agent routing skill
 
-## 5. Install agent routing skill and MCP snippets
-
-SourceMux includes a top-level installer that writes a concise CLI-first
-`sourcemux-routing` skill with capability routing and evidence rules. It prints
-MCP setup guidance only when you pass `--write-config` or explicitly select
-`mcp-json` / `stdio`:
+User-scope bootstrap defaults the generated skill's config path to
+`~/.config/sourcemux/sourcemux.json`. Explicit `--config` still wins.
 
 ```bash
-./sourcemux bootstrap list-agents
-./sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
-./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-./sourcemux bootstrap status --config-status
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex claude-code --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap update codex --scope user
+sourcemux bootstrap status --scope user --config-status
 ```
 
-Without `--write-config`, generated CLI examples include the configured
-`--config` path and do not tell agents to call MCP tools.
+Without `--write-config`, generated skills are CLI-first and do not tell agents
+to call SourceMux MCP tools. Use `--write-config` only when you want SourceMux
+to safely merge supported Codex/Gemini/OpenCode MCP client config files:
 
-Use `--json` for automation and `--force` to back up and replace an existing
-generated skill. The installer does not write provider API keys into agent
-config; it only passes the selected config file path to the SourceMux binary.
-If you run the installer through `go run`, pass `--binary` so generated agent
-commands do not point at Go's temporary build artifact.
+```bash
+sourcemux bootstrap codex --scope user --write-config --dry-run --json
+```
 
-Use `--write-config` when you want SourceMux to safely merge supported local
-MCP client config files instead of only printing snippets. The first safe
-writers are Codex (`.codex/config.toml` or `~/.codex/config.toml`), Gemini
-(`.gemini/settings.json` or `~/.gemini/settings.json`), and OpenCode
-(`opencode.json` or `~/.config/opencode/opencode.json`). Existing unrelated
-keys and unrelated MCP entries are preserved. Before modifying an existing
-file, SourceMux creates a timestamped backup so you can restore the previous
-client config; dry-runs show the backup intent but create no files. The current
-writers preserve config semantics, not comments or original formatting: Codex
-TOML, Gemini JSON, and OpenCode JSONC may be reserialized/reformatted, so
-backups are the rollback path. `sourcemux uninstall <target> --write-config`
-removes only the `sourcemux` MCP entry and never deletes the whole client
-config file.
+The installer never writes provider API keys into agent config; it only passes
+the selected config file path to the SourceMux binary. If status reports a
+missing/stale binary or config path, reinstall or update the skill instead of
+guessing a replacement path.
 
-Generated skills include a `.sourcemux-install.json` manifest with a content
-hash. `sourcemux bootstrap update <target>` refreshes unmodified generated skills.
-`sourcemux uninstall <target>` removes only files that still match that
-manifest; if you edited the generated skill, uninstall refuses to delete it
-unless you pass `--force`, which backs up the modified or pre-manifest skill
-first.
-
-For first-tier targets, the dry-run/install plan also prints the official MCP
-setup command or config snippet:
-
-* Codex: `codex mcp add ...` and `.codex/config.toml` / `~/.codex/config.toml`
-* Claude Code: `claude mcp add --transport stdio --scope ...`
-* Gemini CLI: `gemini mcp add --scope ...` and `.gemini/settings.json`
-* OpenCode: `opencode.json` / JSONC `mcp` snippet
-
-## 6. Add MCP server manually
+## 5. Add MCP server manually
 
 Use absolute paths so the MCP client's working directory does not matter:
 
@@ -192,18 +110,33 @@ Use absolute paths so the MCP client's working directory does not matter:
 {
   "type": "stdio",
   "command": "/absolute/path/to/sourcemux",
-  "args": ["--config", "/absolute/path/to/sourcemux.json"]
+  "args": ["--config", "/home/you/.config/sourcemux/sourcemux.json"]
 }
 ```
 
-Claude Code example:
+After registration, call `get_config_info` from the MCP client to confirm the
+server sees the expected config.
+
+## Development from source
+
+Use this section when you are developing SourceMux from a checkout. Project
+scope defaults generated skills to `./sourcemux.json`; it is intentionally
+separate from the public user flow.
 
 ```bash
-claude mcp add-json sourcemux '{
-  "type": "stdio",
-  "command": "/absolute/path/to/sourcemux",
-  "args": ["--config", "/absolute/path/to/sourcemux.json"]
-}'
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+./sourcemux --config ./sourcemux.json setup --non-interactive \
+  --api-url "https://your-grok-compatible-endpoint.example/v1" \
+  --api-key "sk-your-key" \
+  --model "grok-4.20-fast" \
+  --json
+./sourcemux --config ./sourcemux.json doctor --json
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux"
+./sourcemux bootstrap status --scope project --config-status
 ```
 
-After registration, call `get_config_info` from the MCP client to confirm the server sees the expected config.
+If you are migrating from `grok-search`, use `sourcemux` for new commands and
+rename `grok-search.json` to `sourcemux.json` or pass the old file explicitly
+with `--config`.

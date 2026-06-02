@@ -41,19 +41,14 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 - 普通搜索适合一次性找结果；SourceMux 额外提供 agent 友好的 route、fallback、`get_sources`、fetch 验证、bounded research pack 和可复现 JSON。
 - 对复杂、当前、对比或高风险问题，`research` / `smart-answer` 默认 `profile=auto`，可以在配置了 heavy Grok profile 时自动用更强搜索，同时仍保留 fallback。
 
-### 安装
+### 公开用户快速开始
 
-当前可直接给别人用的方式是从包含 SourceMux 改名后的源码构建。Homebrew / Scoop / `go install ...@latest` 需要等第一次 SourceMux release 发布后再作为稳定安装方式使用。
+公开用户流程假设 `sourcemux` 已经通过 release asset、包管理器或
+`go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest`
+安装到 `PATH`。普通用户建议显式使用全局配置文件：
+`~/.config/sourcemux/sourcemux.json`。
 
-源码构建：
-
-```bash
-git clone https://github.com/500tpig/sourcemux-go.git
-cd sourcemux-go
-go build -o sourcemux .
-```
-
-发布 tag、GitHub Release 和包管理器 manifest 都实际存在后，预计可用的发布通道命令：
+发布 tag、GitHub Release 和包管理器 manifest 实际存在后，预计可用的发布通道命令：
 
 ```bash
 brew tap 500tpig/tap
@@ -79,12 +74,10 @@ sourcemux version
 sourcemux config path
 ```
 
-### 快速开始
-
-生成本地配置：
+生成用户级配置：
 
 ```bash
-sourcemux setup --non-interactive \
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -94,45 +87,80 @@ sourcemux setup --non-interactive \
 检查配置，输出会遮蔽 key：
 
 ```bash
-sourcemux config list --json
-sourcemux doctor --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 ```
 
 跑一次搜索：
 
 ```bash
-sourcemux search "今天 Go 生态有哪些重要更新？" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "今天 Go 生态有哪些重要更新？" --json
 ```
 
 显式跑较慢的 heavy Grok 搜索时，用户面向的研究应保留 fallback；只有诊断 profile 本身是否可返回时才禁用 fallback：
 
 ```bash
-sourcemux search "复杂搜索问题" --profile heavy --fallback-after 60s --timeout 180s --json
-sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "复杂搜索问题" --profile heavy --fallback-after 60s --timeout 180s --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
 抓取网页正文：
 
 ```bash
-sourcemux fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
 ```
 
 离线生成结构化 research plan（不调用网络）：
 
 ```bash
-sourcemux plan "对比当前 Go module proxy 方案的风险" --json --depth deep
+sourcemux --config ~/.config/sourcemux/sourcemux.json plan "对比当前 Go module proxy 方案的风险" --json --depth deep
 ```
 
 查库 / 框架 / SDK 文档：
 
 ```bash
-sourcemux docs-search "next.js middleware auth" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json docs-search "next.js middleware auth" --json
 ```
 
 生成研究包：
 
 ```bash
-sourcemux research "Evaluate the current status of Go modules" --depth deep --profile auto --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth deep --profile auto --json
+```
+
+安装 Agent 路由 skill 时，用户级 scope 会默认使用
+`~/.config/sourcemux/sourcemux.json`，无需再把源码 checkout 的
+`./sourcemux.json` 带进全局 skill：
+
+```bash
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap status --scope user --config-status
+```
+
+只有需要安全合并 Codex/Gemini/OpenCode MCP 客户端配置时才加
+`--write-config`：
+
+```bash
+sourcemux bootstrap codex --scope user --write-config --dry-run --json
+```
+
+### 从源码开发
+
+源码 checkout 适合维护者或本地开发。开发模式默认使用项目配置
+`./sourcemux.json`，并且生成 project-scope skill：
+
+```bash
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
+go build -o sourcemux .
+./sourcemux --config ./sourcemux.json setup --non-interactive \
+  --api-url "https://your-grok-compatible-endpoint.example/v1" \
+  --api-key "sk-your-key" \
+  --model "grok-4.20-fast" \
+  --json
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux"
 ```
 
 ### 配置文件
@@ -143,7 +171,11 @@ SourceMux 只读取一个显式 JSON 配置文件：
 - 显式：`sourcemux --config /path/to/sourcemux.json <command>`
 - 兼容旧写法：`sourcemux cli --config /path/to/sourcemux.json <command>`
 
-它不会读取环境变量配置链、`~/.config/sourcemux/*` 或旧的 `endpoints.json`。如果你已有旧版 `grok-search.json`，可以改名：
+它不会自动扫描环境变量配置链、`~/.config/sourcemux/*` 或旧的
+`endpoints.json`。公开用户流程使用全局配置时，必须像上面的例子一样显式传
+`--config ~/.config/sourcemux/sourcemux.json`；`bootstrap --scope user`
+只是把这个路径作为生成 skill 的默认显式配置路径。如果你已有旧版
+`grok-search.json`，可以改名：
 
 ```bash
 mv grok-search.json sourcemux.json
@@ -217,16 +249,17 @@ claude mcp add-json sourcemux '{
 }'
 ```
 
-也可以先用内置安装器生成 CLI-first 的 `sourcemux-routing` skill；只有显式传
-`--write-config` 或选择 `mcp-json` / `stdio` 目标时才输出 MCP 配置指导：
+也可以先用内置安装器生成 CLI-first 的 `sourcemux-routing` skill；公开用户
+默认走 user scope，项目开发再使用 project scope。只有显式传 `--write-config`
+或选择 `mcp-json` / `stdio` 目标时才输出 MCP 配置指导：
 
 ```bash
 sourcemux bootstrap list-agents
-sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
-sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap status --config-status
+sourcemux bootstrap codex claude-code --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap codex --write-config --scope user --dry-run --json
+sourcemux bootstrap update codex --scope user
+sourcemux bootstrap status --scope user --config-status
 ```
 
 未传 `--write-config` 时，生成的 skill 会要求使用 CLI，并在每个 CLI 示例中带上
@@ -324,16 +357,13 @@ Why not just Jina or simple search?
 - Bounded research packs for reproducible downstream reasoning.
 - Separate `reasoningEndpoints[]` for synthesis models such as DeepSeek Flash/Pro.
 
-## Install
+## Public user install
 
-The currently shareable install path is to build from a source checkout that includes the SourceMux rename. Homebrew, Scoop, and `go install ...@latest` become stable install paths only after a tagged SourceMux release and matching package manifests are published.
-
-Build from source:
+The public user flow assumes `sourcemux` is installed on your `PATH` from a
+release asset, package manager, or:
 
 ```bash
-git clone https://github.com/500tpig/sourcemux-go.git
-cd sourcemux-go
-go build -o sourcemux .
+go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
 
 Expected release-channel commands after the tag, GitHub Release, and package
@@ -350,10 +380,6 @@ into Homebrew core; this project publishes through the tap/cask path above.
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
-```
-
-```bash
-go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 ```
 
 Compatibility note: the repository still keeps `cmd/grok-search` as a legacy
@@ -373,22 +399,62 @@ sourcemux version
 sourcemux config path
 ```
 
-Or build from source:
+For normal user installs, use an explicit user config path:
+`~/.config/sourcemux/sourcemux.json`. SourceMux runtime still reads only one
+selected config file; it does not auto-scan the home directory.
+
+```bash
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
+  --api-url "https://your-grok-compatible-endpoint.example/v1" \
+  --api-key "sk-your-key" \
+  --model "grok-4.20-fast" \
+  --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --json
+```
+
+Install an agent routing skill in user scope. User-scope bootstrap defaults the
+generated `--config` path to `~/.config/sourcemux/sourcemux.json`; explicit
+`--config` still wins.
+
+```bash
+sourcemux bootstrap list-agents
+sourcemux bootstrap codex --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap status --scope user --config-status
+```
+
+Use `--write-config` only when you want SourceMux to safely merge supported
+Codex/Gemini/OpenCode MCP client config files.
+
+## Development from source
+
+Use source checkout examples for project development or maintainer testing.
+Project-scope bootstrap defaults the generated `--config` path to
+`./sourcemux.json`.
 
 ```bash
 git clone https://github.com/500tpig/sourcemux-go.git
 cd sourcemux-go
 go build -o sourcemux .
+./sourcemux --config ./sourcemux.json setup --non-interactive \
+  --api-url "https://your-grok-compatible-endpoint.example/v1" \
+  --api-key "sk-your-key" \
+  --model "grok-4.20-fast" \
+  --json
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux"
 ```
 
 ## Quick start
 
-The examples below assume `sourcemux` is installed on your `PATH`. If you built from source, use `./sourcemux` instead.
+The examples below assume a public user install with the global config path.
+For source checkout development, use `./sourcemux --config ./sourcemux.json`
+instead.
 
 1. Create a local config. The generated file may contain secrets and is ignored by Git.
 
 ```bash
-sourcemux setup --non-interactive \
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
   --api-url "https://your-grok-compatible-endpoint.example/v1" \
   --api-key "sk-your-key" \
   --model "grok-4.20-fast" \
@@ -398,13 +464,13 @@ sourcemux setup --non-interactive \
 2. Inspect the active config without printing secrets.
 
 ```bash
-sourcemux config list --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
 ```
 
 3. Run a search.
 
 ```bash
-sourcemux search "What changed in the latest Go release?" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --json
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
@@ -421,6 +487,8 @@ The runtime reads exactly one config file:
 - Compatibility form: `sourcemux cli --config /path/to/sourcemux.json <command>`
 
 It does not read environment-variable config chains, `~/.config/sourcemux/*`, or legacy `endpoints.json` files.
+The public user guide uses `~/.config/sourcemux/sourcemux.json` only by passing
+it explicitly with `--config`, and generated user-scope skills do the same.
 If you already have `grok-search.json`, rename it to `sourcemux.json` or pass it explicitly with `--config`.
 
 Minimal config:
@@ -553,17 +621,18 @@ claude mcp add-json sourcemux '{
 }'
 ```
 
-The installer generates a CLI-first `sourcemux-routing` skill by default. It
-prints MCP setup guidance only when you pass `--write-config` or explicitly
+The installer generates a CLI-first `sourcemux-routing` skill by default. Use
+user scope for normal installs and project scope only from a source checkout.
+It prints MCP setup guidance only when you pass `--write-config` or explicitly
 select the `mcp-json` / `stdio` targets:
 
 ```bash
 sourcemux bootstrap list-agents
-sourcemux bootstrap codex claude-code --scope project --config ./sourcemux.json --dry-run
-sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap update codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json
-sourcemux bootstrap status --config-status
+sourcemux bootstrap codex claude-code --scope user --dry-run
+sourcemux bootstrap codex --scope user
+sourcemux bootstrap codex --write-config --scope user --dry-run --json
+sourcemux bootstrap update codex --scope user
+sourcemux bootstrap status --scope user --config-status
 ```
 
 Without `--write-config`, the generated skill tells agents to use the CLI and

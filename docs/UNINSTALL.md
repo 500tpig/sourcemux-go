@@ -94,20 +94,26 @@ rm -f ~/.config/sourcemux/sourcemux.json
 Only run those commands if you intentionally want to delete the stored provider
 keys.
 
-## 5. Reinstall with the short command flow
+## 5. Reinstall with the public user flow
 
 After installing the new binary:
 
 ```bash
-sourcemux setup
-sourcemux doctor --json
-sourcemux search "latest AI news" --json
-sourcemux bootstrap codex --scope user --config ./sourcemux.json
+sourcemux --config ~/.config/sourcemux/sourcemux.json setup
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest AI news" --json
+sourcemux bootstrap codex --scope user
 ```
 
 Use `--write-config` only if you want SourceMux to merge supported MCP client
 config files:
 
 ```bash
-sourcemux bootstrap codex --scope user --config ./sourcemux.json --write-config
+sourcemux bootstrap codex --scope user --write-config
+```
+
+For source checkout development, use project scope instead:
+
+```bash
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux"
 ```

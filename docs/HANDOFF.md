@@ -11,7 +11,20 @@ Both modes use the same engine code and the same single config file.
 
 ## Important paths
 
-Local development:
+Public user install:
+
+```text
+/usr/local/bin/sourcemux
+~/.config/sourcemux/sourcemux.json
+```
+
+Use the config path explicitly in runtime commands:
+
+```bash
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
+```
+
+Project development from source:
 
 ```text
 ./sourcemux
@@ -97,13 +110,28 @@ claude mcp add-json sourcemux '{
 
 ## Acceptance checks
 
-CLI:
+Public user CLI:
 
 ```bash
-./sourcemux --config /path/to/sourcemux.json config list --json
-./sourcemux --config /path/to/sourcemux.json doctor --json
-./sourcemux --config /path/to/sourcemux.json search "What is today's date?" --json
-./sourcemux --config /path/to/sourcemux.json fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "What is today's date?" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
+```
+
+Public user agent skill:
+
+```bash
+sourcemux bootstrap codex --scope user --dry-run
+sourcemux bootstrap status --scope user --config-status
+```
+
+Project development CLI:
+
+```bash
+./sourcemux --config ./sourcemux.json config list --json
+./sourcemux --config ./sourcemux.json doctor --json
+./sourcemux bootstrap codex --scope project --binary "$(pwd)/sourcemux" --dry-run
 ```
 
 MCP:
