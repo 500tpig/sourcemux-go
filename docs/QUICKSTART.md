@@ -3,10 +3,21 @@
 This guide puts the public user flow first. Source checkout examples are in the
 development section at the end.
 
+SourceMux's niche is a Go single-binary CLI plus stdio MCP server that routes
+agent research across configured search, fetch, docs, research, and synthesis
+providers. For most users there are two narrow setup paths:
+
+1. **Self-use CLI path:** install the binary, create one explicit config file,
+   then run `search`, `fetch`, `docs-search`, or `research`.
+2. **Agent skill path:** after the CLI works, run `sourcemux bootstrap ...` to
+   generate a host-specific routing skill that calls the same CLI with the
+   selected `--config` path.
+
 ## Public user flow
 
-Assumption: `sourcemux` is already installed on your `PATH` from a release
-asset, package manager, or:
+Assumption: `sourcemux` is already installed on your `PATH`. For
+preview/self-use, prefer `go install` or a source build unless a real tag,
+GitHub Release asset, Homebrew tap/cask, or Scoop manifest already exists:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
@@ -76,6 +87,14 @@ deterministic. `research` defaults to `profile=auto`, so configured heavy search
 is used for research/deep/current/comparison/high-risk flows while fallback
 providers remain available.
 
+Fetch starts with Jina Reader because it is a lightweight, zero-key,
+fetch-first URL extraction path. That does not make Jina the whole product:
+when configured, SourceMux falls back through TinyFish Fetch, Exa Contents, and
+Tavily Extract, and it still provides search, docs discovery, source caching,
+bounded research packs, and reproducible JSON. Use plain Jina for a quick URL
+read; use SourceMux when an agent needs routing, fallback, verification, or a
+repeatable research output.
+
 ## 4. Install agent routing skill
 
 User-scope bootstrap defaults the generated skill's config path to
@@ -102,7 +121,11 @@ the selected config file path to the SourceMux binary. If status reports a
 missing/stale binary or config path, reinstall or update the skill instead of
 guessing a replacement path.
 
-## 5. Add MCP server manually
+## Optional: add MCP server manually
+
+This is an advanced path for users who explicitly want direct MCP registration
+instead of the generated agent routing skill above. It is not required for the
+default self-use CLI path or the agent skill path.
 
 Use absolute paths so the MCP client's working directory does not matter:
 

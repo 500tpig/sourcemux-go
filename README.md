@@ -10,6 +10,11 @@
 > It gives agents fast/default search for one-hop work, `profile=auto` heavy
 > Grok research when configured, and Jina-first URL fetch with provider
 > fallbacks.
+>
+> Packaging status: use `go install` or a source build for preview/self-use
+> unless a real tag, GitHub Release asset, Homebrew tap/cask, or Scoop manifest
+> already exists. Package-manager snippets below describe the intended release
+> channels, not a guarantee that every channel is published today.
 
 ## 中文
 
@@ -43,9 +48,10 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 
 ### 公开用户快速开始
 
-公开用户流程假设 `sourcemux` 已经通过 release asset、包管理器或
-`go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest`
-安装到 `PATH`。普通用户建议显式使用全局配置文件：
+公开用户流程只假设 `sourcemux` 已安装到 `PATH`。预览 / 自用阶段优先使用
+`go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest` 或源码构建；
+只有在实际 tag、GitHub Release、Homebrew tap/cask 或 Scoop manifest 已发布后，
+才把对应包管理器命令当成可用安装路径。普通用户建议显式使用全局配置文件：
 `~/.config/sourcemux/sourcemux.json`。
 
 发布 tag、GitHub Release 和包管理器 manifest 实际存在后，预计可用的发布通道命令：
@@ -359,8 +365,9 @@ Why not just Jina or simple search?
 
 ## Public user install
 
-The public user flow assumes `sourcemux` is installed on your `PATH` from a
-release asset, package manager, or:
+The public user flow only assumes `sourcemux` is installed on your `PATH`.
+For preview/self-use, prefer `go install` or a source build unless a real tag,
+GitHub Release asset, Homebrew tap/cask, or Scoop manifest already exists:
 
 ```bash
 go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest

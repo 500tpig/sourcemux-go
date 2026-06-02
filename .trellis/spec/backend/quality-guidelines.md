@@ -951,6 +951,8 @@ Use the SourceMux CLI by default.
   - Public docs must not contain personal absolute paths such as `/Users/<name>/...`.
   - Public docs must not contain private endpoint hostnames, real API keys, developer names, local journal/task history, or client-specific hooks.
   - Example configs must use placeholder secrets and generic endpoint URLs.
+  - Public install docs must not present GitHub Release assets, Homebrew taps/casks, Scoop manifests, or other package-manager channels as available until the corresponding artifact actually exists.
+  - Before release artifacts exist, public preview/self-use docs should lead with `go install` or source builds and label package-manager snippets as intended future release channels.
 - Product behavior:
   - User-visible missing-config errors must point to the relevant config field or example docs.
   - Config examples must remain loadable JSON and align with the current config loader.
@@ -962,6 +964,7 @@ Use the SourceMux CLI by default.
 | `.trellis/`, `.agents/`, `.codex/`, or `.claude/` tracked before release | Remove from Git tracking with an index-only operation and ignore going forward |
 | Local workflow directories absent from disk during an active Trellis task | Stop and restore/ask before proceeding; do not break the local workflow |
 | Public docs contain `/Users/`, real names, private hosts, or real-looking keys | Generalize or remove before release |
+| Public docs claim release/package-manager install paths that have not been published | Rewrite as conditional/future release-channel guidance, or remove until the artifact exists |
 | Example config has invalid JSON | Fix before merge |
 | Example config requires real credentials to parse | Replace with safe placeholders |
 | CI does not cover test, vet, and build | Add or fix CI workflow |
@@ -970,7 +973,7 @@ Use the SourceMux CLI by default.
 
 - Good: `.gitignore` marks `.trellis/`, `.agents/`, `.codex/`, and `.claude/` as local AI workflow state, while `docs/QUICKSTART.md` contains generic MCP setup instructions.
 - Base: `configs/sourcemux.example.json` and `configs/sourcemux.reasoning.example.json` parse with `python3 -m json.tool` and use placeholders such as `sk-your-key`.
-- Bad: committing `.trellis/tasks/archive/...`, `.codex/config.toml`, `.claude/settings.json`, or docs that tell users to run binaries from `/Users/johnsmith/...`.
+- Bad: committing `.trellis/tasks/archive/...`, `.codex/config.toml`, `.claude/settings.json`, docs that tell users to run binaries from `/Users/<name>/...`, or docs that tell users `brew install sourcemux` before a real Homebrew formula/cask exists.
 
 #### 6. Tests Required
 
@@ -979,6 +982,7 @@ Use the SourceMux CLI by default.
   - Local workflow directories still exist on disk if the active task needs them.
 - Docs/config:
   - Search public docs/examples for personal paths, developer names, private endpoint names, and raw secrets.
+  - Check install docs against actual release artifacts before presenting package-manager commands as available.
   - Validate every `configs/*.json` example with a JSON parser.
 - Product quality:
   - Run `go test ./...`, `go vet ./...`, and `go build ./...`.

@@ -24,6 +24,11 @@ Use the config path explicitly in runtime commands:
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 ```
 
+Do not present release assets, Homebrew, or Scoop as available until the
+corresponding tag, GitHub Release asset, tap/cask, or manifest has actually
+been published. Before that, public preview/self-use should use `go install` or
+a source build plus the same explicit config path.
+
 Project development from source:
 
 ```text

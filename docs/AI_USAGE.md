@@ -16,6 +16,21 @@ The Go engine stays shared. The choice is about the best invocation surface for 
 
 In practice, this means MCP text responses should stay intentionally thin: enough metadata plus clipped summaries/excerpts for interactive use. The CLI text and especially `--json` outputs are the canonical full-output surfaces for reproducible or downstream processing workflows.
 
+## Why route through SourceMux
+
+Use a single provider directly when the job is truly one-hop: for example,
+plain Jina Reader for a quick URL read or a simple web search for candidate
+links. Use SourceMux when the agent benefits from one or more of these stable
+outputs:
+
+* one CLI/MCP surface for search, fetch, docs search, bounded research, and
+  synthesis
+* fallback across configured providers without changing the agent prompt
+* `get_sources` plus follow-up fetch verification for citation-sensitive work
+* reproducible CLI commands and JSON output for logs, scripts, or handoff
+* `profile=auto` research routing that can use configured heavy Grok search
+  while keeping fallback available
+
 ## What is portable vs host-specific
 
 ### Portable across agents
