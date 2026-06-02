@@ -19,6 +19,10 @@ const {
   getPlatformInfo
 } = require('../lib/platform');
 const { stagePlatformBinary } = require('../../scripts/stage-platform-binary');
+const {
+  verifyPlatformPackage,
+  verifyRootPackage
+} = require('../../scripts/verify-pack-dry-run');
 
 test('maps Node platform and architecture to platform packages', () => {
   assert.deepEqual(getPlatformInfo('darwin', 'x64'), SUPPORTED_PLATFORMS['darwin-x64']);
@@ -47,22 +51,31 @@ test('root package exposes sourcemux bin and all optional platform packages', ()
     .sort();
 
   assert.equal(manifest.name, 'sourcemux');
-  assert.deepEqual(manifest.bin, { sourcemux: './bin/sourcemux.js' });
+  assert.equal(manifest.private, undefined);
+  assert.deepEqual(manifest.bin, { sourcemux: 'bin/sourcemux.js' });
   assert.deepEqual(Object.keys(manifest.optionalDependencies).sort(), expectedOptionalPackages);
+
+  for (const packageVersion of Object.values(manifest.optionalDependencies)) {
+    assert.equal(packageVersion, manifest.version);
+  }
 });
 
 test('platform package manifests match the launcher matrix', () => {
   const platformsDir = path.resolve(__dirname, '..', '..', 'platforms');
+  const rootManifest = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8')
+  );
 
   for (const info of Object.values(SUPPORTED_PLATFORMS)) {
     const manifestPath = path.join(platformsDir, info.key, 'package.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
     assert.equal(manifest.name, info.packageName);
-    assert.equal(manifest.version, '0.0.0-development');
+    assert.equal(manifest.version, rootManifest.version);
     assert.deepEqual(manifest.os, [info.platform]);
     assert.deepEqual(manifest.cpu, [info.arch]);
-    assert.equal(manifest.private, true);
+    assert.equal(manifest.private, undefined);
+    assert.deepEqual(manifest.publishConfig, { access: 'public' });
   }
 });
 
@@ -204,5 +217,68 @@ test('stagePlatformBinary rejects prototype or unsupported target names', () => 
   assert.throws(
     () => stagePlatformBinary({ target: 'toString', binary: __filename }),
     /Unsupported target/
+  );
+});
+
+test('verifyRootPackage accepts only the expected wrapper files', () => {
+  assert.doesNotThrow(() => verifyRootPackage({
+    files: [
+      { path: 'README.md', mode: 0o644 },
+      { path: 'bin/sourcemux.js', mode: 0o755 },
+      { path: 'lib/launcher.js', mode: 0o644 },
+      { path: 'lib/platform.js', mode: 0o644 },
+      { path: 'package.json', mode: 0o644 }
+    ]
+  }));
+
+  assert.throws(
+    () => verifyRootPackage({
+      files: [
+        { path: 'README.md', mode: 0o644 },
+        { path: 'bin/sourcemux.js', mode: 0o755 },
+        { path: 'lib/launcher.js', mode: 0o644 },
+        { path: 'lib/platform.js', mode: 0o644 },
+        { path: 'package.json', mode: 0o644 },
+        { path: 'sourcemux.json', mode: 0o600 }
+      ]
+    }),
+    /Forbidden npm pack entry/
+  );
+});
+
+test('verifyPlatformPackage allows staged binary paths and can require them', () => {
+  const info = SUPPORTED_PLATFORMS['darwin-arm64'];
+  const result = {
+    files: [
+      { path: 'package.json', mode: 0o644 },
+      { path: 'bin/sourcemux', mode: 0o755 }
+    ]
+  };
+
+  assert.doesNotThrow(() => verifyPlatformPackage(info, result, {
+    requireStagedBinaries: true
+  }));
+
+  assert.throws(
+    () => verifyPlatformPackage(info, {
+      files: [
+        { path: 'package.json', mode: 0o644 },
+        { path: 'bin/grok-search', mode: 0o755 }
+      ]
+    }, {
+      requireStagedBinaries: false
+    }),
+    /Unexpected npm pack entry/
+  );
+
+  assert.throws(
+    () => verifyPlatformPackage(info, {
+      files: [
+        { path: 'package.json', mode: 0o644 }
+      ]
+    }, {
+      requireStagedBinaries: true
+    }),
+    /missing staged binary/
   );
 });

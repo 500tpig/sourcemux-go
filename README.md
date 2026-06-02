@@ -12,15 +12,11 @@
 > fallbacks.
 >
 > Packaging status: the current verified public baseline is `v0.2.1`
-> (checked 2026-06-02): GitHub Release assets, the Homebrew cask in
-> `500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket`
-> are published. Future package-manager claims still need per-release
-> verification before the docs describe them as available.
->
-> npm status: a local wrapper scaffold exists under `npm/`, but no npm package
-> has been published. Do not present `npm install -g sourcemux` or
-> `npx sourcemux` as public install paths until an approved npm publish is
-> complete and verified.
+> (checked 2026-06-03): GitHub Release assets, the Homebrew cask in
+> `500tpig/homebrew-tap`, the Scoop manifest in `500tpig/scoop-bucket`, and
+> the npm package `sourcemux` are published. Future package-manager claims
+> still need per-release verification before the docs describe them as
+> available.
 
 ## 中文
 
@@ -55,15 +51,12 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 ### 公开用户快速开始
 
 公开用户流程需要先把 `sourcemux` 安装到 `PATH`。当前已核验的公开发布基线
-（2026-06-02）是 `v0.2.1`：GitHub Release assets、`500tpig/homebrew-tap`
-里的 Homebrew cask、以及 `500tpig/scoop-bucket` 里的 Scoop manifest 都已发布。
-之后每个版本仍必须先核验 tag、GitHub Release、tap/cask 和 bucket manifest，
+（2026-06-03）是 `v0.2.1`：GitHub Release assets、`500tpig/homebrew-tap`
+里的 Homebrew cask、`500tpig/scoop-bucket` 里的 Scoop manifest、以及 npm
+包 `sourcemux` 都已发布。之后每个版本仍必须先核验 tag、GitHub Release、
+tap/cask、bucket manifest 和 npm registry，
 再在文档中声称对应包管理器通道可用。普通用户建议显式使用全局配置文件：
 `~/.config/sourcemux/sourcemux.json`。
-
-npm 包装器目前只是 `npm/` 下的本地 scaffold，尚未发布到 npm。不要把
-`npm install -g sourcemux` 或 `npx sourcemux` 写成公开安装方式，除非之后
-完成并核验了正式 npm 发布。
 
 任选一个已发布安装通道：
 
@@ -88,6 +81,11 @@ core；本项目发布路径是上面的 tap/cask。
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
+```
+
+```bash
+npm install -g sourcemux
+npx sourcemux version
 ```
 
 确认安装：
@@ -383,18 +381,11 @@ Why not just Jina or simple search?
 ## Public user install
 
 Install `sourcemux` on your `PATH` before starting the public user flow.
-The current verified public baseline (checked 2026-06-02) is `v0.2.1`:
-GitHub Release assets, the Homebrew cask in `500tpig/homebrew-tap`, and the
-Scoop manifest in `500tpig/scoop-bucket` are published. Future versions must
-still be verified in the release, tap, and bucket before docs claim their
-package-manager channels are available.
-
-npm note: the wrapper source exists under `npm/`, but `sourcemux` is not yet a
-published npm package. Do not use `npm install -g sourcemux` or `npx sourcemux`
-as public install instructions until the first approved npm publication is
-verified. If the unscoped package name cannot be published later,
-`@500tpig/sourcemux` is the fallback package name; the installed command should
-still be `sourcemux`.
+The current verified public baseline (checked 2026-06-03) is `v0.2.1`:
+GitHub Release assets, the Homebrew cask in `500tpig/homebrew-tap`, the Scoop
+manifest in `500tpig/scoop-bucket`, and the npm package `sourcemux` are
+published. Future versions must still be verified in the release, tap, bucket,
+and npm registry before docs claim their package-manager channels are available.
 
 Choose one published install channel:
 
@@ -419,6 +410,11 @@ into Homebrew core; this project publishes through the tap/cask path above.
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
+```
+
+```bash
+npm install -g sourcemux
+npx sourcemux version
 ```
 
 Compatibility note: the repository still keeps `cmd/grok-search` as a legacy

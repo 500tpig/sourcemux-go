@@ -1020,23 +1020,26 @@ git rm -r --cached .trellis .agents .codex .claude
 #### 1. Scope / Trigger
 
 - Trigger: adding or changing the npm/npx distribution wrapper for the SourceMux native CLI.
-- Scope: npm packaging is an additional install entrypoint for the Go `sourcemux` binary. It must not rewrite SourceMux in Node/TypeScript, must not publish real npm packages without explicit approval, and must not claim to solve macOS signing/notarization.
+- Scope: npm packaging is an additional install entrypoint for the Go `sourcemux` binary. It must not rewrite SourceMux in Node/TypeScript, must not publish npm packages without explicit approval, and must not claim to solve macOS signing/notarization.
 
 #### 2. Signatures
 
-- Root npm package scaffold:
+- Root npm package:
   - Path: `npm/package/package.json`
   - Preferred package name: `sourcemux`
   - Fallback root package name if unscoped publish is unavailable: `@500tpig/sourcemux`
-  - Bin contract: `"bin": { "sourcemux": "./bin/sourcemux.js" }`
+  - Bin contract: `"bin": { "sourcemux": "bin/sourcemux.js" }`
 - Platform packages:
   - `@500tpig/sourcemux-darwin-x64` -> `darwin` / `x64` -> `sourcemux`
   - `@500tpig/sourcemux-darwin-arm64` -> `darwin` / `arm64` -> `sourcemux`
   - `@500tpig/sourcemux-linux-x64` -> `linux` / `x64` -> `sourcemux`
   - `@500tpig/sourcemux-linux-arm64` -> `linux` / `arm64` -> `sourcemux`
   - `@500tpig/sourcemux-win32-x64` -> `win32` / `x64` -> `sourcemux.exe`
+  - Scoped platform manifests must include `"publishConfig": {"access": "public"}` so the first approved public publish does not depend on remembering `--access public`.
 - Local staging helper:
   - `node npm/scripts/stage-platform-binary.js --target <target> --binary <path>`
+- Pack dry-run verifier:
+  - `node npm/scripts/verify-pack-dry-run.js [--require-staged-binaries]`
 
 #### 3. Contracts
 
@@ -1045,13 +1048,20 @@ git rm -r --cached .trellis .agents .codex .claude
   - The JS launcher may only resolve and spawn the native binary; it must preserve CLI args, stdin/stdout/stderr, and child exit behavior as closely as practical.
   - Do not expose the legacy `grok-search` command as an npm bin unless a task explicitly chooses to extend npm migration support.
 - Package state:
-  - Checked-in npm package manifests must remain non-publishable during scaffold work, for example `private: true` and development versions.
-  - Before real npm publishing, recheck package-name availability, remove `private`, set versions to the release version, and use approved npm account/2FA/trusted-publishing credentials.
+  - During scaffold/pre-approval work, checked-in npm package manifests must remain non-publishable, for example `private: true` and development versions.
+  - During publish-readiness work, remove `private` only after explicit approval, set versions to the exact release version, and do not guess an undecided release version.
+  - Before each npm publication, recheck package-name availability or ownership, use an approved npm account with 2FA, and prefer Trusted Publishing/OIDC over a long-lived `NPM_TOKEN` for automation.
+  - After publication is verified, published manifests should remain publishable for follow-up releases; do not re-add `private` unless the package is intentionally moved back to scaffold-only status.
   - Platform package versions must stay exactly aligned with the root package version.
+  - Root `optionalDependencies` versions must stay exactly aligned with the platform package versions.
 - Native binaries:
   - Do not commit staged native binaries, npm tarballs, GoReleaser `dist/*`, provider configs, npm tokens, API keys, or private endpoints.
   - Staged platform binaries belong only under `npm/platforms/<target>/bin/sourcemux` or `npm/platforms/<target>/bin/sourcemux.exe`, and these paths must be ignored by Git.
   - Staging helpers must validate target names and ensure destination paths stay inside the selected platform package directory.
+- Pack dry-run:
+  - Readiness checks may run with unstaged platform binaries and should allow platform tarballs containing only `package.json`.
+  - Approved release packaging must run the verifier with `--require-staged-binaries` after all five platform binaries have been staged.
+  - The verifier must reject local configs, npm tokens, package artifacts, provider dashboard/private-endpoint references, legacy `grok-search` binaries, and any file outside the root wrapper/platform binary allowlists.
 - User-facing docs:
   - Public docs must not present `npm install -g sourcemux`, `npm install -g @500tpig/sourcemux`, or `npx sourcemux` as available until the package is actually published and verified.
   - npm is an install channel only. Unsigned/unnotarized macOS binaries may still hit Gatekeeper or quarantine behavior; split codesign/notarization into a separate task.
@@ -1066,15 +1076,18 @@ git rm -r --cached .trellis .agents .codex .claude
 | Non-Windows platform selected | Resolve and spawn `sourcemux` |
 | Child exits with code | Wrapper exits with the same code |
 | Child exits by signal | Wrapper forwards or maps signal behavior predictably |
-| Package manifests are still scaffolds | Keep `private: true`; do not publish |
+| Package manifests are still scaffolds or lack approval | Keep `private: true`; do not publish |
 | Staging target is unsupported or prototype-like | Refuse and write nothing |
 | Staging destination would escape platform package directory | Refuse and write nothing |
+| Pack dry-run includes a local config, token marker, tarball, `dist/*`, `grok-search`, or unexpected file | Fail the verifier before publish |
+| Release preflight requires staged binaries but a platform package has only `package.json` | Fail the verifier and stage the missing binary |
 | npm docs mention install/npx before publication | Label as planned/local scaffold, not public availability |
 
 #### 5. Good/Base/Bad Cases
 
 - Good: root package `sourcemux` exposes only the `sourcemux` bin and lists platform packages as `optionalDependencies`.
 - Good: `npm --prefix npm/package test` validates platform mapping, manifest consistency, missing optional dependency errors, command forwarding, and staging safety.
+- Good: `npm --prefix npm/package run pack:dry-run` verifies root plus all platform package file lists without publishing.
 - Base: local smoke stages a locally built binary with `node npm/scripts/stage-platform-binary.js --target darwin-arm64 --binary /tmp/sourcemux-local`, then packs/installs local tarballs.
 - Bad: adding a TypeScript rewrite of the CLI, committing `npm/platforms/linux-x64/bin/sourcemux`, publishing `0.0.0-development`, documenting `npx sourcemux` as public before npm publication, or silently stripping macOS quarantine while calling the binary notarized.
 
@@ -1083,13 +1096,15 @@ git rm -r --cached .trellis .agents .codex .claude
 - Node wrapper tests:
   - Platform mapping covers exactly the current GoReleaser matrix.
   - Root manifest `bin` and `optionalDependencies` match the platform mapping.
-  - Platform manifests have matching `name`, `version`, `os`, and `cpu`.
+  - Root optional dependency versions match the root package version.
+  - Platform manifests have matching `name`, `version`, `publishConfig.access`, `os`, and `cpu`; publish-ready/published manifests omit `private`.
   - Missing optional dependency and unsupported platform errors are actionable.
   - Command forwarding preserves args and child exit code.
   - Staging helper writes only inside selected platform package `bin/` and rejects unsupported/prototype targets.
+  - Pack verifier rejects forbidden/unexpected entries and can require staged platform binaries.
 - Packaging checks:
-  - `npm pack --dry-run --json ./npm/package`
-  - `npm pack --dry-run --json ./npm/platforms/<target>` for each platform package.
+  - `npm --prefix npm/package run pack:dry-run`
+  - `node npm/scripts/verify-pack-dry-run.js --require-staged-binaries` after approved release packaging stages every platform binary.
   - `git ls-files dist 'npm/platforms/*/bin/*' '*.tgz' sourcemux.json grok-search.json` returns no tracked generated artifacts or local configs.
 - Product quality:
   - If Go files, release config, or version injection changes, run `gofmt`, `go test ./...`, `go vet ./...`, and `go build ./...`.
@@ -1113,10 +1128,10 @@ Correct:
 {
   "name": "sourcemux",
   "bin": {
-    "sourcemux": "./bin/sourcemux.js"
+    "sourcemux": "bin/sourcemux.js"
   },
   "optionalDependencies": {
-    "@500tpig/sourcemux-linux-x64": "0.0.0-development"
+    "@500tpig/sourcemux-linux-x64": "0.2.1"
   }
 }
 ```

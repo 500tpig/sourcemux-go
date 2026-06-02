@@ -1,8 +1,7 @@
-# SourceMux npm wrapper scaffold
+# SourceMux npm wrapper
 
-This directory contains the planned npm wrapper for the SourceMux Go CLI.
-It is source-only scaffolding until an npm publication is explicitly approved
-and performed.
+This directory contains the npm wrapper source for the SourceMux Go CLI. The
+root package `sourcemux` and the platform packages are published for `0.2.1`.
 
 The MVP uses a root package plus platform-specific optional dependencies:
 
@@ -27,13 +26,37 @@ native binary supplied by the matching optional dependency package.
 
 * Root npm package name: `sourcemux`.
 * Platform package names: `@500tpig/sourcemux-<platform>-<arch>`.
-* `@500tpig/sourcemux` is only a fallback root package name if the unscoped
-  `sourcemux` name cannot be published later.
-* The checked-in package manifests are marked `private` to prevent accidental
-  publishing during scaffold development.
-* Do not document `npm install -g sourcemux` or `npx sourcemux` as public
-  install paths until the first approved npm publication has been verified in
-  the registry.
+* `@500tpig/sourcemux` was kept as the fallback root package name before the
+  first publish. The public root package is currently `sourcemux`.
+* First publication was performed with the maintainer npm account `500tpig`.
+* Prefer npm Trusted Publishing/OIDC for future automated publishes instead of
+  a long-lived `NPM_TOKEN`.
+
+### Registry precheck
+
+Live npm registry check recorded on `2026-06-02T15:41:36Z`:
+
+* `https://registry.npmjs.org/sourcemux` returned 404 via SourceMux fetch.
+* `npm view sourcemux name version dist-tags --json` returned `E404`.
+
+Fallback root package check recorded on `2026-06-02T15:41:37Z`:
+
+* `https://registry.npmjs.org/@500tpig%2fsourcemux` returned 404 via SourceMux
+  fetch.
+* `npm view @500tpig/sourcemux name version dist-tags --json` returned `E404`.
+
+Maintainer account check recorded on `2026-06-02T15:41:37Z`:
+
+* `npm whoami` returned `500tpig`.
+
+Publication check recorded on `2026-06-02T16:07:07Z`:
+
+* `sourcemux@0.2.1` returned `latest: 0.2.1`.
+* All five `@500tpig/sourcemux-*` platform packages returned `latest: 0.2.1`.
+* `npm install sourcemux@0.2.1` installed successfully and `sourcemux version`
+  returned `sourcemux 0.2.1`.
+
+Repeat registry checks immediately before publishing future versions.
 
 ## Local tests
 
@@ -47,6 +70,26 @@ Or from the root package directory:
 
 ```bash
 npm --prefix npm/package test
+```
+
+## Dry-run package verification
+
+Verify the root package and every platform package file list without publishing:
+
+```bash
+npm --prefix npm/package run pack:dry-run
+```
+
+This runs `npm pack --dry-run --json` for `npm/package` and every
+`npm/platforms/*` package, then rejects local configs, npm tokens, package
+artifacts, unexpected release files, and any path outside the expected wrapper
+or platform binary file set.
+
+During release packaging, after each native binary has been staged into the
+matching platform package, require all staged binary paths to be present:
+
+```bash
+node npm/scripts/verify-pack-dry-run.js --require-staged-binaries
 ```
 
 ## Local platform package staging

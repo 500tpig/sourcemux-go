@@ -1,7 +1,6 @@
 {
   "name": "sourcemux",
-  "version": "0.0.0-development",
-  "private": true,
+  "version": "0.2.1",
   "description": "npm wrapper for the SourceMux Go CLI",
   "license": "MIT",
   "type": "commonjs",
@@ -15,7 +14,7 @@
     "url": "https://github.com/500tpig/sourcemux-go/issues"
   },
   "bin": {
-    "sourcemux": "./bin/sourcemux.js"
+    "sourcemux": "bin/sourcemux.js"
   },
   "files": [
     "bin/",
@@ -26,13 +25,14 @@
     "node": ">=18"
   },
   "scripts": {
+    "pack:dry-run": "node ../scripts/verify-pack-dry-run.js",
     "test": "node --test"
   },
   "optionalDependencies": {
-    "@500tpig/sourcemux-darwin-arm64": "0.0.0-development",
-    "@500tpig/sourcemux-darwin-x64": "0.0.0-development",
-    "@500tpig/sourcemux-linux-arm64": "0.0.0-development",
-    "@500tpig/sourcemux-linux-x64": "0.0.0-development",
-    "@500tpig/sourcemux-win32-x64": "0.0.0-development"
+    "@500tpig/sourcemux-darwin-arm64": "0.2.1",
+    "@500tpig/sourcemux-darwin-x64": "0.2.1",
+    "@500tpig/sourcemux-linux-arm64": "0.2.1",
+    "@500tpig/sourcemux-linux-x64": "0.2.1",
+    "@500tpig/sourcemux-win32-x64": "0.2.1"
   }
 }

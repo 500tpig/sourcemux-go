@@ -24,10 +24,10 @@ Use the config path explicitly in runtime commands:
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 ```
 
-Current verified public release channels (checked 2026-06-02) point at
+Current verified public release channels (checked 2026-06-03) point at
 `v0.2.1`: GitHub Release assets, the Homebrew cask in
-`500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket`.
-The npm wrapper under `npm/` is local scaffold only and is not published.
+`500tpig/homebrew-tap`, the Scoop manifest in `500tpig/scoop-bucket`, and the
+npm package `sourcemux`.
 Do not present future release assets, Homebrew, Scoop, or npm updates as
 available until the corresponding tag, GitHub Release asset, tap/cask,
 manifest, or npm package has actually been published and verified. Before an

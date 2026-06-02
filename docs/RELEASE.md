@@ -4,12 +4,12 @@ This project uses GoReleaser for tagged releases.
 
 ## Current public channel state
 
-The current verified public baseline is `v0.2.1` (checked 2026-06-02):
+The current verified public baseline is `v0.2.1` (checked 2026-06-03):
 
 * GitHub Release: `https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1`
 * Homebrew cask: `500tpig/homebrew-tap`, `Casks/sourcemux.rb`, version `0.2.1`
 * Scoop manifest: `500tpig/scoop-bucket`, `sourcemux.json`, version `0.2.1`
-* npm: not published. The npm wrapper under `npm/` is local scaffold only.
+* npm: `sourcemux`, version `0.2.1`
 
 For future releases, do not update public docs to claim Homebrew, Scoop, or npm
 availability until the corresponding GitHub Release assets, raw tap cask, raw
@@ -162,11 +162,10 @@ Check:
 * `bin` includes both `sourcemux.exe` and `grok-search.exe` for the migration
   window.
 
-### 3. npm wrapper local pack smoke
+### 3. npm wrapper pack and publish smoke
 
-The npm wrapper is not a public channel until explicitly approved and
-published. Keep it out of public install instructions until the registry state
-has been verified.
+The npm package is a public channel once `sourcemux` and every platform package
+are published and verified in the npm registry.
 
 For local smoke before a future npm publish, stage only the current platform's
 `sourcemux` binary into its platform package:
@@ -186,17 +185,28 @@ Use the target that matches the binary you staged:
 
 Then pack the root package and the matching platform package into a temporary
 directory and inspect the tarballs before installing them into an isolated
-prefix:
+prefix. First run the all-package dry-run verifier:
+
+```bash
+npm --prefix npm/package run pack:dry-run
+```
+
+After staging every platform binary for an approved release, require the staged
+binary paths as well:
+
+```bash
+node npm/scripts/verify-pack-dry-run.js --require-staged-binaries
+```
 
 ```bash
 PACK_DIR="$(mktemp -d)"
-npm pack ./npm/platforms/darwin-arm64 --pack-destination "$PACK_DIR"
-npm pack ./npm/package --pack-destination "$PACK_DIR"
-npm install --prefix "$PACK_DIR/smoke" "$PACK_DIR"/500tpig-sourcemux-darwin-arm64-0.0.0-development.tgz "$PACK_DIR"/sourcemux-0.0.0-development.tgz
+PLATFORM_TARBALL="$(npm pack ./npm/platforms/darwin-arm64 --pack-destination "$PACK_DIR" --json | node -e 'let input=""; process.stdin.on("data", c => input += c); process.stdin.on("end", () => process.stdout.write(JSON.parse(input)[0].filename));')"
+ROOT_TARBALL="$(npm pack ./npm/package --pack-destination "$PACK_DIR" --json | node -e 'let input=""; process.stdin.on("data", c => input += c); process.stdin.on("end", () => process.stdout.write(JSON.parse(input)[0].filename));')"
+npm install --prefix "$PACK_DIR/smoke" "$PACK_DIR/$PLATFORM_TARBALL" "$PACK_DIR/$ROOT_TARBALL"
 PATH="$PACK_DIR/smoke/node_modules/.bin:$PATH" sourcemux version
 ```
 
-Before first real npm publication, do a separate publication precheck:
+Before npm publication, do a separate publication precheck:
 
 * Recheck package-name availability and ownership for `sourcemux`; use
   `@500tpig/sourcemux` only as the fallback root package name if unscoped
@@ -204,13 +214,25 @@ Before first real npm publication, do a separate publication precheck:
 * Remove `private: true` only after publication is approved.
 * Keep root package version and all platform package versions identical to the
   SourceMux release version.
-* Run `npm pack --dry-run --json` for the root package and every platform
-  package, then verify no provider API keys, local configs, npm tokens, private
-  endpoints, dashboard exports, or unintended release artifacts are included.
-* Use maintainer-approved npm authentication, 2FA, or Trusted Publishing. Never
-  commit npm tokens or generated credential files.
+* Run `npm --prefix npm/package run pack:dry-run` and, after staging every
+  platform binary, `node npm/scripts/verify-pack-dry-run.js
+  --require-staged-binaries`. Verify no provider API keys, local configs, npm
+  tokens, private endpoints, dashboard exports, package artifacts, or
+  unintended release files are included.
+* Use the maintainer npm account `500tpig` for the first publish.
+* Prefer Trusted Publishing/OIDC for future automated publishes over a
+  long-lived `NPM_TOKEN`; use maintainer-approved npm authentication and 2FA.
+  Never commit npm tokens or generated credential files.
 * Remember that npm packaging does not sign or notarize macOS binaries. Keep
   Gatekeeper/quarantine caveats separate from npm availability.
+
+After publishing, verify registry metadata and run an install smoke:
+
+```bash
+npm view sourcemux name version dist-tags bin optionalDependencies --json
+npm install --prefix "$(mktemp -d)" sourcemux@<version>
+npm exec --package sourcemux@<version> -- sourcemux version
+```
 
 ### 4. Install smoke
 

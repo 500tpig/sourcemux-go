@@ -16,15 +16,11 @@ providers. For most users there are two narrow setup paths:
 ## Public user flow
 
 Install `sourcemux` on your `PATH` first. The current verified public baseline
-(checked 2026-06-02) is `v0.2.1`: GitHub Release assets, the Homebrew cask in
-`500tpig/homebrew-tap`, and the Scoop manifest in `500tpig/scoop-bucket` are
-published. For future versions, verify the release, tap, and bucket before
-describing package-manager channels as available.
-
-npm is not yet a published SourceMux install channel. The wrapper scaffold
-lives under `npm/` for local packaging smoke only. Do not use
-`npm install -g sourcemux` or `npx sourcemux` in public setup instructions until
-an approved npm publication has been completed and verified.
+(checked 2026-06-03) is `v0.2.1`: GitHub Release assets, the Homebrew cask in
+`500tpig/homebrew-tap`, the Scoop manifest in `500tpig/scoop-bucket`, and the
+npm package `sourcemux` are published. For future versions, verify the release,
+tap, bucket, and npm registry before describing package-manager channels as
+available.
 
 Choose one published install channel:
 
@@ -50,6 +46,13 @@ Scoop:
 ```powershell
 scoop bucket add 500tpig https://github.com/500tpig/scoop-bucket.git
 scoop install 500tpig/sourcemux
+```
+
+npm:
+
+```bash
+npm install -g sourcemux
+npx sourcemux version
 ```
 
 Use one explicit user config file:
