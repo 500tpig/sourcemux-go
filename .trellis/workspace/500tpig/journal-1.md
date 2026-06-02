@@ -19,7 +19,9 @@ Integrated TinyFish multi-key Search/Fetch fallback into MCP and CLI routing, do
 
 ### Main Changes
 
-(Add details)
+- Archived seven high-confidence completed tasks that had already landed in earlier code/docs work.
+- Final-verified `05-27-default-grok-multiagent-search-routing` with `trellis-check`; `go test ./...`, `go vet ./...`, and `go build ./...` passed in the check agent.
+- Closed `05-15-add-source-search-and-browser-cli-skills` as superseded by narrower routing/profile/open-source roadmap tasks, with browser extraction deferred to a future optional external adapter.
 
 ### Git Commits
 
@@ -30,7 +32,11 @@ Integrated TinyFish multi-key Search/Fetch fallback into MCP and CLI routing, do
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `trellis-check` verified the default Grok multi-agent search routing task.
+- [OK] `go test ./...`
+- [OK] `go vet ./...`
+- [OK] `go build ./...`
+- [OK] Final `get_context.py` showed no active tasks.
 
 ### Status
 
@@ -539,6 +545,37 @@ Updated README, Quickstart, AI usage, and handoff docs to clarify SourceMux's si
 | Hash | Message |
 |------|---------|
 | `46374d6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: Close remaining SourceMux Trellis tasks
+
+**Date**: 2026-06-02
+**Task**: Close remaining SourceMux Trellis tasks
+**Branch**: `main`
+
+### Summary
+
+Archived completed SourceMux task backlog, final-verified the default Grok multi-agent search routing task with trellis-check, and closed the broad source-search/browser planning task as superseded by narrower routing/profile/open-source roadmap tasks. Active Trellis task list is now empty.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
 
 ### Testing
 
