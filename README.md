@@ -117,6 +117,12 @@ sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --ti
 sourcemux fetch "https://example.com" --json
 ```
 
+离线生成结构化 research plan（不调用网络）：
+
+```bash
+sourcemux plan "对比当前 Go module proxy 方案的风险" --json --depth deep
+```
+
 查库 / 框架 / SDK 文档：
 
 ```bash
@@ -181,6 +187,7 @@ sourcemux --config ./grok-search.json config list --json
 | `sourcemux fetch <url>` | 抓取一个 URL 的正文 |
 | `sourcemux map <url>` | 用 Tavily 发现站点 URL |
 | `sourcemux crawl <url>` | 用 Tavily 抓取站点内容 |
+| `sourcemux plan <query>` | 离线生成搜索 / research plan；默认文本兼容，`--json` 输出结构化计划 |
 | `sourcemux research <query>` | 生成 bounded research pack |
 | `sourcemux smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
 | `sourcemux config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
@@ -488,6 +495,7 @@ See:
 ./sourcemux search "latest Go release notes" --json
 ./sourcemux fetch "https://example.com" --json
 ./sourcemux plan "Evaluate a new open-source project" --depth deep
+./sourcemux plan "Compare current high-risk options" --json --depth deep
 ./sourcemux research "Evaluate a new open-source project" \
   --depth deep --profile auto --domain github.com --max-fetches 6 --json
 ./sourcemux smart-answer "Should I use project X?" \
@@ -505,7 +513,7 @@ Main subcommands:
 | `exa-contents <url>` | Direct advanced Exa Contents call. |
 | `map <url>` | Tavily URL discovery. |
 | `crawl <url>` | Tavily site crawl with extracted content. |
-| `plan <query>` | Offline search plan, no network calls. |
+| `plan <query>` | Offline search plan, no network calls. Text stays compatible; `--json` emits a structured research plan. |
 | `research <query>` | Bounded multi-step research pack (defaults to `--profile auto`). |
 | `smart-answer <query>` | Research pack plus reasoning endpoint synthesis (passes `--profile` into research; default `auto`). |
 | `config path/files/list` | Inspect the active single config file. |

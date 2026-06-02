@@ -75,6 +75,7 @@ Examples:
   sourcemux cli setup --non-interactive --api-url https://your-endpoint/v1 --api-key sk-... --json
   sourcemux cli probe  --json
   sourcemux cli plan   "Notion AI agents" --depth deep
+  sourcemux cli plan   "Compare current high-risk options" --json --depth deep
   sourcemux cli research "Notion AI agents" --depth deep --profile auto --domain example.com --max-fetches 6 --json
   sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --profile auto --reasoning-model deepseek-v4-flash --json
   sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json

@@ -1078,6 +1078,7 @@ func marshalSnippet(payload any) string {
 
 func routingSkill(binary, configPath string, mcpMode bool) string {
 	configFlag := "--config " + shellQuote(configPath)
+	deepIntentLabels := "Deep search, \u6df1\u5ea6\u641c\u7d22, deep research, \u6df1\u5ea6\u8c03\u7814, complex comparison, \u590d\u6742\u5bf9\u6bd4, or verification/\u6838\u9a8c"
 	cliPolicy := `- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
@@ -1124,6 +1125,7 @@ Choose one mode before running commands:
 | --- | --- | --- |
 | Quick search | Fresh/current facts, community feedback, one-hop discovery | search "query" --json |
 | Broad research | Project lists, comparisons, current source discovery, citation-heavy work | research "topic" --depth standard --profile auto --json |
+| Deep planning | %s where decomposition is useful before execution | plan "topic" --json --depth deep |
 | Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | research "topic" --depth deep --profile auto --json |
 | Explicit heavy search | User asks to use heavy/multi-agent search directly | search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
 | Final synthesis | Evidence is collected and the user wants an answer/plan | smart-answer "question" --profile auto --json |
@@ -1150,8 +1152,9 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | exa-contents --subpages ... --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
 | Explicit slow heavy or multi-agent Grok search | search --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | search "short probe" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
+| %s where decomposition helps | plan --json --depth deep, then research --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
 | Multi-source investigation with synthesis | research --depth standard --profile auto --json or research --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
-| Planning/decomposition without executing the research | plan --depth standard or plan --depth deep | Produces a deterministic search plan before running provider calls. |
+| Planning/decomposition without executing the research | plan --json --depth standard or plan --json --depth deep | Produces a deterministic structured plan before running provider calls. Text output remains available with plan --depth. |
 
 ## Diagnostics workflow
 
@@ -1189,6 +1192,7 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 %s %s exa-search "official docs API reference" --type deep --json
 %s %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 %s %s plan "research question" --depth standard
+%s %s plan "deep research question" --json --depth deep
 %s %s research "topic" --depth standard --profile auto --json
 %s %s research "topic" --depth deep --profile auto --json
 %s %s smart-answer "complex research question" --profile auto --json
@@ -1196,7 +1200,7 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 Diagnostics only; do not use for user-facing research answers:
 
 %s %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
-`, cliPolicy, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
+`, cliPolicy, deepIntentLabels, deepIntentLabels, binary, configPath, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag, binary, configFlag)
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {

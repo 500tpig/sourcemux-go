@@ -39,6 +39,51 @@ func TestRunUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestRunPlanTextOutputStillWorks(t *testing.T) {
+	out := captureStdout(t, func() {
+		if got := Run([]string{"plan", "Evaluate a new open-source project", "--depth", "deep"}); got != 0 {
+			t.Fatalf("Run(plan) = %d, want 0", got)
+		}
+	})
+	for _, want := range []string{
+		"search_plan",
+		"query: Evaluate a new open-source project",
+		"depth: deep",
+		"web_search query=",
+		"final_answer_checklist:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("plan text missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunPlanJSONOutputsStructuredPlan(t *testing.T) {
+	out := captureStdout(t, func() {
+		if got := Run([]string{"plan", "Compare current security risk in SourceMux providers", "--depth", "deep", "--json"}); got != 0 {
+			t.Fatalf("Run(plan --json) = %d, want 0", got)
+		}
+	})
+	var parsed tools.StructuredResearchPlan
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, out)
+	}
+	if parsed.Mode != "deep_research_plan" || parsed.Query == "" || parsed.Depth != "deep" {
+		t.Fatalf("plan json metadata = %+v", parsed)
+	}
+	if parsed.EvidencePolicy != "fetch_before_claim" {
+		t.Fatalf("evidence_policy = %q", parsed.EvidencePolicy)
+	}
+	if parsed.ProfilePolicy.PlannedProfile != "auto" || parsed.ProfilePolicy.EffectiveIfAvailable != "heavy" {
+		t.Fatalf("profile_policy = %+v", parsed.ProfilePolicy)
+	}
+	for _, want := range []string{"deep", "current", "comparison", "high-risk"} {
+		if !testContainsString(parsed.ProfilePolicy.HeavyIntentSignals, want) {
+			t.Fatalf("heavy intent signals missing %q: %+v", want, parsed.ProfilePolicy.HeavyIntentSignals)
+		}
+	}
+}
+
 func TestRunDoctorHelp(t *testing.T) {
 	if got := Run([]string{"doctor", "--help"}); got != 0 {
 		t.Fatalf("Run(doctor --help) = %d, want 0", got)
@@ -1194,6 +1239,15 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func testContainsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func writeCLIConfig(t *testing.T, body string) string {

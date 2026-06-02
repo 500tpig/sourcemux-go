@@ -110,14 +110,20 @@ Then edit placeholders. Never commit `sourcemux.json`.
 ./sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 ./sourcemux fetch "https://example.com" --json
 ./sourcemux plan "Evaluate current Go module proxy behavior" --depth standard
+./sourcemux plan "Compare current high-risk Go module proxy options" --json --depth deep
 ./sourcemux research "Evaluate the current status of Go modules" --depth standard --profile auto --json
 ```
 
 Use `search --platform Twitter` for freshness/community discovery, `docs-search`
 or direct `exa-search` for source-first docs/API discovery, and `fetch` to
-verify key URLs before source-critical claims. Plain `search` stays on the
-default Grok profile; `research` defaults to `profile=auto` so configured heavy
-search is used for research/deep/current/comparison/high-risk flows.
+verify key URLs before source-critical claims. `plan` is offline and
+deterministic: text output stays available for humans, while `plan --json` emits
+a structured research plan for agents. For deep search, deep research, complex
+comparison, or verification work, use `plan --json --depth deep` first when
+decomposition helps, or go directly to `research --profile auto --json` when
+you want SourceMux to execute the workflow. Plain `search` stays on the default
+Grok profile; `research` defaults to `profile=auto` so configured heavy search
+is used for research/deep/current/comparison/high-risk flows.
 
 `fetch` is Jina-first because Jina Reader is lightweight and can work without a
 key. Treat it as the first URL extraction attempt, not the whole capability

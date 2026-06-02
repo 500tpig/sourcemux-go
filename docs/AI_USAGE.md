@@ -80,6 +80,7 @@ sourcemux exa-search "official docs API reference" --type deep --json
 sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 sourcemux fetch "https://example.com" --json
 sourcemux plan "research question" --depth standard
+sourcemux plan "deep research question" --json --depth deep
 sourcemux research "topic" --depth standard --profile auto --json
 sourcemux smart-answer "question" --depth standard --profile auto --json
 ```
@@ -98,8 +99,9 @@ not just list commands:
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
 | Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 60s --timeout 180s --json` |
 | Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
+| Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --json` |
 | Multi-source investigation with synthesis | `research --depth standard --profile auto --json` or `research --depth deep --profile auto --json` |
-| Planning/decomposition without executing provider calls | `plan --depth standard` or `plan --depth deep` |
+| Planning/decomposition without executing provider calls | `plan --json --depth standard` or `plan --json --depth deep`; use plain `plan --depth` for compatible text output |
 
 Evidence policy:
 
