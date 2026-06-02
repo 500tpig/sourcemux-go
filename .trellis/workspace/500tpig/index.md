@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-06-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~584 | Active |
+| `journal-1.md` | ~623 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-06-02 | SourceMux release channel hardening | `9b42d1f` | `main` |
 | 17 | 2026-06-02 | Close remaining SourceMux Trellis tasks | - | `main` |
 | 16 | 2026-06-02 | Polish SourceMux open-source packaging docs | `46374d6` | `main` |
 | 15 | 2026-06-02 | SourceMux open-source roadmap P0 implementation | `0ce6bc6`, `1fd1b57` | `main` |

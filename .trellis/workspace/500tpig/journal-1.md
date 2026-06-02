@@ -588,3 +588,36 @@ Archived completed SourceMux task backlog, final-verified the default Grok multi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: SourceMux release channel hardening
+
+**Date**: 2026-06-02
+**Task**: SourceMux release channel hardening
+**Branch**: `main`
+
+### Summary
+
+Aligned public release docs with verified v0.2.1 channels, added release closeout and install/lifecycle smoke guidance, and captured release hygiene rules in backend quality spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b42d1f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
