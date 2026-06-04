@@ -696,3 +696,36 @@ Published sourcemux@0.2.1 and platform npm packages, verified registry metadata 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: SourceMux npm release pipeline integration
+
+**Date**: 2026-06-04
+**Task**: SourceMux npm release pipeline integration
+**Branch**: `main`
+
+### Summary
+
+Added release workflow npm publishing via Trusted Publishing/OIDC, release asset staging helpers, package version sync, npm release docs, tests, and backend release pipeline specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `673fac4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
