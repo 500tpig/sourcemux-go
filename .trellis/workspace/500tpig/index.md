@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-06-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~731 | Active |
+| `journal-1.md` | ~764 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-06-04 | Firecrawl roadmap decision and npm maintenance docs | `3f48b2b` | `main` |
 | 21 | 2026-06-04 | SourceMux npm release pipeline integration | `673fac4` | `main` |
 | 20 | 2026-06-03 | Publish SourceMux npm packages | `1014e35` | `main` |
 | 19 | 2026-06-02 | SourceMux npm wrapper scaffold | `8554daa` | `main` |

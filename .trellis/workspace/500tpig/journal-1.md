@@ -729,3 +729,36 @@ Added release workflow npm publishing via Trusted Publishing/OIDC, release asset
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Firecrawl roadmap decision and npm maintenance docs
+
+**Date**: 2026-06-04
+**Task**: Firecrawl roadmap decision and npm maintenance docs
+**Branch**: `main`
+
+### Summary
+
+Confirmed Firecrawl should remain deferred as an optional official-cloud provider spike, kept SourceMux P0 lifecycle polish as the priority, archived the Firecrawl roadmap task, and committed npm release maintenance guidance.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f48b2b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
