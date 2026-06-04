@@ -28,6 +28,8 @@ This repository is a Go MCP server and CLI for search, fetch, research, and reas
 - Tests must not call live external APIs; use local test servers or fakes.
 - When adding provider behavior, update both CLI and MCP documentation when the surface is user-visible.
 - Keep synthesis-only models in `reasoningEndpoints[]`; do not put them in `grokEndpoints[]`.
+- Before changing npm package manifests, platform mappings, release scripts, or
+  `.github/workflows/release.yml`, read `docs/NPM_RELEASE_MAINTENANCE.md`.
 
 ## Required checks
 

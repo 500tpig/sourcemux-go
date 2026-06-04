@@ -2,6 +2,10 @@
 
 This project uses GoReleaser for tagged releases.
 
+For ongoing npm release upkeep, read `docs/NPM_RELEASE_MAINTENANCE.md` before
+changing npm package manifests, platform mappings, release scripts, or the
+`npm-publish` workflow job.
+
 ## Current public channel state
 
 The current verified public baseline is `v0.2.1` (checked 2026-06-03):
