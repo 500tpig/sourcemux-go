@@ -5,12 +5,12 @@ on:
     tags:
       - "v*.*.*"
 
-permissions:
-  contents: write
-
 jobs:
   goreleaser:
+    name: Build and publish GitHub Release binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -39,3 +39,104 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+
+  npm-publish:
+    name: Publish npm packages
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set release version
+        id: release-version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then
+            echo "Expected a v-prefixed release tag, got ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install npm with Trusted Publishing support
+        run: |
+          npm install -g npm@^11.5.1
+          node --version
+          npm --version
+
+      - name: Download GitHub Release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        shell: bash
+        run: |
+          assets_dir="${RUNNER_TEMP}/sourcemux-release-assets"
+          mkdir -p "$assets_dir"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$assets_dir"
+          test -f "$assets_dir/sourcemux_${RELEASE_VERSION}_darwin_arm64.tar.gz"
+          test -f "$assets_dir/sourcemux_${RELEASE_VERSION}_darwin_amd64.tar.gz"
+          test -f "$assets_dir/sourcemux_${RELEASE_VERSION}_linux_arm64.tar.gz"
+          test -f "$assets_dir/sourcemux_${RELEASE_VERSION}_linux_amd64.tar.gz"
+          test -f "$assets_dir/sourcemux_${RELEASE_VERSION}_windows_amd64.zip"
+
+      - name: Prepare npm packages from release binaries
+        env:
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        run: |
+          node npm/scripts/set-package-version.js --version "$RELEASE_VERSION"
+          node npm/scripts/stage-release-binaries.js \
+            --version "$RELEASE_VERSION" \
+            --assets-dir "${RUNNER_TEMP}/sourcemux-release-assets"
+
+      - name: Verify npm packages
+        run: |
+          npm --prefix npm/package test
+          node npm/scripts/verify-pack-dry-run.js --require-staged-binaries
+
+      - name: Publish platform npm packages
+        env:
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        shell: bash
+        run: |
+          publish_package() {
+            local package_dir="$1"
+            local package_name
+            package_name="$(node -p "require('./${package_dir}/package.json').name")"
+            if npm view "${package_name}@${RELEASE_VERSION}" version >/dev/null 2>&1; then
+              echo "${package_name}@${RELEASE_VERSION} already exists; skipping"
+              return 0
+            fi
+            npm publish "$package_dir"
+          }
+
+          publish_package ./npm/platforms/darwin-arm64
+          publish_package ./npm/platforms/darwin-x64
+          publish_package ./npm/platforms/linux-arm64
+          publish_package ./npm/platforms/linux-x64
+          publish_package ./npm/platforms/win32-x64
+
+      - name: Publish root npm package
+        env:
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        shell: bash
+        run: |
+          if npm view "sourcemux@${RELEASE_VERSION}" version >/dev/null 2>&1; then
+            echo "sourcemux@${RELEASE_VERSION} already exists; skipping"
+            exit 0
+          fi
+          npm publish ./npm/package

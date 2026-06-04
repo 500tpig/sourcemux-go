@@ -16,6 +16,8 @@ npm/
     win32-x64/             # @500tpig/sourcemux-win32-x64
   scripts/
     stage-platform-binary.js
+    stage-release-binaries.js
+    set-package-version.js
 ```
 
 The core implementation remains the Go binary from `cmd/sourcemux`. The root
@@ -91,6 +93,23 @@ matching platform package, require all staged binary paths to be present:
 ```bash
 node npm/scripts/verify-pack-dry-run.js --require-staged-binaries
 ```
+
+The GitHub release workflow does this from the versioned GoReleaser archives,
+not from locally built binaries:
+
+```bash
+node npm/scripts/set-package-version.js --version 0.4.0
+node npm/scripts/stage-release-binaries.js --version 0.4.0 --assets-dir /path/to/github-release-assets
+node npm/scripts/verify-pack-dry-run.js --require-staged-binaries
+```
+
+`stage-release-binaries.js` maps release assets to npm platform packages as:
+
+* `sourcemux_<version>_darwin_arm64.tar.gz` -> `darwin-arm64`
+* `sourcemux_<version>_darwin_amd64.tar.gz` -> `darwin-x64`
+* `sourcemux_<version>_linux_arm64.tar.gz` -> `linux-arm64`
+* `sourcemux_<version>_linux_amd64.tar.gz` -> `linux-x64`
+* `sourcemux_<version>_windows_amd64.zip` -> `win32-x64`
 
 ## Local platform package staging
 

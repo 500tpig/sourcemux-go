@@ -30,6 +30,24 @@ Then add repository secrets to `500tpig/sourcemux-go`:
 The default `GITHUB_TOKEN` publishes the GitHub Release in this repository, but
 it cannot push to the separate tap/bucket repositories.
 
+For npm automation, configure npm Trusted Publishing for every published npm
+package before relying on the release workflow:
+
+* `sourcemux`
+* `@500tpig/sourcemux-darwin-arm64`
+* `@500tpig/sourcemux-darwin-x64`
+* `@500tpig/sourcemux-linux-arm64`
+* `@500tpig/sourcemux-linux-x64`
+* `@500tpig/sourcemux-win32-x64`
+
+Each trusted publisher should point at the public GitHub repository
+`500tpig/sourcemux-go` and workflow filename `release.yml` (the npm UI expects
+only the filename, not `.github/workflows/release.yml`). The workflow uses
+GitHub OIDC (`id-token: write`) and npm Trusted Publishing; for public packages
+from this public GitHub Actions workflow, npm generates provenance
+automatically. Do not add `NPM_TOKEN`, `.npmrc`, generated credentials, or
+long-lived npm tokens to the repository.
+
 If this is the first release after the product rename, rename the GitHub
 repository from `500tpig/grok-search-go` to `500tpig/sourcemux-go` before
 tagging. Existing local clones should then run:
@@ -92,6 +110,21 @@ It also publishes:
 * GitHub Release archives and `checksums.txt`
 * Homebrew cask in `500tpig/homebrew-tap`
 * Scoop manifest in `500tpig/scoop-bucket`
+
+After the GoReleaser job succeeds, the npm publish job downloads the versioned
+GitHub Release archives and stages each npm platform package from the matching
+released `sourcemux` binary:
+
+* `sourcemux_<version>_darwin_arm64.tar.gz` -> `@500tpig/sourcemux-darwin-arm64`
+* `sourcemux_<version>_darwin_amd64.tar.gz` -> `@500tpig/sourcemux-darwin-x64`
+* `sourcemux_<version>_linux_arm64.tar.gz` -> `@500tpig/sourcemux-linux-arm64`
+* `sourcemux_<version>_linux_amd64.tar.gz` -> `@500tpig/sourcemux-linux-x64`
+* `sourcemux_<version>_windows_amd64.zip` -> `@500tpig/sourcemux-win32-x64`
+
+The workflow sets all npm package versions to the tag version, verifies the
+packed file lists with staged binaries required, publishes platform packages
+first, then publishes the root `sourcemux` package. It does not use or require
+an npm token when Trusted Publishing is configured.
 
 `brew install sourcemux` only works if SourceMux is later accepted into
 Homebrew core; the release tap path is:
@@ -230,9 +263,19 @@ After publishing, verify registry metadata and run an install smoke:
 
 ```bash
 npm view sourcemux name version dist-tags bin optionalDependencies --json
+npm view @500tpig/sourcemux-darwin-arm64 name version dist-tags os cpu --json
+npm view @500tpig/sourcemux-darwin-x64 name version dist-tags os cpu --json
+npm view @500tpig/sourcemux-linux-arm64 name version dist-tags os cpu --json
+npm view @500tpig/sourcemux-linux-x64 name version dist-tags os cpu --json
+npm view @500tpig/sourcemux-win32-x64 name version dist-tags os cpu --json
 npm install --prefix "$(mktemp -d)" sourcemux@<version>
 npm exec --package sourcemux@<version> -- sourcemux version
 ```
+
+Check that the root package `optionalDependencies` all point at `<version>` and
+that every platform package has the matching `version`, `os`, and `cpu`
+metadata. If the install smoke runs on one of the supported platforms, confirm
+that `sourcemux version` prints the same release version.
 
 ### 4. Install smoke
 
@@ -334,3 +377,22 @@ If release assets are missing or checksums do not match:
 If local `dist/*` snapshots disagree with the public release/tap/bucket state,
 trust the public artifacts for closeout. Regenerate snapshots only for local
 preflight; do not edit or commit ignored `dist/*` files as release evidence.
+
+If npm publication partially fails:
+
+* Do not republish an already published package version; npm versions are
+  immutable.
+* Identify exactly which packages exist with `npm view <package>@<version>
+  version` and which packages are missing.
+* Prefer GitHub Actions **Re-run failed jobs** for the failed `npm-publish` job
+  after confirming the GitHub Release assets are still the intended source of
+  truth. Do not create a new tag or stage ad-hoc local binaries for repair.
+  The npm publish steps skip packages that already have `<version>` and
+  continue with missing platform packages before attempting the root package.
+* If a platform package was published with the wrong binary, publish a fixed
+  follow-up version and deprecate the bad package version with a clear message;
+  do not replace or mutate the published tarball.
+* If the root package was published before a platform package is available,
+  publish the missing platform package as soon as possible, then rerun the
+  npm registry verification and install smoke. If the gap is user-visible,
+  record it in release notes or an issue.

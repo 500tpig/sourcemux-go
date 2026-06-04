@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -19,6 +20,16 @@ const {
   getPlatformInfo
 } = require('../lib/platform');
 const { stagePlatformBinary } = require('../../scripts/stage-platform-binary');
+const {
+  RELEASE_ASSETS_BY_TARGET,
+  RELEASE_TARGET_ORDER,
+  assetNameForTarget,
+  stageReleaseBinaries
+} = require('../../scripts/stage-release-binaries');
+const {
+  normalizeVersion,
+  setPackageVersion
+} = require('../../scripts/set-package-version');
 const {
   verifyPlatformPackage,
   verifyRootPackage
@@ -220,6 +231,115 @@ test('stagePlatformBinary rejects prototype or unsupported target names', () => 
   );
 });
 
+test('setPackageVersion aligns root and platform package versions', (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sourcemux-version-test-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const rootPackageDir = path.join(tempDir, 'npm', 'package');
+  const platformsDir = path.join(tempDir, 'npm', 'platforms');
+  fs.mkdirSync(rootPackageDir, { recursive: true });
+  fs.writeFileSync(path.join(rootPackageDir, 'package.json'), JSON.stringify({
+    name: 'sourcemux',
+    version: '0.0.0',
+    optionalDependencies: Object.fromEntries(
+      Object.values(SUPPORTED_PLATFORMS).map((info) => [info.packageName, '0.0.0'])
+    )
+  }));
+
+  for (const info of Object.values(SUPPORTED_PLATFORMS)) {
+    const packageDir = path.join(platformsDir, info.key);
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
+      name: info.packageName,
+      version: '0.0.0'
+    }));
+  }
+
+  const updated = setPackageVersion({ version: 'v1.2.3', repoRoot: tempDir });
+  assert.equal(updated.length, 1 + Object.keys(SUPPORTED_PLATFORMS).length);
+
+  const rootManifest = JSON.parse(
+    fs.readFileSync(path.join(rootPackageDir, 'package.json'), 'utf8')
+  );
+  assert.equal(rootManifest.version, '1.2.3');
+  for (const info of Object.values(SUPPORTED_PLATFORMS)) {
+    assert.equal(rootManifest.optionalDependencies[info.packageName], '1.2.3');
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(platformsDir, info.key, 'package.json'), 'utf8')
+    );
+    assert.equal(manifest.version, '1.2.3');
+  }
+});
+
+test('normalizeVersion accepts release tags and rejects invalid versions', () => {
+  assert.equal(normalizeVersion('v1.2.3'), '1.2.3');
+  assert.equal(normalizeVersion('1.2.3-beta.1'), '1.2.3-beta.1');
+  assert.throws(() => normalizeVersion('latest'), /Invalid npm release version/);
+});
+
+test('release asset mapping matches the GoReleaser archive names', () => {
+  assert.deepEqual(RELEASE_TARGET_ORDER, [
+    'darwin-arm64',
+    'darwin-x64',
+    'linux-arm64',
+    'linux-x64',
+    'win32-x64'
+  ]);
+  assert.deepEqual(Object.keys(RELEASE_ASSETS_BY_TARGET).sort(), RELEASE_TARGET_ORDER.slice().sort());
+  assert.equal(assetNameForTarget('darwin-arm64', 'v1.2.3'), 'sourcemux_1.2.3_darwin_arm64.tar.gz');
+  assert.equal(assetNameForTarget('darwin-x64', 'v1.2.3'), 'sourcemux_1.2.3_darwin_amd64.tar.gz');
+  assert.equal(assetNameForTarget('linux-arm64', 'v1.2.3'), 'sourcemux_1.2.3_linux_arm64.tar.gz');
+  assert.equal(assetNameForTarget('linux-x64', 'v1.2.3'), 'sourcemux_1.2.3_linux_amd64.tar.gz');
+  assert.equal(assetNameForTarget('win32-x64', 'v1.2.3'), 'sourcemux_1.2.3_windows_amd64.zip');
+});
+
+test('stageReleaseBinaries maps GoReleaser assets to npm platform packages', (t) => {
+  if (!commandAvailable('tar', ['--version']) ||
+      !commandAvailable('zip', ['-v']) ||
+      !commandAvailable('unzip', ['-v'])) {
+    t.skip('tar, zip, or unzip is not available');
+    return;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sourcemux-release-test-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const assetsDir = path.join(tempDir, 'assets');
+  const platformsRoot = path.join(tempDir, 'platforms');
+  fs.mkdirSync(assetsDir, { recursive: true });
+
+  for (const target of RELEASE_TARGET_ORDER) {
+    const info = SUPPORTED_PLATFORMS[target];
+    const sourceDir = path.join(tempDir, 'sources', target);
+    fs.mkdirSync(sourceDir, { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, info.binaryName), `binary for ${target}`);
+
+    const archivePath = path.join(assetsDir, assetNameForTarget(target, 'v1.2.3'));
+    if (archivePath.endsWith('.zip')) {
+      const result = spawnSync('zip', ['-q', archivePath, info.binaryName], {
+        cwd: sourceDir
+      });
+      assert.equal(result.status, 0, result.stderr && result.stderr.toString());
+    } else {
+      const result = spawnSync('tar', ['-czf', archivePath, '-C', sourceDir, info.binaryName]);
+      assert.equal(result.status, 0, result.stderr && result.stderr.toString());
+    }
+  }
+
+  const staged = stageReleaseBinaries({
+    version: 'v1.2.3',
+    assetsDir,
+    platformsRoot
+  });
+
+  assert.deepEqual(staged.map((item) => item.target), RELEASE_TARGET_ORDER);
+  for (const target of RELEASE_TARGET_ORDER) {
+    const info = SUPPORTED_PLATFORMS[target];
+    const stagedPath = path.join(platformsRoot, target, 'bin', info.binaryName);
+    assert.equal(fs.readFileSync(stagedPath, 'utf8'), `binary for ${target}`);
+  }
+});
+
 test('verifyRootPackage accepts only the expected wrapper files', () => {
   assert.doesNotThrow(() => verifyRootPackage({
     files: [
@@ -245,6 +365,11 @@ test('verifyRootPackage accepts only the expected wrapper files', () => {
     /Forbidden npm pack entry/
   );
 });
+
+function commandAvailable(command, args) {
+  const result = spawnSync(command, args, { stdio: 'ignore' });
+  return !result.error && result.status === 0;
+}
 
 test('verifyPlatformPackage allows staged binary paths and can require them', () => {
   const info = SUPPORTED_PLATFORMS['darwin-arm64'];

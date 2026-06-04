@@ -1038,6 +1038,9 @@ git rm -r --cached .trellis .agents .codex .claude
   - Scoped platform manifests must include `"publishConfig": {"access": "public"}` so the first approved public publish does not depend on remembering `--access public`.
 - Local staging helper:
   - `node npm/scripts/stage-platform-binary.js --target <target> --binary <path>`
+- Release staging helpers:
+  - `node npm/scripts/set-package-version.js --version <version>`
+  - `node npm/scripts/stage-release-binaries.js --version <version> --assets-dir <path>`
 - Pack dry-run verifier:
   - `node npm/scripts/verify-pack-dry-run.js [--require-staged-binaries]`
 
@@ -1058,6 +1061,14 @@ git rm -r --cached .trellis .agents .codex .claude
   - Do not commit staged native binaries, npm tarballs, GoReleaser `dist/*`, provider configs, npm tokens, API keys, or private endpoints.
   - Staged platform binaries belong only under `npm/platforms/<target>/bin/sourcemux` or `npm/platforms/<target>/bin/sourcemux.exe`, and these paths must be ignored by Git.
   - Staging helpers must validate target names and ensure destination paths stay inside the selected platform package directory.
+  - Release staging must use the versioned GitHub Release archives produced by GoReleaser as source of truth, not local ad-hoc builds.
+  - Asset mapping must remain explicit: `darwin-arm64` from `darwin_arm64.tar.gz`, `darwin-x64` from `darwin_amd64.tar.gz`, `linux-arm64` from `linux_arm64.tar.gz`, `linux-x64` from `linux_amd64.tar.gz`, and `win32-x64` from `windows_amd64.zip`.
+- Release workflow:
+  - npm publication must run only after the GoReleaser/GitHub Release binary job succeeds and the expected release assets are downloadable.
+  - CI should set package versions from the release tag, stage all platform binaries from the downloaded release assets, run the npm tests and `verify-pack-dry-run.js --require-staged-binaries`, then publish platform packages before the root package.
+  - Prefer npm Trusted Publishing/OIDC with `id-token: write`; public packages from the public GitHub Actions workflow get npm provenance automatically, so do not require `--provenance`, `NPM_TOKEN`, `.npmrc`, or generated credential files in the repo.
+  - Release closeout docs must include npm registry verification for the root package and every platform package, plus an isolated `npm install` / `npm exec sourcemux version` smoke.
+  - Partial publish repair must treat npm versions as immutable: skip already-published packages, publish missing platform packages before the root package, and use a follow-up version plus deprecation for any package published with the wrong binary.
 - Pack dry-run:
   - Readiness checks may run with unstaged platform binaries and should allow platform tarballs containing only `package.json`.
   - Approved release packaging must run the verifier with `--require-staged-binaries` after all five platform binaries have been staged.
@@ -1081,6 +1092,8 @@ git rm -r --cached .trellis .agents .codex .claude
 | Staging destination would escape platform package directory | Refuse and write nothing |
 | Pack dry-run includes a local config, token marker, tarball, `dist/*`, `grok-search`, or unexpected file | Fail the verifier before publish |
 | Release preflight requires staged binaries but a platform package has only `package.json` | Fail the verifier and stage the missing binary |
+| npm publication partially publishes only some packages | Do not mutate published tarballs; identify missing packages with `npm view`, rerun only the failed npm publication path when possible, and keep platform packages before root |
+| npm package version was published with the wrong binary | Publish a corrected follow-up version and deprecate the bad version with a clear message |
 | npm docs mention install/npx before publication | Label as planned/local scaffold, not public availability |
 
 #### 5. Good/Base/Bad Cases
@@ -1105,6 +1118,8 @@ git rm -r --cached .trellis .agents .codex .claude
 - Packaging checks:
   - `npm --prefix npm/package run pack:dry-run`
   - `node npm/scripts/verify-pack-dry-run.js --require-staged-binaries` after approved release packaging stages every platform binary.
+  - Tests or script checks must cover release asset-to-platform mapping and tag-version alignment across root/platform manifests.
+  - After publish, run `npm view` checks for the root package and all platform packages, verify root `optionalDependencies`, and smoke `npm install --prefix "$(mktemp -d)" sourcemux@<version>` plus `npm exec --package sourcemux@<version> -- sourcemux version`.
   - `git ls-files dist 'npm/platforms/*/bin/*' '*.tgz' sourcemux.json grok-search.json` returns no tracked generated artifacts or local configs.
 - Product quality:
   - If Go files, release config, or version injection changes, run `gofmt`, `go test ./...`, `go vet ./...`, and `go build ./...`.
