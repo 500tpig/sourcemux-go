@@ -762,3 +762,34 @@ Confirmed Firecrawl should remain deferred as an optional official-cloud provide
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Local npm tarball smoke
+
+**Date**: 2026-06-04
+**Task**: Local npm tarball smoke
+**Branch**: `main`
+
+### Summary
+
+Ran isolated local npm tarball smoke for the current platform. Packed root and platform packages, installed local tarballs offline into an isolated prefix, verified wrapper version and explicit-config doctor JSON, ran npm package tests, pack dry-run, go test, go vet, and go build. No source changes were needed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

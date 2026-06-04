@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-06-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~764 | Active |
+| `journal-1.md` | ~795 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-06-04 | Local npm tarball smoke | - | `main` |
 | 22 | 2026-06-04 | Firecrawl roadmap decision and npm maintenance docs | `3f48b2b` | `main` |
 | 21 | 2026-06-04 | SourceMux npm release pipeline integration | `673fac4` | `main` |
 | 20 | 2026-06-03 | Publish SourceMux npm packages | `1014e35` | `main` |
