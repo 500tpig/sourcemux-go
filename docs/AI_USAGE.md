@@ -18,9 +18,11 @@ In practice, this means MCP text responses should stay intentionally thin: enoug
 
 ## Why route through SourceMux
 
-Use a single provider directly when the job is truly one-hop: for example,
-plain Jina Reader for a quick URL read or a simple web search for candidate
-links. Use SourceMux when the agent benefits from one or more of these stable
+Use a single provider directly only for diagnostics or a provider-specific
+experiment. For ordinary URL reads, use SourceMux `fetch --profile auto`; use
+`fetch --profile cheap` only when the user explicitly asks for cheap,
+zero-key, or quick sanity-check extraction. Use SourceMux when the agent
+benefits from one or more of these stable
 outputs:
 
 * one CLI/MCP surface for search, fetch, docs search, bounded research, and
@@ -93,7 +95,10 @@ sourcemux search "query" --platform Twitter --profile auto --fallback-after 180s
 sourcemux docs-search "library or API question" --json
 sourcemux exa-search "official docs API reference" --type deep --json
 sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-sourcemux fetch "https://example.com" --json
+sourcemux fetch "https://example.com" --profile auto --json
+sourcemux fetch "https://example.com" --profile cheap --json
+sourcemux firecrawl-scrape "https://example.com" --json
+sourcemux firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 sourcemux plan "research question" --depth standard
 sourcemux plan "deep research question" --json --depth deep
 sourcemux research "topic" --depth standard --profile auto --json
@@ -110,15 +115,20 @@ heavy-first.
 ### Capability selection for generated skills
 
 Generated `sourcemux-routing` skills should route user intent to capabilities,
-not just list commands:
+not just list commands. Treat the skill as the routing/decision layer and the
+SourceMux CLI as the execution layer; MCP remains a generic compatibility
+surface, not a place for provider-specific Firecrawl tools:
 
 | User intent | Preferred surface |
 | --- | --- |
 | Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --profile <searchPolicy.agentProfile> --fallback-after <searchPolicy.fallbackAfterSec>s --timeout <searchPolicy.timeoutSec>s --json` or the same without `--platform` |
 | Official docs, SDK/API reference, product docs, pricing pages | `docs-search --json` |
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
-| Known URL content extraction | `fetch --json` |
+| Known URL content extraction | `fetch --profile auto --json`; GitHub URLs get repository-aware routing, ordinary pages use quality-first provider order |
+| Cheap or zero-key known URL extraction | `fetch --profile cheap --json`; this is the Jina-first path |
+| Difficult known URL extraction with Firecrawl-specific flags | `firecrawl-scrape --json` as an explicit SourceMux CLI command; ordinary difficult pages should start with `fetch --profile auto` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
+| Site structure discovery for hard sites, URL inventory, or relevance-filtered sections | `firecrawl-map --search ... --limit ... --json` as an explicit SourceMux CLI command; do not use it for ordinary single-page extraction |
 | Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 180s --timeout 300s --json` |
 | Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
 | Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --json` |
@@ -130,19 +140,92 @@ Evidence policy:
 1. Discover candidate URLs with policy-driven `search`, `docs-search`, `exa-search`, or `research`.
 2. Fetch key URLs before high-risk, precise, or source-critical claims.
 3. Cite fetched or source URL evidence in the final answer.
-4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
-5. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
-6. For search-capable multi-agent Grok models, configure them in `grokEndpoints[]` with a profile such as `heavy`; `reasoningEndpoints[]` alone is only for final synthesis and will not be used by `search` or `research`.
+4. Treat the fetch provider label, such as `GitHub Provider`, `Firecrawl`, or `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
+5. For known URLs, use `fetch --profile auto --json` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish.
+6. Use `firecrawl-map` only for site structure discovery, URL inventory, or relevance-filtered URL discovery.
+7. Use `fetch --profile cheap --json` only when the user asks for cheap, zero-key, or quick sanity-check extraction. Do not call Jina directly for default research.
+8. Use `firecrawl-scrape` as an explicit SourceMux CLI direct command only when Firecrawl scrape flags matter.
+9. Do not install, configure, or call Firecrawl MCP. Do not connect Firecrawl to `search`, `map`, or MCP direct routes.
+10. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
+11. For search-capable multi-agent Grok models, configure them in `grokEndpoints[]` with a profile such as `heavy`; `reasoningEndpoints[]` alone is only for final synthesis and will not be used by `search` or `research`.
 
 Fetch routing note:
 
-* `fetch` / `web_fetch` starts with Jina Reader because it is a lightweight
-  zero-key URL extraction path.
-* Jina is not the ceiling for SourceMux capability. It is followed by
-  TinyFish Fetch, Exa Contents, and Tavily Extract when those providers are
-  configured and earlier fetch attempts fail or return empty content.
+* Public/default `fetch --profile auto` is policy-first / quality-first. It
+  classifies GitHub repo URLs before generic page extraction and prefers
+  Firecrawl for ordinary pages when configured.
+* `fetch --profile cheap` is the low-cost route: Jina -> Firecrawl -> Exa ->
+  Tavily.
+* In v2 configs, `capabilities.web_fetch.providers` can still express an
+  explicit order for `--profile auto`; otherwise SourceMux chooses the policy
+  order.
 * For agents, the fetch provider label explains how that URL was extracted; it
   does not replace source discovery, citation review, or the research route.
+* Top-level `firecrawl` enables Firecrawl direct commands and ordinary
+  policy-first fetch when keys are configured. Firecrawl MCP is not used.
+
+Firecrawl local smoke:
+
+Do not send Firecrawl keys through chat. Put keys only in the local SourceMux
+config file and set `enabled` explicitly. Use `apiKey` for one key, or `keys[]`
+for a named key pool:
+
+```json
+{
+  "firecrawl": {
+    "apiURL": "https://api.firecrawl.dev/v2",
+    "keys": [
+      {"name": "acct-a", "apiKey": "fc-your-key-a"},
+      {"name": "acct-b", "apiKey": "fc-your-key-b"}
+    ],
+    "enabled": true
+  }
+}
+```
+
+Explicit v2 fetch ordering is optional:
+
+```json
+{
+  "version": 2,
+  "minimum_profile": "off",
+  "capabilities": {
+    "main_search": {"providers": []},
+    "docs_search": {"providers": []},
+    "web_fetch": {
+      "providers": [
+        {
+          "type": "firecrawl",
+          "apiURL": "https://api.firecrawl.dev/v2",
+          "keys": [
+            {"name": "acct-a", "apiKey": "fc-your-key-a"},
+            {"name": "acct-b", "apiKey": "fc-your-key-b"}
+          ],
+          "enabled": true
+        },
+        {"type": "jina", "apiURL": "https://r.jina.ai"}
+      ]
+    },
+    "web_enhance": {"providers": []}
+  }
+}
+```
+
+After the local key is filled in, smoke these paths:
+
+```bash
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json \
+  | jq -e '.policy.effective_profile == "auto" and (.content | length > 0)'
+
+sourcemux --config ~/.config/sourcemux/sourcemux.json firecrawl-scrape "https://example.com" --json \
+  | jq -e '.source == "Firecrawl Scrape" and .route_decision[0].provider == "firecrawl-scrape" and (.content | length > 0)'
+
+sourcemux --config ~/.config/sourcemux/sourcemux.json firecrawl-map "https://example.com" --search "docs" --limit 100 --json \
+  | jq -e '.source == "Firecrawl Map" and .route_decision[0].provider == "firecrawl-map" and (.count >= 0)'
+```
+
+Expected coverage: the first command exercises ordinary policy-first fetch; the
+second verifies explicit scrape; the third verifies explicit map.
 
 ## Recommended host setup
 

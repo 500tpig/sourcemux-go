@@ -120,6 +120,47 @@ file. Mixed configs fail loudly instead of silently reordering providers.
 Keep Exa configured for the required `docs_search` provider when
 `minimum_profile=standard` is enabled.
 
+### Web fetch provider order
+
+For v2 configs, `capabilities.web_fetch.providers` can provide an explicit
+`sourcemux fetch --profile auto` order. When no explicit v2 order is present,
+SourceMux uses policy-first routing: GitHub URLs use repository-aware
+enrichment first, ordinary pages prefer Firecrawl when configured, and
+`--profile cheap` is the Jina-first low-cost route. To pin a local auto order,
+write it explicitly:
+
+```json
+{
+  "version": 2,
+  "minimum_profile": "off",
+  "capabilities": {
+    "main_search": {"providers": []},
+    "docs_search": {"providers": []},
+    "web_fetch": {
+      "providers": [
+        {
+          "type": "firecrawl",
+          "apiURL": "https://api.firecrawl.dev/v2",
+          "keys": [
+            {"name": "acct-a", "apiKey": "fc-your-key-a"},
+            {"name": "acct-b", "apiKey": "fc-your-key-b"}
+          ],
+          "enabled": true
+        },
+        {"type": "jina", "apiURL": "https://r.jina.ai"}
+      ]
+    },
+    "web_enhance": {"providers": []}
+  }
+}
+```
+
+Use `apiKey` for a single Firecrawl key, or `keys[]` for multiple named keys.
+SourceMux rotates the starting Firecrawl key and tries the remaining keys when
+a key fails or returns empty content. The top-level `firecrawl` block enables
+direct `firecrawl-scrape` / `firecrawl-map` commands and policy-first ordinary
+fetch when Firecrawl keys are configured.
+
 ## Explicit migration
 
 Run:

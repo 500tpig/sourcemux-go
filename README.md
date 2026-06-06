@@ -8,8 +8,8 @@
 
 > **SourceMux is a single-binary CLI + stdio MCP agent research router.**
 > It gives agents fast/default search for one-hop work, `profile=auto` heavy
-> Grok research when configured, and Jina-first URL fetch with provider
-> fallbacks.
+> Grok research when configured, and policy-first URL fetch with quality,
+> GitHub-aware, and cheap profiles.
 >
 > Packaging status: the current verified public baseline is `v0.2.1`
 > (checked 2026-06-03): GitHub Release assets, the Homebrew cask in
@@ -20,7 +20,12 @@
 
 ## 中文
 
-SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二进制 CLI + stdio MCP 研究路由器。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina 等能力接到统一 fallback route：普通查询走快速默认搜索，`research` / `smart-answer` 默认用 `profile=auto` 在适合时切到已配置的 heavy / multi-agent Grok 搜索，URL 抓取先走轻量零 key 的 Jina Reader，再按需 fallback 到 TinyFish / Exa / Tavily。
+SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二进制 CLI + stdio MCP 研究路由器。它把 Grok / OpenAI-compatible endpoint pool、TinyFish、Exa、Tavily、Jina、Firecrawl 等能力接到统一 fallback route：普通查询走快速默认搜索，`research` / `smart-answer` 默认用 `profile=auto` 在适合时切到已配置的 heavy / multi-agent Grok 搜索，URL 抓取默认走 policy-first / quality-first 策略，GitHub URL 优先走 repo-aware enrichment，cheap/zero-key 模式才走 Jina-first。
+
+Firecrawl 通过 SourceMux 自己的 CLI direct commands 和普通 fetch routing
+使用，不是 Firecrawl MCP server 集成。默认 `fetch --profile auto` 在
+Firecrawl 配置可用时会把普通网页放到质量优先路线；`fetch --profile cheap`
+才用于轻量、低成本、零 key 优先的 Jina-first 路线。
 
 仓库默认只保存安全示例配置。真实 API key 只应该放在本地 `sourcemux.json`，或用 `--config /path/to/sourcemux.json` 显式指定的本地配置文件里。不要提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
@@ -37,14 +42,15 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 | 能力 / 命令 | 默认路线 |
 | --- | --- |
 | `web_search` / `sourcemux search` | Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search |
-| `web_fetch` / `sourcemux fetch` | Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract |
+| `web_fetch` / `sourcemux fetch --profile auto` | GitHub Provider for GitHub URLs; otherwise Firecrawl -> Jina Reader -> Exa Contents -> Tavily Extract -> TinyFish Fetch |
+| `sourcemux fetch --profile cheap` | Jina Reader -> Firecrawl -> Exa Contents -> Tavily Extract |
 | `docs_search` / `sourcemux docs-search` | Exa docs/web search fallback |
 | `research_run` / `sourcemux research` | 规划 query -> 搜索 -> 收集来源 -> 排序 URL -> 抓取高价值页面（默认 `--profile auto`） |
 | `smart_answer` / `sourcemux smart-answer` | 先跑 bounded research（默认 `--profile auto`），再交给配置好的 reasoning endpoint 综合回答 |
 
 ### 为什么不是只用 Jina 或普通搜索
 
-- Jina Reader 是轻量、零 key、fetch-first 的 URL 正文提取入口；它不是搜索、文档检索、heavy Grok 或最终综合能力的上限。
+- Jina Reader 是轻量、零 key 的 URL 正文提取 fallback；它不是质量默认，也不是搜索、文档检索、heavy Grok 或最终综合能力的上限。
 - 普通搜索适合一次性找结果；SourceMux 额外提供 agent 友好的 route、fallback、`get_sources`、fetch 验证、bounded research pack 和可复现 JSON。
 - 对复杂、当前、对比或高风险问题，`research` / `smart-answer` 默认 `profile=auto`，可以在配置了 heavy Grok profile 时自动用更强搜索，同时仍保留 fallback。
 
@@ -128,7 +134,69 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json search "ping" --profile he
 抓取网页正文：
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile cheap --json
+```
+
+普通已知 URL 先用 `fetch --profile auto`：GitHub repo / issues / releases /
+blob / tree URL 会优先走 GitHub enrichment，普通网页在 Firecrawl 配置可用时
+优先用 Firecrawl 质量抓取，再 fallback 到 Jina / Exa / Tavily / TinyFish。
+只有明确要低成本或零 key sanity check 时才用 `fetch --profile cheap`。需要
+Firecrawl-specific flags 时使用 `firecrawl-scrape`；站点结构、URL 盘点或按
+主题发现站内链接时才用 `firecrawl-map`。不要安装或调用 Firecrawl MCP。
+
+本地配置示例（只在本机配置文件里填真实 key，不要发到聊天里）：
+
+```json
+{
+  "firecrawl": {
+    "apiURL": "https://api.firecrawl.dev/v2",
+    "apiKey": "fc-your-key",
+    "enabled": true
+  }
+}
+```
+
+显式 v2 fetch 顺序配置示例（`--profile auto` 会尊重这个顺序；未写 v2 顺序时
+使用默认 policy-first 质量策略）：
+
+```json
+{
+  "version": 2,
+  "minimum_profile": "off",
+  "capabilities": {
+    "main_search": {"providers": []},
+    "docs_search": {"providers": []},
+    "web_fetch": {
+      "providers": [
+        {
+          "type": "firecrawl",
+          "apiURL": "https://api.firecrawl.dev/v2",
+          "keys": [
+            {"name": "acct-a", "apiKey": "fc-your-key-a"},
+            {"name": "acct-b", "apiKey": "fc-your-key-b"}
+          ],
+          "enabled": true
+        },
+        {"type": "jina", "apiURL": "https://r.jina.ai"}
+      ]
+    },
+    "web_enhance": {"providers": []}
+  }
+}
+```
+
+填好本地 key 后，smoke 覆盖这三条：
+
+```bash
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json \
+  | jq -e '.policy.effective_profile == "auto" and (.content | length > 0)'
+
+sourcemux --config ~/.config/sourcemux/sourcemux.json firecrawl-scrape "https://example.com" --json \
+  | jq -e '.source == "Firecrawl Scrape" and .route_decision[0].provider == "firecrawl-scrape" and (.content | length > 0)'
+
+sourcemux --config ~/.config/sourcemux/sourcemux.json firecrawl-map "https://example.com" --search "docs" --limit 100 --json \
+  | jq -e '.source == "Firecrawl Map" and .route_decision[0].provider == "firecrawl-map" and (.count >= 0)'
 ```
 
 离线生成结构化 research plan（不调用网络）：
@@ -349,6 +417,7 @@ git remote set-url origin https://github.com/500tpig/sourcemux-go.git
 
 - [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — 更完整的快速开始。
 - [`docs/AI_USAGE.md`](docs/AI_USAGE.md) — AI Agent / MCP / CLI 使用建议。
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 架构图、核心链路和 provider 路由说明。
 - [`docs/MIGRATION.md`](docs/MIGRATION.md) — 改名与配置迁移。
 - [`docs/RELEASE.md`](docs/RELEASE.md) — 发布、Homebrew、Scoop 和 GoReleaser。
 
@@ -357,21 +426,23 @@ git remote set-url origin https://github.com/500tpig/sourcemux-go.git
 SourceMux is a single-binary CLI + stdio MCP agent research router for search,
 fetch, docs lookup, bounded research, and reasoning synthesis. It gives agents
 fast/default search for one-hop work, `profile=auto` heavy Grok research when
-configured, and Jina-first URL fetch with provider fallbacks.
+configured, and policy-first URL fetch with quality, GitHub-aware, and cheap
+profiles.
 
 The default routing is:
 
 - `web_search` / `sourcemux search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
-- `web_fetch` / `sourcemux fetch`: Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract
+- `web_fetch` / `sourcemux fetch --profile auto`: GitHub Provider for GitHub URLs; otherwise Firecrawl -> Jina Reader -> Exa Contents -> Tavily Extract -> TinyFish Fetch
+- `sourcemux fetch --profile cheap`: Jina Reader -> Firecrawl -> Exa Contents -> Tavily Extract
 - `docs_search` / `sourcemux docs-search`: Exa docs/web search fallback
 - `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages (defaults to `--profile auto`)
 - `smart_answer` / `sourcemux smart-answer`: run bounded research (defaults to `--profile auto`), then synthesize the final answer with a configured OpenAI-compatible reasoning endpoint
 
 Why not just Jina or simple search?
 
-- Jina Reader is a lightweight, zero-key, fetch-first URL extraction provider.
-  It is the first fetch attempt, not the ceiling for search, docs discovery,
-  heavy Grok search, or synthesis.
+- Jina Reader is a lightweight, zero-key URL extraction fallback. It is the
+  cheap profile's first attempt, not the quality default or the ceiling for
+  search, docs discovery, heavy Grok search, or synthesis.
 - Simple web search returns candidate results. SourceMux adds agent-oriented
   routing, fallback, `get_sources`, fetch verification, bounded research packs,
   and reproducible JSON.
@@ -531,6 +602,7 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in th
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
 AI agent integration guidance is in [`docs/AI_USAGE.md`](docs/AI_USAGE.md).
+Architecture diagrams and routing notes are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 Uninstall and migration guidance is in [`docs/UNINSTALL.md`](docs/UNINSTALL.md).
 Release automation notes are in [`docs/RELEASE.md`](docs/RELEASE.md).
 
@@ -583,6 +655,7 @@ Config fields:
 | `reasoningEndpoints[].apiKey` | Yes | Bearer token. |
 | `reasoningEndpoints[].model` | No | Defaults to `deepseek-v4-flash`. |
 | `tavily` | No | Tavily Search / Extract / Map / Crawl. |
+| `firecrawl` | No | Firecrawl scrape/map provider. `enabled` defaults to `false`; set it to `true` with a local key to opt into Firecrawl CLI direct commands and policy-first ordinary fetch. V2 `capabilities.web_fetch.providers` can still set an explicit auto order. Not a Firecrawl MCP integration. |
 | `exa` | No | Exa Search / Contents fallback and advanced Exa tools. |
 | `jina` | No | Jina Reader fetch; works without a key. |
 | `tinyfish` | No | TinyFish Search / Fetch fallback with multi-key rotation. |
@@ -623,7 +696,10 @@ See:
 ./sourcemux doctor --json
 
 ./sourcemux search "latest Go release notes" --json
-./sourcemux fetch "https://example.com" --json
+./sourcemux fetch "https://example.com" --profile auto --json
+./sourcemux fetch "https://example.com" --profile cheap --json
+./sourcemux firecrawl-scrape "https://example.com" --json
+./sourcemux firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 ./sourcemux plan "Evaluate a new open-source project" --depth deep
 ./sourcemux plan "Compare current high-risk options" --json --depth deep
 ./sourcemux research "Evaluate a new open-source project" \
@@ -638,7 +714,9 @@ Main subcommands:
 | --- | --- |
 | `search <query>` | One search through the fallback route. |
 | `docs-search <query>` | Documentation search through Exa docs/web search fallback. |
-| `fetch <url>` | Fetch one URL through the fallback route. |
+| `fetch <url>` | Fetch one URL through policy-first routing. Profiles: `auto`, `quality`, `cheap`, `github`, `compare`. |
+| `firecrawl-scrape <url>` | Explicit Firecrawl scrape for Firecrawl-specific flags; ordinary `fetch --profile auto` already uses Firecrawl when configured. |
+| `firecrawl-map <url>` | Explicit Firecrawl site map with `--search` / `--limit`; existing `map` remains Tavily. |
 | `exa-search <query>` | Direct advanced Exa Search call. |
 | `exa-contents <url>` | Direct advanced Exa Contents call. |
 | `map <url>` | Tavily URL discovery. |

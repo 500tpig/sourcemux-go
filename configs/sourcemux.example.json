@@ -24,6 +24,21 @@
     "apiKey": "tvly-your-key",
     "enabled": true
   },
+  "firecrawl": {
+    "apiURL": "https://api.firecrawl.dev/v2",
+    "apiKey": "",
+    "keys": [
+      {
+        "name": "acct-a",
+        "apiKey": "fc-your-key-a"
+      },
+      {
+        "name": "acct-b",
+        "apiKey": "fc-your-key-b"
+      }
+    ],
+    "enabled": false
+  },
   "exa": {
     "apiURL": "https://api.exa.ai",
     "apiKey": "exa-your-key",

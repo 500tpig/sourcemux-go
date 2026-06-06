@@ -107,26 +107,25 @@ want live provider checks.
 sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest Go release notes" --profile auto --fallback-after 180s --timeout 300s --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest community feedback on GPT-5.4 Codex" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json docs-search "next.js middleware auth" --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile cheap --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json plan "Evaluate current Go module proxy behavior" --depth standard
 sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth standard --profile auto --json
 ```
 
 Use `search --profile auto --platform Twitter` for freshness/community discovery, `docs-search`
-or direct `exa-search` for source-first docs/API discovery, and `fetch` to
+or direct `exa-search` for source-first docs/API discovery, and `fetch --profile auto` to
 verify key URLs before source-critical claims. `plan` is offline and
 deterministic. `research` defaults to `profile=auto`, which follows
 `searchPolicy.autoPreference`; with the public `intent-based` default,
 configured heavy search is used for research/deep/current/comparison/high-risk
 flows while fallback providers remain available.
 
-Fetch starts with Jina Reader because it is a lightweight, zero-key,
-fetch-first URL extraction path. That does not make Jina the whole product:
-when configured, SourceMux falls back through TinyFish Fetch, Exa Contents, and
-Tavily Extract, and it still provides search, docs discovery, source caching,
-bounded research packs, and reproducible JSON. Use plain Jina for a quick URL
-read; use SourceMux when an agent needs routing, fallback, verification, or a
-repeatable research output.
+Fetch defaults to policy-first / quality-first routing. GitHub repo URLs route
+through repository-aware enrichment before generic extraction; ordinary pages
+prefer Firecrawl when configured, then fall back through Jina, Exa, Tavily, and
+TinyFish. Use `fetch --profile cheap` only when the user explicitly wants a
+low-cost or zero-key Jina-first sanity check.
 
 ## 4. Install agent routing skill
 

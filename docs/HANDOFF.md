@@ -126,7 +126,7 @@ Public user CLI:
 sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json search "What is today's date?" --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json
 ```
 
 Public user agent skill:
@@ -172,7 +172,7 @@ Expected behavior:
 
 - Secrets are masked in config output.
 - MCP search responses include an engine label plus a compact summary; use CLI `search --json` for full output.
-- MCP fetch responses include a source label plus a compact excerpt; use CLI `fetch --json` for full output. Fetch is Jina-first because Jina Reader is lightweight and can work without a key, then falls back to TinyFish Fetch, Exa Contents, and Tavily Extract when configured. Treat Jina as the first URL extraction provider, not the whole SourceMux capability ceiling.
+- MCP fetch responses include a source label plus a compact excerpt; use CLI `fetch --profile auto --json` for full output. Fetch is policy-first / quality-first: GitHub repo URLs get repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, and `fetch --profile cheap` is the low-cost Jina-first route.
 - MCP research output stays compact while still surfacing executed searches, source summary, fetched page summary, high-signal sources, confirmed facts, likely inferences, and open questions; use CLI `research --json` for the full pack.
 - `smart_answer` includes endpoint/model metadata and high-signal URLs.
 

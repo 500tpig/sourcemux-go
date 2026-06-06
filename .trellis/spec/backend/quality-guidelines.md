@@ -169,7 +169,11 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 
 #### 5. Good/Base/Bad Cases
 
-- Good: `web_fetch` tries `Jina Reader -> TinyFish Fetch -> Exa Contents -> Tavily Extract`, and TinyFish is skipped when no keys are configured.
+- Good: `web_fetch` uses policy-first routing. For ordinary URLs,
+  `auto`/`quality` tries `Firecrawl -> Jina Reader -> Exa Contents -> Tavily
+  Extract -> TinyFish Fetch` when configured; `cheap` keeps the low-cost
+  `Jina Reader -> Firecrawl -> Exa Contents -> Tavily Extract` path. Disabled
+  or keyless providers are skipped without network calls.
 - Base: one valid provider key succeeds and returns a clearly labeled source such as `Source: TinyFish Fetch (acct-a)`.
 - Bad: printing a full API key in `get_config_info`, making live provider calls in unit tests, or adding MCP fallback without updating the matching CLI route and README.
 
@@ -261,8 +265,10 @@ result, err := pool.Fetch(ctx, request)
 - Configuration:
   - Use the existing provider config block from the active single config file.
   - For Tavily surfaces, use the active config file's `tavily.apiKey`, `tavily.apiURL`, and `tavily.enabled`.
+  - Paid or enhancement-only direct providers should default `enabled` to `false`; require an explicit local config opt-in such as `"enabled": true` before constructing a runtime client.
 - Behavior:
   - If the provider is disabled or missing a required key, return a clear unavailable error without network calls.
+  - Direct provider commands must not silently join default search/fetch/map fallback routes. Generated agent guidance must say when to use the direct command and when to keep ordinary fallback routing.
   - Engine methods should set `Content-Type: application/json` and `Authorization: Bearer <key>`.
   - Engine methods should reuse `httpDoWithRetry` for 429/5xx and network errors.
   - Human/MCP output should be compact and LLM-readable; JSON output may preserve the full typed response.
@@ -276,6 +282,7 @@ result, err := pool.Fetch(ctx, request)
 | --- | --- |
 | Missing required URL/query | Return a usage/tool error before network calls |
 | Provider disabled | Return unavailable error before network calls |
+| Provider has key but omits explicit opt-in when default-disabled | Return unavailable error before network calls |
 | Provider key missing | Return unavailable error before network calls |
 | Upstream 429/5xx or transient network error | Retry via shared retry helper |
 | Upstream non-retryable non-2xx | Return status code plus response body, with secrets redacted if applicable |
@@ -285,8 +292,13 @@ result, err := pool.Fetch(ctx, request)
 #### 5. Good/Base/Bad Cases
 
 - Good: `sourcemux cli crawl https://example.com/docs --instructions "Find API pages" --limit 10 --json` calls a configured Tavily test server in tests and returns typed crawl results.
+- Good: a paid enhancement command such as `firecrawl-scrape` requires
+  `enabled=true`; ordinary public/default `fetch --profile auto` is
+  policy-first and may use Firecrawl before Jina when Firecrawl is configured.
+  `fetch --profile cheap` is the explicit low-cost/Jina-first path, and v2
+  `capabilities.web_fetch.providers` may explicitly override the auto order.
 - Base: the MCP tool returns a concise text envelope with source, base URL, result count, and page snippets.
-- Bad: adding a CLI command that calls a live API in unit tests, or exposing a new MCP tool without documenting the matching CLI and config requirements.
+- Bad: adding a CLI command that calls a live API in unit tests, exposing a new MCP tool without documenting the matching CLI and config requirements, or wiring a paid direct provider into default fallback routing without an explicit routing task.
 
 #### 6. Tests Required
 
@@ -299,8 +311,14 @@ result, err := pool.Fetch(ctx, request)
   - MCP registration or formatter behavior for the new surface.
   - CLI JSON shape.
   - CLI config path using a local test server and dummy endpoint config.
+  - Disabled/default-disabled provider paths return unavailable without network calls.
+  - Existing default routes do not call the direct provider when it is configured.
 - Docs:
   - README command table and MCP tool table include the new surface.
+  - Generated agent skill guidance preserves policy-first fetch routing,
+    honors explicit v2 `web_fetch.providers` ordering, documents the direct
+    command as explicit, points cheap/zero-key reads to `fetch --profile cheap`,
+    and says not to use Firecrawl MCP.
 
 #### 7. Wrong vs Correct
 
