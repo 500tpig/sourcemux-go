@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type doctorOutput struct {
@@ -55,8 +56,9 @@ func runDoctor(args []string) int {
 		doctorCheck{Name: "config_load", Status: "ok", Detail: "config parsed"},
 		doctorCheck{Name: "main_search", Status: configuredStatus(cfg.MainSearchConfigured), Detail: fmt.Sprintf("%d Grok endpoint(s)", len(cfg.GrokEndpoints))},
 		doctorCheck{Name: "docs_search", Status: configuredStatus(cfg.DocsSearchConfigured), Detail: "Exa is the standard docs_search provider"},
-		doctorCheck{Name: "web_fetch", Status: configuredStatus(cfg.WebFetchConfigured), Detail: "Jina Reader is configured by URL and can run without a key"},
+		doctorCheck{Name: "web_fetch", Status: configuredStatus(cfg.WebFetchConfigured), Detail: fmt.Sprintf("provider order: %s", formatWebFetchOrder(cfg.WebFetchOrder))},
 		doctorCheck{Name: "tinyfish", Status: configuredStatus(cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0), Detail: fmt.Sprintf("%d key(s)", len(cfg.TinyFishKeys))},
+		doctorCheck{Name: "firecrawl", Status: configuredStatus(cfg.FirecrawlEnabled && len(cfg.FirecrawlKeys) > 0), Detail: fmt.Sprintf("%d key(s)", len(cfg.FirecrawlKeys))},
 		doctorCheck{Name: "tavily", Status: configuredStatus(cfg.TavilyEnabled && cfg.TavilyAPIKey != ""), Detail: "optional fallback provider"},
 	)
 	return emitDoctor(*jsonOut, out)
@@ -74,6 +76,13 @@ func configuredStatus(ok bool) string {
 		return "ok"
 	}
 	return "missing"
+}
+
+func formatWebFetchOrder(order []string) string {
+	if len(order) == 0 {
+		return "(none)"
+	}
+	return strings.Join(order, " -> ")
 }
 
 func emitDoctor(asJSON bool, out doctorOutput) int {

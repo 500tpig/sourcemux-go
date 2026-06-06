@@ -26,6 +26,16 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 		sb.WriteString(fmt.Sprintf("\nTavily Enabled: %v", cfg.TavilyEnabled))
 		sb.WriteString(fmt.Sprintf("\nTavily API URL: %s", cfg.TavilyAPIURL))
 		sb.WriteString(fmt.Sprintf("\nTavily API Key: %s", optionalKeyStatus(cfg.TavilyAPIKey)))
+		sb.WriteString(fmt.Sprintf("\nFirecrawl Enabled: %v", cfg.FirecrawlEnabled))
+		sb.WriteString(fmt.Sprintf("\nFirecrawl API URL: %s", cfg.FirecrawlAPIURL))
+		sb.WriteString(fmt.Sprintf("\nFirecrawl API Key: %s", optionalKeyStatus(cfg.FirecrawlAPIKey)))
+		sb.WriteString(fmt.Sprintf("\nFirecrawl Keys: %d configured", len(cfg.FirecrawlKeys)))
+		for i, key := range cfg.FirecrawlKeys {
+			sb.WriteString(fmt.Sprintf("\n    [%d] %s: %s", i+1, key.Name, maskKey(key.APIKey)))
+		}
+		if len(cfg.WebFetchOrder) > 0 {
+			sb.WriteString(fmt.Sprintf("\nWeb Fetch Order: %s", strings.Join(cfg.WebFetchOrder, " -> ")))
+		}
 		sb.WriteString(fmt.Sprintf("\nExa Enabled: %v", cfg.ExaEnabled))
 		sb.WriteString(fmt.Sprintf("\nExa API URL: %s", cfg.ExaAPIURL))
 		sb.WriteString(fmt.Sprintf("\nExa API Key: %s", optionalKeyStatus(cfg.ExaAPIKey)))

@@ -1,4 +1,4 @@
-// Package cli exposes the sourcemux engine layer (Grok pool, Jina Reader,
+// Package cli exposes the sourcemux engine layer (Grok pool, fetch providers,
 // Tavily) as a non-MCP one-shot CLI. It is invoked via `sourcemux cli
 // <subcommand> [flags]` and mirrors the MCP tool surface: search / fetch /
 // map / crawl / doctor / probe / config / setup / plan / research /
@@ -28,7 +28,11 @@ const usage = `Usage: sourcemux cli <command> [flags]
 Commands:
   search <query>      Run a web search through Grok/TinyFish/Exa/Tavily fallbacks.
   docs-search <query> Search docs through Exa docs/web search fallback.
-  fetch  <url>        Fetch a URL as Markdown (Jina/TinyFish/Exa/Tavily fallbacks).
+  fetch  <url>        Fetch a URL as Markdown through policy-first provider routing.
+  firecrawl-scrape <url>
+                      Scrape a difficult URL directly with Firecrawl (explicit only).
+  firecrawl-map <url>
+                      Map a site directly with Firecrawl (explicit only).
   exa-search <query>  Run Exa Search directly with advanced Exa-only options.
   exa-contents <url>  Run Exa Contents directly with advanced Exa-only options.
   map    <url>        Discover URLs on a site (Tavily Map; needs tavily.apiKey).
@@ -65,7 +69,10 @@ Examples:
   sourcemux cli search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --json
   sourcemux cli search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
   sourcemux cli docs-search "middleware auth" --json
-  sourcemux cli fetch  "https://example.com/article" --json
+  sourcemux cli fetch  "https://example.com/article" --profile auto --json
+  sourcemux cli fetch  "https://example.com/article" --profile cheap --json
+  sourcemux cli firecrawl-scrape "https://example.com/article" --json
+  sourcemux cli firecrawl-map "https://example.com" --search docs --limit 50 --json
   sourcemux cli exa-search "latest AI chip launches" --type deep --output-schema-json '{"type":"object"}' --json
   sourcemux cli exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
   sourcemux cli crawl  "https://example.com/docs" --instructions "Find API pages" --limit 10 --json
@@ -113,6 +120,10 @@ func RunWithConfig(args []string, configPath string) int {
 		return runDocsSearch(rest)
 	case "fetch":
 		return runFetch(rest)
+	case "firecrawl-scrape":
+		return runFirecrawlScrape(rest)
+	case "firecrawl-map":
+		return runFirecrawlMap(rest)
 	case "exa-search":
 		return runExaSearch(rest)
 	case "exa-contents":

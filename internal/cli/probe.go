@@ -28,16 +28,21 @@ type probeEndpoint struct {
 }
 
 type probeOutput struct {
-	TavilyEnabled bool            `json:"tavily_enabled"`
-	TavilyAPIURL  string          `json:"tavily_api_url"`
-	TavilyKey     string          `json:"tavily_key_status"`
-	ExaEnabled    bool            `json:"exa_enabled"`
-	ExaAPIURL     string          `json:"exa_api_url"`
-	ExaKey        string          `json:"exa_key_status"`
-	JinaAPIURL    string          `json:"jina_api_url"`
-	JinaKey       string          `json:"jina_key_status"`
-	Debug         bool            `json:"debug"`
-	Endpoints     []probeEndpoint `json:"endpoints"`
+	TavilyEnabled    bool                   `json:"tavily_enabled"`
+	TavilyAPIURL     string                 `json:"tavily_api_url"`
+	TavilyKey        string                 `json:"tavily_key_status"`
+	FirecrawlEnabled bool                   `json:"firecrawl_enabled"`
+	FirecrawlAPIURL  string                 `json:"firecrawl_api_url"`
+	FirecrawlKey     string                 `json:"firecrawl_key_status"`
+	FirecrawlKeys    []configNamedKeyOutput `json:"firecrawl_keys"`
+	WebFetchOrder    []string               `json:"web_fetch_order,omitempty"`
+	ExaEnabled       bool                   `json:"exa_enabled"`
+	ExaAPIURL        string                 `json:"exa_api_url"`
+	ExaKey           string                 `json:"exa_key_status"`
+	JinaAPIURL       string                 `json:"jina_api_url"`
+	JinaKey          string                 `json:"jina_key_status"`
+	Debug            bool                   `json:"debug"`
+	Endpoints        []probeEndpoint        `json:"endpoints"`
 }
 
 func runProbe(args []string) int {
@@ -68,15 +73,26 @@ func runProbeNamed(name string, args []string) int {
 	}
 
 	out := probeOutput{
-		TavilyEnabled: cfg.TavilyEnabled,
-		TavilyAPIURL:  cfg.TavilyAPIURL,
-		TavilyKey:     keyStatus(cfg.TavilyAPIKey),
-		ExaEnabled:    cfg.ExaEnabled,
-		ExaAPIURL:     cfg.ExaAPIURL,
-		ExaKey:        keyStatus(cfg.ExaAPIKey),
-		JinaAPIURL:    cfg.JinaAPIURL,
-		JinaKey:       keyStatus(cfg.JinaAPIKey),
-		Debug:         cfg.Debug,
+		TavilyEnabled:    cfg.TavilyEnabled,
+		TavilyAPIURL:     cfg.TavilyAPIURL,
+		TavilyKey:        keyStatus(cfg.TavilyAPIKey),
+		FirecrawlEnabled: cfg.FirecrawlEnabled,
+		FirecrawlAPIURL:  cfg.FirecrawlAPIURL,
+		FirecrawlKey:     keyStatus(cfg.FirecrawlAPIKey),
+		FirecrawlKeys:    []configNamedKeyOutput{},
+		WebFetchOrder:    append([]string(nil), cfg.WebFetchOrder...),
+		ExaEnabled:       cfg.ExaEnabled,
+		ExaAPIURL:        cfg.ExaAPIURL,
+		ExaKey:           keyStatus(cfg.ExaAPIKey),
+		JinaAPIURL:       cfg.JinaAPIURL,
+		JinaKey:          keyStatus(cfg.JinaAPIKey),
+		Debug:            cfg.Debug,
+	}
+	for _, key := range cfg.FirecrawlKeys {
+		out.FirecrawlKeys = append(out.FirecrawlKeys, configNamedKeyOutput{
+			Name:      key.Name,
+			KeyStatus: keyStatus(key.APIKey),
+		})
 	}
 
 	pool := engine.NewGrokPool(cfg.GrokEndpoints)
@@ -122,6 +138,13 @@ func runProbeNamed(name string, args []string) int {
 	fmt.Printf("Tavily Enabled: %v\n", out.TavilyEnabled)
 	fmt.Printf("Tavily API URL: %s\n", out.TavilyAPIURL)
 	fmt.Printf("Tavily API Key: %s\n", out.TavilyKey)
+	fmt.Printf("Firecrawl Enabled: %v\n", out.FirecrawlEnabled)
+	fmt.Printf("Firecrawl API URL: %s\n", out.FirecrawlAPIURL)
+	fmt.Printf("Firecrawl API Key: %s\n", out.FirecrawlKey)
+	fmt.Printf("Firecrawl Keys: %s\n", formatNamedKeyStatuses(out.FirecrawlKeys))
+	if len(out.WebFetchOrder) > 0 {
+		fmt.Printf("Web Fetch Order: %s\n", strings.Join(out.WebFetchOrder, " -> "))
+	}
 	fmt.Printf("Exa Enabled: %v\n", out.ExaEnabled)
 	fmt.Printf("Exa API URL: %s\n", out.ExaAPIURL)
 	fmt.Printf("Exa API Key: %s\n", out.ExaKey)

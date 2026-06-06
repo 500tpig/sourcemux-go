@@ -46,11 +46,18 @@ func buildWebFetchClients(cfg *config.Config) tools.WebFetchClients {
 	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
 		tinyfish = engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
 	}
+	var firecrawl *engine.FirecrawlPool
+	if cfg.FirecrawlEnabled && len(cfg.FirecrawlKeys) > 0 {
+		firecrawl = engine.NewFirecrawlPool(cfg.FirecrawlKeys, cfg.FirecrawlAPIURL)
+	}
 	return tools.WebFetchClients{
-		Jina:     engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey),
-		TinyFish: tinyfish,
-		Exa:      exa,
-		Tavily:   tavily,
+		Jina:        engine.NewJinaClient(cfg.JinaAPIURL, cfg.JinaAPIKey),
+		TinyFish:    tinyfish,
+		Firecrawl:   firecrawl,
+		Exa:         exa,
+		Tavily:      tavily,
+		Order:       cfg.WebFetchOrder,
+		StrictOrder: cfg.WebFetchStrictOrder,
 	}
 }
 
@@ -63,4 +70,11 @@ func buildDocsSearchClients(cfg *config.Config, cache tools.SourceCacher) tools.
 		Exa:   exa,
 		Cache: cache,
 	}
+}
+
+func buildFirecrawlClient(cfg *config.Config) *engine.FirecrawlClient {
+	if cfg == nil || !cfg.FirecrawlEnabled || len(cfg.FirecrawlKeys) == 0 {
+		return nil
+	}
+	return engine.NewFirecrawlClient(cfg.FirecrawlAPIURL, cfg.FirecrawlKeys[0].APIKey)
 }

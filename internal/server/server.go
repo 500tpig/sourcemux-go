@@ -20,6 +20,7 @@ type App struct {
 	Exa           *engine.ExaClient
 	Jina          *engine.JinaClient
 	TinyFish      *engine.TinyFishPool
+	Firecrawl     *engine.FirecrawlPool
 
 	// Source cache: sessionID -> []string (URLs)
 	SourcesMu sync.RWMutex
@@ -47,6 +48,9 @@ func Run(cfg *config.Config) error {
 	if cfg.TinyFishEnabled && len(cfg.TinyFishKeys) > 0 {
 		app.TinyFish = engine.NewTinyFishPool(cfg.TinyFishKeys, cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
 	}
+	if cfg.FirecrawlEnabled && len(cfg.FirecrawlKeys) > 0 {
+		app.Firecrawl = engine.NewFirecrawlPool(cfg.FirecrawlKeys, cfg.FirecrawlAPIURL)
+	}
 
 	s := mcp.NewMCPServer(
 		"sourcemux",
@@ -54,9 +58,18 @@ func Run(cfg *config.Config) error {
 	)
 
 	// Register tools
+	fetchClients := tools.WebFetchClients{
+		Jina:        app.Jina,
+		TinyFish:    app.TinyFish,
+		Firecrawl:   app.Firecrawl,
+		Exa:         app.Exa,
+		Tavily:      app.Tavily,
+		Order:       cfg.WebFetchOrder,
+		StrictOrder: cfg.WebFetchStrictOrder,
+	}
 	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app, cfg.SearchPolicy)
 	tools.RegisterDocsSearch(s, app.Exa, app)
-	tools.RegisterFetch(s, app.Jina, app.TinyFish, app.Exa, app.Tavily)
+	tools.RegisterFetch(s, fetchClients)
 	tools.RegisterExaSearchAdvanced(s, app.Exa)
 	tools.RegisterExaContentsAdvanced(s, app.Exa)
 	tools.RegisterMap(s, app.Tavily)
@@ -73,12 +86,7 @@ func Run(cfg *config.Config) error {
 			Cache:        app,
 			SearchPolicy: cfg.SearchPolicy,
 		},
-		Fetch: tools.WebFetchClients{
-			Jina:     app.Jina,
-			TinyFish: app.TinyFish,
-			Exa:      app.Exa,
-			Tavily:   app.Tavily,
-		},
+		Fetch:   fetchClients,
 		Sources: app,
 		Mapper:  app.Tavily,
 		Crawler: app.Tavily,

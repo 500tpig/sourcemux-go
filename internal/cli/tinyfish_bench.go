@@ -95,11 +95,11 @@ type tinyfishFetchMeasurement struct {
 }
 
 type tinyfishFetchResultSummary struct {
-	URL        string `json:"url"`
-	FinalURL   string `json:"final_url,omitempty"`
-	Title      string `json:"title,omitempty"`
-	TextLength int    `json:"text_length"`
-	LatencyMS  *int64 `json:"latency_ms,omitempty"`
+	URL        string                 `json:"url"`
+	FinalURL   string                 `json:"final_url,omitempty"`
+	Title      string                 `json:"title,omitempty"`
+	TextLength int                    `json:"text_length"`
+	LatencyMS  *engine.FlexibleNumber `json:"latency_ms,omitempty"`
 }
 
 type tinyfishAgentMeasurement struct {

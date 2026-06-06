@@ -239,8 +239,27 @@ type TinyFishFetchResult struct {
 	Text          json.RawMessage `json:"text"`
 	Links         []string        `json:"links,omitempty"`
 	ImageLinks    []string        `json:"image_links,omitempty"`
-	LatencyMS     *int64          `json:"latency_ms,omitempty"`
+	LatencyMS     *FlexibleNumber `json:"latency_ms,omitempty"`
 	Format        string          `json:"format,omitempty"`
+}
+
+type FlexibleNumber float64
+
+func (n *FlexibleNumber) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return err
+	}
+	*n = FlexibleNumber(v)
+	return nil
+}
+
+func (n FlexibleNumber) MarshalJSON() ([]byte, error) {
+	return []byte(strconv.FormatFloat(float64(n), 'f', -1, 64)), nil
 }
 
 type TinyFishFetchFailure struct {

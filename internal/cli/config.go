@@ -82,6 +82,12 @@ type configListOutput struct {
 	TavilyAPIURL  string `json:"tavily_api_url"`
 	TavilyKey     string `json:"tavily_key_status"`
 
+	FirecrawlEnabled bool                   `json:"firecrawl_enabled"`
+	FirecrawlAPIURL  string                 `json:"firecrawl_api_url"`
+	FirecrawlKey     string                 `json:"firecrawl_key_status"`
+	FirecrawlKeys    []configNamedKeyOutput `json:"firecrawl_keys"`
+	WebFetchOrder    []string               `json:"web_fetch_order,omitempty"`
+
 	ExaEnabled bool   `json:"exa_enabled"`
 	ExaAPIURL  string `json:"exa_api_url"`
 	ExaKey     string `json:"exa_key_status"`
@@ -231,6 +237,11 @@ func buildV2ConfigMap(cfg *cfgpkg.Config) map[string]any {
 		fetchProviders = append(fetchProviders, tavilyProviderMap(cfg))
 	}
 
+	enhanceProviders := []map[string]any{}
+	if cfg.FirecrawlEnabled && len(cfg.FirecrawlKeys) > 0 {
+		enhanceProviders = append(enhanceProviders, firecrawlProviderMap(cfg))
+	}
+
 	return map[string]any{
 		"version":         2,
 		"minimum_profile": "off",
@@ -238,7 +249,7 @@ func buildV2ConfigMap(cfg *cfgpkg.Config) map[string]any {
 			"main_search": map[string]any{"providers": mainProviders},
 			"docs_search": map[string]any{"providers": docsProviders},
 			"web_fetch":   map[string]any{"providers": fetchProviders},
-			"web_enhance": map[string]any{"providers": []map[string]any{}},
+			"web_enhance": map[string]any{"providers": enhanceProviders},
 		},
 		"reasoning_endpoints": cfg.ReasoningEndpoints,
 		"grokPoolTimeoutSec":  int64(cfg.GrokPoolTimeout.Seconds()),
@@ -276,6 +287,31 @@ func tavilyProviderMap(cfg *cfgpkg.Config) map[string]any {
 		"apiKey":  cfg.TavilyAPIKey,
 		"enabled": cfg.TavilyEnabled,
 	}
+}
+
+func firecrawlProviderMap(cfg *cfgpkg.Config) map[string]any {
+	out := map[string]any{
+		"type":    "firecrawl",
+		"name":    "firecrawl-main",
+		"apiURL":  cfg.FirecrawlAPIURL,
+		"apiKey":  cfg.FirecrawlAPIKey,
+		"enabled": cfg.FirecrawlEnabled,
+	}
+	if keys := firecrawlProviderExtraKeys(cfg); len(keys) > 0 {
+		out["keys"] = keys
+	}
+	return out
+}
+
+func firecrawlProviderExtraKeys(cfg *cfgpkg.Config) []engine.FirecrawlKey {
+	out := make([]engine.FirecrawlKey, 0, len(cfg.FirecrawlKeys))
+	for _, key := range cfg.FirecrawlKeys {
+		if key.APIKey == "" || key.APIKey == cfg.FirecrawlAPIKey {
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
 }
 
 func tinyFishProviderMap(cfg *cfgpkg.Config) map[string]any {
@@ -423,6 +459,10 @@ func runConfigList(args []string) int {
 		fmt.Printf("      API key: %s\n", ep.KeyStatus)
 	}
 	fmt.Printf("\nTavily: enabled=%v url=%s key=%s\n", out.TavilyEnabled, out.TavilyAPIURL, out.TavilyKey)
+	fmt.Printf("Firecrawl: enabled=%v url=%s key=%s keys=%s\n", out.FirecrawlEnabled, out.FirecrawlAPIURL, out.FirecrawlKey, formatNamedKeyStatuses(out.FirecrawlKeys))
+	if len(out.WebFetchOrder) > 0 {
+		fmt.Printf("Web fetch order: %s\n", strings.Join(out.WebFetchOrder, " -> "))
+	}
 	fmt.Printf("Exa:    enabled=%v url=%s key=%s\n", out.ExaEnabled, out.ExaAPIURL, out.ExaKey)
 	fmt.Printf("Jina:   url=%s key=%s\n", out.JinaAPIURL, out.JinaKey)
 	fmt.Printf("TinyFish: enabled=%v search=%s fetch=%s keys=%s\n",
@@ -486,6 +526,11 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		TavilyEnabled:      cfg.TavilyEnabled,
 		TavilyAPIURL:       cfg.TavilyAPIURL,
 		TavilyKey:          keyStatus(cfg.TavilyAPIKey),
+		FirecrawlEnabled:   cfg.FirecrawlEnabled,
+		FirecrawlAPIURL:    cfg.FirecrawlAPIURL,
+		FirecrawlKey:       keyStatus(cfg.FirecrawlAPIKey),
+		FirecrawlKeys:      []configNamedKeyOutput{},
+		WebFetchOrder:      append([]string(nil), cfg.WebFetchOrder...),
 		ExaEnabled:         cfg.ExaEnabled,
 		ExaAPIURL:          cfg.ExaAPIURL,
 		ExaKey:             keyStatus(cfg.ExaAPIKey),
@@ -529,6 +574,12 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 	}
 	for _, key := range cfg.TinyFishKeys {
 		out.TinyFishKeys = append(out.TinyFishKeys, configNamedKeyOutput{
+			Name:      key.Name,
+			KeyStatus: keyStatus(key.APIKey),
+		})
+	}
+	for _, key := range cfg.FirecrawlKeys {
+		out.FirecrawlKeys = append(out.FirecrawlKeys, configNamedKeyOutput{
 			Name:      key.Name,
 			KeyStatus: keyStatus(key.APIKey),
 		})

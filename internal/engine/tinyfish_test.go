@@ -66,7 +66,7 @@ func TestTinyFishFetchRequestAndResponse(t *testing.T) {
 		if len(req.URLs) != 1 || req.URLs[0] != "https://example.com" || req.Format != "markdown" || !req.Links {
 			t.Fatalf("request = %+v", req)
 		}
-		latency := int64(42)
+		latency := FlexibleNumber(42)
 		resp := TinyFishFetchResponse{
 			Results: []TinyFishFetchResult{{
 				URL:       "https://example.com",
@@ -100,6 +100,31 @@ func TestTinyFishFetchRequestAndResponse(t *testing.T) {
 	}
 	if got := TinyFishTextLength(res.Results[0].Text); got != len("hello world") {
 		t.Fatalf("TinyFishTextLength = %d", got)
+	}
+}
+
+func TestTinyFishFetchAcceptsFloatLatencyMS(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results": [{
+				"url": "https://example.com",
+				"text": "hello",
+				"latency_ms": 42.5,
+				"format": "markdown"
+			}]
+		}`))
+	}))
+	defer srv.Close()
+
+	client := NewTinyFishClient("tf-secret")
+	client.FetchURL = srv.URL
+	res, err := client.Fetch(context.Background(), TinyFishFetchRequest{URLs: []string{"https://example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Results[0].LatencyMS == nil || float64(*res.Results[0].LatencyMS) != 42.5 {
+		t.Fatalf("latency_ms = %v", res.Results[0].LatencyMS)
 	}
 }
 

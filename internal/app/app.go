@@ -27,6 +27,9 @@ Commands:
   doctor              Check config locally; use --probe for live provider probes.
   search <query>      Run a web search through configured fallbacks.
   fetch <url>         Fetch a URL as Markdown through configured fallbacks.
+  firecrawl-scrape <url>
+                      Scrape a difficult URL directly with Firecrawl.
+  firecrawl-map <url> Map a site directly with Firecrawl.
   docs-search <query> Search documentation/source pages.
   research <query>    Run a bounded research workflow.
   config <command>    Inspect the active config path or masked config.
@@ -101,6 +104,8 @@ func isTopLevelCLICommand(cmd string) bool {
 	case "search",
 		"docs-search",
 		"fetch",
+		"firecrawl-scrape",
+		"firecrawl-map",
 		"exa-search",
 		"exa-contents",
 		"map",

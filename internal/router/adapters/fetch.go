@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/500tpig/sourcemux-go/internal/capability"
 	"github.com/500tpig/sourcemux-go/internal/engine"
@@ -69,6 +70,67 @@ func (p *TinyFishFetchProvider) Try(ctx context.Context, req capability.Request)
 		}
 	}
 	return fetchResult("TinyFish Fetch ("+res.KeyName+")", resultURL, content), nil
+}
+
+type FirecrawlFetchProvider struct {
+	Pool *engine.FirecrawlPool
+}
+
+func NewFirecrawlFetch(pool *engine.FirecrawlPool) *FirecrawlFetchProvider {
+	return &FirecrawlFetchProvider{Pool: pool}
+}
+
+func (p *FirecrawlFetchProvider) Name() string { return "firecrawl-scrape" }
+func (p *FirecrawlFetchProvider) Kind() capability.Kind {
+	return capability.WebFetch
+}
+func (p *FirecrawlFetchProvider) AttemptCount() int {
+	if p == nil || p.Pool == nil {
+		return 0
+	}
+	return p.Pool.Len()
+}
+
+func (p *FirecrawlFetchProvider) Try(ctx context.Context, req capability.Request) (capability.Result, error) {
+	if p == nil || p.Pool == nil || p.Pool.Len() == 0 {
+		return capability.Result{}, fmt.Errorf("firecrawl pool is empty: no keys configured")
+	}
+	onlyClean := true
+	removeBase64Images := true
+	blockAds := true
+	storeInCache := true
+	res, err := p.Pool.Scrape(ctx, engine.FirecrawlScrapeRequest{
+		URL:                req.URL,
+		Formats:            []string{"markdown"},
+		OnlyCleanContent:   &onlyClean,
+		RemoveBase64Images: &removeBase64Images,
+		BlockAds:           &blockAds,
+		StoreInCache:       &storeInCache,
+	})
+	if err != nil {
+		return capability.Result{}, err
+	}
+	resultURL := engine.FirecrawlScrapeResultURL(res.FirecrawlScrapeResult, req.URL)
+	return fetchResult("Firecrawl Scrape ("+res.KeyName+")", resultURL, res.Data.Markdown), nil
+}
+
+func (p *FirecrawlFetchProvider) Classify(result capability.Result, err error) (capability.Outcome, capability.FallbackReason, string) {
+	if err != nil {
+		detail := err.Error()
+		lower := strings.ToLower(detail)
+		reason := capability.ReasonUpstreamError
+		if strings.Contains(lower, "429") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "too many requests") {
+			reason = capability.ReasonRateLimited
+		}
+		if strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline") {
+			reason = capability.ReasonTimeout
+		}
+		return capability.Transient, reason, detail
+	}
+	if strings.TrimSpace(result.Content) == "" {
+		return capability.Empty, capability.ReasonNoContent, "empty content"
+	}
+	return capability.OK, capability.ReasonNone, ""
 }
 
 type ExaContentsProvider struct {

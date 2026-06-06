@@ -262,6 +262,7 @@ func TestConfigListMasksSecrets(t *testing.T) {
 	  "grokEndpoints": [{"name":"file","baseURL":"https://file.example/v1","apiKey":"sk-super-secret","model":"grok-test","apiType":"responses","profile":"heavy","sendSearchFlag":true,"responseTools":["web_search","x_search"]}],
 	  "reasoningEndpoints": [{"name":"deepseek","baseURL":"https://api.deepseek.com/v1","apiKey":"sk-deepseek-secret","model":"deepseek-v4-flash"}],
 	  "tavily": {"apiKey": "tvly-secret"},
+	  "firecrawl": {"apiKey": "fc-secret"},
 	  "exa": {"apiKey": "exa-secret"},
 	  "jina": {"apiKey": "jina-secret"},
 	  "tinyfish": {"keys": [{"name":"a","apiKey":"tf-secret-a"},{"name":"b","apiKey":"tf-secret-b"}]}
@@ -272,7 +273,7 @@ func TestConfigListMasksSecrets(t *testing.T) {
 			t.Fatalf("Run(config list --json) = %d, want 0", got)
 		}
 	})
-	for _, secret := range []string{"sk-super-secret", "sk-deepseek-secret", "tvly-secret", "exa-secret", "jina-secret", "tf-secret-a", "tf-secret-b"} {
+	for _, secret := range []string{"sk-super-secret", "sk-deepseek-secret", "tvly-secret", "fc-secret", "exa-secret", "jina-secret", "tf-secret-a", "tf-secret-b"} {
 		if strings.Contains(out, secret) {
 			t.Fatalf("config list leaked secret %q in %s", secret, out)
 		}
@@ -294,7 +295,7 @@ func TestConfigListMasksSecrets(t *testing.T) {
 	if len(parsed.ReasoningEndpoints) != 1 || parsed.ReasoningEndpoints[0].KeyStatus == "" {
 		t.Fatalf("reasoning endpoint key status missing: %+v", parsed.ReasoningEndpoints)
 	}
-	if parsed.TavilyKey == "(not set)" || len(parsed.TinyFishKeys) != 2 {
+	if parsed.TavilyKey == "(not set)" || parsed.FirecrawlKey == "(not set)" || len(parsed.TinyFishKeys) != 2 {
 		t.Fatalf("masked provider keys missing: %+v", parsed)
 	}
 }
@@ -1140,6 +1141,399 @@ func TestRunExaContentsJSONUsesConfig(t *testing.T) {
 	}
 	if decoded.Source != "exa-contents-advanced" || len(decoded.Subpages) != 1 || decoded.Subpages[0].URL != "https://example.com/a" {
 		t.Fatalf("decoded output = %+v", decoded)
+	}
+}
+
+func TestRunFirecrawlScrapeJSONUsesConfig(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/scrape" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer fc-test" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"# Firecrawl\ncontent","links":["https://example.com/a"],"metadata":{"title":"Firecrawl","sourceURL":"https://example.com/final"}}}`))
+	}))
+	defer ts.Close()
+
+	path := writeCLIConfig(t, `{
+	  "firecrawl": {"apiURL": "`+ts.URL+`", "apiKey": "fc-test", "enabled": true}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{
+			"--config", path,
+			"firecrawl-scrape", "https://example.com",
+			"--format", "markdown,links",
+			"--include-tags", "article,main",
+			"--exclude-tags", "nav,footer",
+			"--wait-for", "250",
+			"--proxy", "auto",
+			"--json",
+		}); got != 0 {
+			t.Fatalf("Run(firecrawl-scrape) = %d, want 0", got)
+		}
+	})
+	var decoded firecrawlScrapeOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "Firecrawl Scrape" || decoded.ResultURL != "https://example.com/final" || !strings.Contains(decoded.Content, "content") {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+	if len(decoded.RouteDecision) != 1 || decoded.RouteDecision[0].Provider != "firecrawl-scrape" {
+		t.Fatalf("route_decision = %+v", decoded.RouteDecision)
+	}
+	if gotBody["url"] != "https://example.com" || gotBody["waitFor"] != float64(250) || gotBody["proxy"] != "auto" {
+		t.Fatalf("request body = %#v", gotBody)
+	}
+	formats, ok := gotBody["formats"].([]any)
+	if !ok || strings.Join([]string{formats[0].(string), formats[1].(string)}, ",") != "markdown,links" {
+		t.Fatalf("formats = %#v", gotBody["formats"])
+	}
+	includeTags, ok := gotBody["includeTags"].([]any)
+	if !ok || len(includeTags) != 2 || includeTags[0] != "article" || includeTags[1] != "main" {
+		t.Fatalf("includeTags = %#v", gotBody["includeTags"])
+	}
+	excludeTags, ok := gotBody["excludeTags"].([]any)
+	if !ok || len(excludeTags) != 2 || excludeTags[0] != "nav" || excludeTags[1] != "footer" {
+		t.Fatalf("excludeTags = %#v", gotBody["excludeTags"])
+	}
+}
+
+func TestRunFirecrawlMapJSONUsesConfig(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/map" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer fc-test" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"links":[{"url":"https://example.com/docs","title":"Docs"},{"url":"https://example.com/blog","description":"Blog"}]}`))
+	}))
+	defer ts.Close()
+
+	path := writeCLIConfig(t, `{
+	  "firecrawl": {"apiURL": "`+ts.URL+`", "apiKey": "fc-test", "enabled": true}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{
+			"--config", path,
+			"firecrawl-map", "https://example.com",
+			"--search", "docs",
+			"--limit", "25",
+			"--sitemap", "only",
+			"--firecrawl-timeout", "60000",
+			"--json",
+		}); got != 0 {
+			t.Fatalf("Run(firecrawl-map) = %d, want 0", got)
+		}
+	})
+	var decoded firecrawlMapOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "Firecrawl Map" || decoded.Count != 2 || decoded.URLs[0] != "https://example.com/docs" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+	if len(decoded.RouteDecision) != 1 || decoded.RouteDecision[0].Provider != "firecrawl-map" {
+		t.Fatalf("route_decision = %+v", decoded.RouteDecision)
+	}
+	if gotBody["search"] != "docs" || gotBody["limit"] != float64(25) || gotBody["sitemap"] != "only" || gotBody["timeout"] != float64(60000) {
+		t.Fatalf("request body = %#v", gotBody)
+	}
+}
+
+func TestRunFirecrawlUnavailableDoesNotCallNetwork(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	for _, tc := range []struct {
+		name string
+		body string
+		args []string
+	}{
+		{
+			name: "missing key scrape",
+			body: `{"firecrawl":{"apiURL":"` + ts.URL + `","enabled":true}}`,
+			args: []string{"firecrawl-scrape", "https://example.com", "--json"},
+		},
+		{
+			name: "disabled map",
+			body: `{"firecrawl":{"apiURL":"` + ts.URL + `","apiKey":"fc-test","enabled":false}}`,
+			args: []string{"firecrawl-map", "https://example.com", "--json"},
+		},
+		{
+			name: "key without explicit enabled scrape",
+			body: `{"firecrawl":{"apiURL":"` + ts.URL + `","apiKey":"fc-test"}}`,
+			args: []string{"firecrawl-scrape", "https://example.com", "--json"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeCLIConfig(t, tc.body)
+			out := captureStdout(t, func() {
+				args := append([]string{"--config", path}, tc.args...)
+				if got := Run(args); got != 1 {
+					t.Fatalf("Run(%v) = %d, want 1", args, got)
+				}
+			})
+			if !strings.Contains(out, "Firecrawl is not configured") {
+				t.Fatalf("output = %s", out)
+			}
+		})
+	}
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Fatalf("network calls = %d, want 0", got)
+	}
+}
+
+func TestRunFirecrawlScrapeErrorCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{name: "401", status: http.StatusUnauthorized, body: `bad key`, want: "401"},
+		{name: "500", status: http.StatusInternalServerError, body: `upstream down`, want: "500"},
+		{name: "empty markdown", status: http.StatusOK, body: `{"success":true,"data":{"markdown":" "}}`, want: "empty markdown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer ts.Close()
+
+			path := writeCLIConfig(t, `{"firecrawl":{"apiURL":"`+ts.URL+`","apiKey":"fc-test","enabled":true}}`)
+			out := captureStdout(t, func() {
+				if got := Run([]string{"--config", path, "firecrawl-scrape", "https://example.com", "--json"}); got != 1 {
+					t.Fatalf("Run(firecrawl-scrape error) = %d, want 1", got)
+				}
+			})
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("output missing %q: %s", tt.want, out)
+			}
+			if !strings.Contains(out, "route_decision") {
+				t.Fatalf("error output missing route_decision: %s", out)
+			}
+		})
+	}
+}
+
+func TestRunFetchDefaultUsesFirecrawlWhenConfiguredAndCheapUsesJina(t *testing.T) {
+	jina := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("# Jina\nunchanged fetch route"))
+	}))
+	defer jina.Close()
+
+	tavily := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/map" {
+			t.Fatalf("unexpected tavily path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":["https://example.com/tavily"]}`))
+	}))
+	defer tavily.Close()
+
+	var firecrawlCalls int32
+	firecrawl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firecrawlCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"firecrawl"}}`))
+	}))
+	defer firecrawl.Close()
+
+	path := writeCLIConfig(t, `{
+	  "jina": {"apiURL": "`+jina.URL+`"},
+	  "tavily": {"apiURL": "`+tavily.URL+`", "apiKey": "tvly-test", "enabled": true},
+	  "firecrawl": {"apiURL": "`+firecrawl.URL+`", "apiKey": "fc-test", "enabled": true}
+	}`)
+
+	fetchOut := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch) = %d, want 0", got)
+		}
+	})
+	var fetchDecoded fetchOutput
+	if err := json.Unmarshal([]byte(fetchOut), &fetchDecoded); err != nil {
+		t.Fatalf("decode fetch: %v\n%s", err, fetchOut)
+	}
+	if !strings.HasPrefix(fetchDecoded.Source, "Firecrawl Scrape") || fetchDecoded.Content != "firecrawl" {
+		t.Fatalf("fetch decoded = %+v", fetchDecoded)
+	}
+	if fetchDecoded.Policy.EffectiveProfile != "auto" || fetchDecoded.Policy.Intent != "ordinary" {
+		t.Fatalf("fetch policy = %+v", fetchDecoded.Policy)
+	}
+
+	cheapOut := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com", "--profile", "cheap", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch --profile cheap) = %d, want 0", got)
+		}
+	})
+	var cheapDecoded fetchOutput
+	if err := json.Unmarshal([]byte(cheapOut), &cheapDecoded); err != nil {
+		t.Fatalf("decode cheap fetch: %v\n%s", err, cheapOut)
+	}
+	if cheapDecoded.Source != "Jina Reader" || !strings.Contains(cheapDecoded.Content, "unchanged fetch route") {
+		t.Fatalf("cheap fetch decoded = %+v", cheapDecoded)
+	}
+	if cheapDecoded.Policy.EffectiveProfile != "cheap" || len(cheapDecoded.RouteDecision) == 0 || cheapDecoded.RouteDecision[0].Provider != "jina-reader" {
+		t.Fatalf("cheap route = policy=%+v decisions=%+v", cheapDecoded.Policy, cheapDecoded.RouteDecision)
+	}
+
+	mapOut := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "map", "https://example.com", "--json"}); got != 0 {
+			t.Fatalf("Run(map) = %d, want 0", got)
+		}
+	})
+	var mapDecoded mapOutput
+	if err := json.Unmarshal([]byte(mapOut), &mapDecoded); err != nil {
+		t.Fatalf("decode map: %v\n%s", err, mapOut)
+	}
+	if mapDecoded.URLs[0] != "https://example.com/tavily" {
+		t.Fatalf("map decoded = %+v", mapDecoded)
+	}
+	if got := atomic.LoadInt32(&firecrawlCalls); got != 1 {
+		t.Fatalf("firecrawl calls = %d, want 1", got)
+	}
+}
+
+func TestRunFetchUsesFirecrawlFirstWhenV2WebFetchOrdersItFirst(t *testing.T) {
+	var firecrawlCalls int32
+	firecrawl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firecrawlCalls, 1)
+		if r.URL.Path != "/scrape" {
+			t.Fatalf("unexpected firecrawl path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer fc-primary" && got != "Bearer fc-backup" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode firecrawl body: %v", err)
+		}
+		if body["onlyCleanContent"] != true {
+			t.Fatalf("onlyCleanContent = %#v", body["onlyCleanContent"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"clean firecrawl content","metadata":{"sourceURL":"https://example.com/final"}}}`))
+	}))
+	defer firecrawl.Close()
+
+	var jinaCalls int32
+	jina := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&jinaCalls, 1)
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("jina content"))
+	}))
+	defer jina.Close()
+
+	path := writeCLIConfig(t, `{
+	  "version": 2,
+	  "minimum_profile": "off",
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {
+	      "providers": [
+	        {
+	          "type": "firecrawl",
+	          "apiURL": "`+firecrawl.URL+`",
+	          "keys": [{"name":"primary","apiKey":"fc-primary"},{"name":"backup","apiKey":"fc-backup"}],
+	          "enabled": true
+	        },
+	        {"type": "jina", "apiURL": "`+jina.URL+`"}
+	      ]
+	    },
+	    "web_enhance": {"providers": []}
+	  }
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch) = %d, want 0", got)
+		}
+	})
+	var decoded fetchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if !strings.HasPrefix(decoded.Source, "Firecrawl Scrape") || decoded.URL != "https://example.com/final" || decoded.Content != "clean firecrawl content" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+	if len(decoded.RouteDecision) != 1 || decoded.RouteDecision[0].Provider != "firecrawl-scrape" {
+		t.Fatalf("route_decision = %+v", decoded.RouteDecision)
+	}
+	if atomic.LoadInt32(&firecrawlCalls) != 1 || atomic.LoadInt32(&jinaCalls) != 0 {
+		t.Fatalf("calls firecrawl=%d jina=%d", firecrawlCalls, jinaCalls)
+	}
+}
+
+func TestRunFetchFallsBackFromFirecrawlToJinaInV2Order(t *testing.T) {
+	firecrawl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("bad key fc-primary"))
+	}))
+	defer firecrawl.Close()
+
+	jina := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("jina fallback content"))
+	}))
+	defer jina.Close()
+
+	path := writeCLIConfig(t, `{
+	  "version": 2,
+	  "minimum_profile": "off",
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {
+	      "providers": [
+	        {"type": "firecrawl", "apiURL": "`+firecrawl.URL+`", "apiKey": "fc-primary", "enabled": true},
+	        {"type": "jina", "apiURL": "`+jina.URL+`"}
+	      ]
+	    },
+	    "web_enhance": {"providers": []}
+	  }
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch) = %d, want 0", got)
+		}
+	})
+	var decoded fetchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Source != "Jina Reader" || decoded.Content != "jina fallback content" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+	if len(decoded.RouteDecision) != 2 || decoded.RouteDecision[0].Provider != "firecrawl-scrape" || decoded.RouteDecision[1].Provider != "jina-reader" {
+		t.Fatalf("route_decision = %+v", decoded.RouteDecision)
+	}
+	if strings.Contains(out, "fc-primary") {
+		t.Fatalf("output leaked firecrawl key: %s", out)
 	}
 }
 

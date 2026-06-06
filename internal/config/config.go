@@ -30,6 +30,13 @@ type Config struct {
 	TavilyAPIKey  string
 	TavilyEnabled bool
 
+	FirecrawlAPIURL     string
+	FirecrawlAPIKey     string
+	FirecrawlKeys       []engine.FirecrawlKey
+	FirecrawlEnabled    bool
+	WebFetchOrder       []string
+	WebFetchStrictOrder bool
+
 	ExaAPIURL  string
 	ExaAPIKey  string
 	ExaEnabled bool
@@ -82,9 +89,10 @@ type fileConfig struct {
 	ReasoningEndpoints   []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
 	ReasoningEndpointsV2 []engine.ReasoningEndpoint `json:"reasoning_endpoints"`
 
-	Tavily serviceFileConfig `json:"tavily"`
-	Exa    serviceFileConfig `json:"exa"`
-	Jina   serviceFileConfig `json:"jina"`
+	Tavily    serviceFileConfig `json:"tavily"`
+	Firecrawl serviceFileConfig `json:"firecrawl"`
+	Exa       serviceFileConfig `json:"exa"`
+	Jina      serviceFileConfig `json:"jina"`
 
 	TinyFish tinyFishFileConfig `json:"tinyfish"`
 
@@ -135,9 +143,10 @@ type providerFileConfig struct {
 }
 
 type serviceFileConfig struct {
-	APIURL  string `json:"apiURL"`
-	APIKey  string `json:"apiKey"`
-	Enabled *bool  `json:"enabled"`
+	APIURL  string                `json:"apiURL"`
+	APIKey  string                `json:"apiKey"`
+	Keys    []engine.FirecrawlKey `json:"keys"`
+	Enabled *bool                 `json:"enabled"`
 }
 
 type tinyFishFileConfig struct {
@@ -208,6 +217,13 @@ func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 		TavilyAPIKey:  strings.TrimSpace(fileCfg.Tavily.APIKey),
 		TavilyEnabled: boolPtrOr(fileCfg.Tavily.Enabled, true),
 
+		FirecrawlAPIURL:     stringOr(fileCfg.Firecrawl.APIURL, engine.DefaultFirecrawlAPIURL),
+		FirecrawlAPIKey:     strings.TrimSpace(fileCfg.Firecrawl.APIKey),
+		FirecrawlKeys:       normalizeFirecrawlKeys(fileCfg.Firecrawl.APIKey, fileCfg.Firecrawl.Keys),
+		FirecrawlEnabled:    boolPtrOr(fileCfg.Firecrawl.Enabled, false),
+		WebFetchOrder:       defaultWebFetchOrder(),
+		WebFetchStrictOrder: false,
+
 		ExaAPIURL:  stringOr(fileCfg.Exa.APIURL, "https://api.exa.ai"),
 		ExaAPIKey:  strings.TrimSpace(fileCfg.Exa.APIKey),
 		ExaEnabled: boolPtrOr(fileCfg.Exa.Enabled, true),
@@ -237,20 +253,24 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 	}
 
 	out := &Config{
-		Version:            2,
-		MinimumProfile:     normalizeMinimumProfile(fileCfg.MinimumProfile),
-		TavilyAPIURL:       "https://api.tavily.com",
-		TavilyEnabled:      true,
-		ExaAPIURL:          "https://api.exa.ai",
-		ExaEnabled:         true,
-		JinaAPIURL:         "https://r.jina.ai",
-		TinyFishEnabled:    true,
-		TinyFishSearchURL:  engine.DefaultTinyFishSearchURL,
-		TinyFishFetchURL:   engine.DefaultTinyFishFetchURL,
-		Debug:              boolPtrOr(fileCfg.Debug, false),
-		LogLevel:           stringOr(fileCfg.LogLevel, "INFO"),
-		GrokPoolTimeout:    secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
-		GrokPoolTimeoutSet: fileCfg.GrokPoolTimeoutSec != nil,
+		Version:             2,
+		MinimumProfile:      normalizeMinimumProfile(fileCfg.MinimumProfile),
+		TavilyAPIURL:        "https://api.tavily.com",
+		TavilyEnabled:       true,
+		FirecrawlAPIURL:     engine.DefaultFirecrawlAPIURL,
+		FirecrawlEnabled:    false,
+		WebFetchOrder:       normalizeV2WebFetchOrder(fileCfg.Capabilities.WebFetch.Providers),
+		WebFetchStrictOrder: true,
+		ExaAPIURL:           "https://api.exa.ai",
+		ExaEnabled:          true,
+		JinaAPIURL:          "https://r.jina.ai",
+		TinyFishEnabled:     true,
+		TinyFishSearchURL:   engine.DefaultTinyFishSearchURL,
+		TinyFishFetchURL:    engine.DefaultTinyFishFetchURL,
+		Debug:               boolPtrOr(fileCfg.Debug, false),
+		LogLevel:            stringOr(fileCfg.LogLevel, "INFO"),
+		GrokPoolTimeout:     secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+		GrokPoolTimeoutSet:  fileCfg.GrokPoolTimeoutSec != nil,
 	}
 	searchPolicy, err := normalizeSearchPolicy(fileCfg.SearchPolicy)
 	if err != nil {
@@ -280,6 +300,7 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 	}
 	out.GrokEndpoints = endpoints
 	out.TinyFishKeys = normalizeTinyFishKeys(out.TinyFishKeys)
+	out.FirecrawlKeys = normalizeFirecrawlKeys(out.FirecrawlAPIKey, out.FirecrawlKeys)
 	out.MainSearchConfigured = v2HasMainSearch(fileCfg.Capabilities.MainSearch.Providers)
 	out.DocsSearchConfigured = v2HasDocsSearch(fileCfg.Capabilities.DocsSearch.Providers)
 	out.WebFetchConfigured = v2HasWebFetch(fileCfg.Capabilities.WebFetch.Providers)
@@ -287,7 +308,7 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 }
 
 func rejectMixedV1V2(raw map[string]json.RawMessage) error {
-	for _, key := range []string{"grokEndpoints", "reasoningEndpoints", "tavily", "exa", "jina", "tinyfish"} {
+	for _, key := range []string{"grokEndpoints", "reasoningEndpoints", "tavily", "firecrawl", "exa", "jina", "tinyfish"} {
 		if _, ok := raw[key]; ok {
 			return fmt.Errorf("config mixes v2 capabilities with legacy %q; use either v1 fields or v2 capabilities, not both", key)
 		}
@@ -297,10 +318,18 @@ func rejectMixedV1V2(raw map[string]json.RawMessage) error {
 
 func applyV2Providers(out *Config, providers []providerFileConfig, path string) error {
 	for i, p := range providers {
-		if !providerEnabled(p) {
+		providerType := strings.TrimSpace(p.Type)
+		if providerType == "" || providerType == "disabled" {
 			continue
 		}
-		switch strings.TrimSpace(p.Type) {
+		if providerType == "firecrawl" {
+			if !boolPtrOr(p.Enabled, false) {
+				continue
+			}
+		} else if !providerEnabled(p) {
+			continue
+		}
+		switch providerType {
 		case "", "disabled":
 			continue
 		case "grok-pool":
@@ -326,6 +355,11 @@ func applyV2Providers(out *Config, providers []providerFileConfig, path string) 
 			out.TavilyAPIURL = stringOr(p.APIURL, out.TavilyAPIURL)
 			out.TavilyAPIKey = strings.TrimSpace(p.APIKey)
 			out.TavilyEnabled = boolPtrOr(p.Enabled, true)
+		case "firecrawl":
+			out.FirecrawlAPIURL = stringOr(p.APIURL, out.FirecrawlAPIURL)
+			out.FirecrawlAPIKey = strings.TrimSpace(p.APIKey)
+			out.FirecrawlKeys = append(out.FirecrawlKeys, p.Keys...)
+			out.FirecrawlEnabled = boolPtrOr(p.Enabled, true)
 		default:
 			return fmt.Errorf("parse %s capabilities provider #%d: unsupported type %q", path, i, p.Type)
 		}
@@ -388,9 +422,37 @@ func v2HasWebFetch(providers []providerFileConfig) bool {
 			return len(p.Keys) > 0
 		case "exa", "tavily":
 			return strings.TrimSpace(p.APIKey) != ""
+		case "firecrawl":
+			return boolPtrOr(p.Enabled, false) && (strings.TrimSpace(p.APIKey) != "" || len(p.Keys) > 0)
 		}
 	}
 	return false
+}
+
+func defaultWebFetchOrder() []string {
+	return []string{"firecrawl", "jina", "exa", "tavily", "tinyfish"}
+}
+
+func normalizeV2WebFetchOrder(providers []providerFileConfig) []string {
+	out := make([]string, 0, len(providers))
+	for _, p := range providers {
+		t := strings.TrimSpace(p.Type)
+		if t == "" || t == "disabled" {
+			continue
+		}
+		if t == "firecrawl" {
+			if !boolPtrOr(p.Enabled, false) {
+				continue
+			}
+		} else if !providerEnabled(p) {
+			continue
+		}
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func providerEnabled(p providerFileConfig) bool {
@@ -575,6 +637,32 @@ func normalizeTinyFishKeys(keys []engine.TinyFishKey) []engine.TinyFishKey {
 			key.Name = fmt.Sprintf("key-%d", i)
 		}
 		out = append(out, key)
+	}
+	return out
+}
+
+func normalizeFirecrawlKeys(apiKey string, keys []engine.FirecrawlKey) []engine.FirecrawlKey {
+	out := make([]engine.FirecrawlKey, 0, len(keys)+1)
+	seen := make(map[string]struct{})
+	if strings.TrimSpace(apiKey) != "" {
+		key := engine.FirecrawlKey{Name: "primary", APIKey: strings.TrimSpace(apiKey)}
+		out = append(out, key)
+		seen[key.APIKey] = struct{}{}
+	}
+	for i, key := range keys {
+		key.APIKey = strings.TrimSpace(key.APIKey)
+		key.Name = strings.TrimSpace(key.Name)
+		if key.APIKey == "" {
+			continue
+		}
+		if _, ok := seen[key.APIKey]; ok {
+			continue
+		}
+		if key.Name == "" {
+			key.Name = fmt.Sprintf("key-%d", i)
+		}
+		out = append(out, key)
+		seen[key.APIKey] = struct{}{}
 	}
 	return out
 }

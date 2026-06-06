@@ -72,6 +72,7 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	    }
 	  ],
 	  "tavily": {"apiURL": "https://tavily.test", "apiKey": "tvly-test", "enabled": false},
+	  "firecrawl": {"apiURL": "https://firecrawl.test/v2", "apiKey": "fc-test", "enabled": true},
 	  "exa": {"apiURL": "https://exa.test", "apiKey": "exa-test", "enabled": true},
 	  "jina": {"apiURL": "https://jina.test", "apiKey": "jina-test"},
 	  "tinyfish": {
@@ -109,6 +110,9 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	if cfg.TavilyEnabled || cfg.TavilyAPIURL != "https://tavily.test" || cfg.TavilyAPIKey != "tvly-test" {
 		t.Fatalf("tavily config = enabled=%v url=%q key=%q", cfg.TavilyEnabled, cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 	}
+	if !cfg.FirecrawlEnabled || cfg.FirecrawlAPIURL != "https://firecrawl.test/v2" || cfg.FirecrawlAPIKey != "fc-test" {
+		t.Fatalf("firecrawl config = enabled=%v url=%q key=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL, cfg.FirecrawlAPIKey)
+	}
 	if !cfg.ExaEnabled || cfg.ExaAPIURL != "https://exa.test" || cfg.ExaAPIKey != "exa-test" {
 		t.Fatalf("exa config = enabled=%v url=%q key=%q", cfg.ExaEnabled, cfg.ExaAPIURL, cfg.ExaAPIKey)
 	}
@@ -144,6 +148,9 @@ func TestLoadFile_AllowsProviderOnlyConfig(t *testing.T) {
 	}
 	if cfg.TavilyAPIURL != "https://api.tavily.com" || !cfg.TavilyEnabled {
 		t.Fatalf("default tavily = enabled=%v url=%q", cfg.TavilyEnabled, cfg.TavilyAPIURL)
+	}
+	if cfg.FirecrawlAPIURL != "https://api.firecrawl.dev/v2" || cfg.FirecrawlEnabled {
+		t.Fatalf("default firecrawl = enabled=%v url=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL)
 	}
 	if cfg.JinaAPIURL != "https://r.jina.ai" {
 		t.Fatalf("default jina url = %q", cfg.JinaAPIURL)
@@ -420,8 +427,125 @@ func TestLoadFile_V2CapabilitiesDeriveFlatView(t *testing.T) {
 	if cfg.TavilyAPIURL != "https://tavily.test" || cfg.TavilyAPIKey != "tvly-test" {
 		t.Fatalf("tavily = %q %q", cfg.TavilyAPIURL, cfg.TavilyAPIKey)
 	}
+	if cfg.FirecrawlAPIURL != "https://api.firecrawl.dev/v2" || cfg.FirecrawlAPIKey != "" || cfg.FirecrawlEnabled {
+		t.Fatalf("default v2 firecrawl = enabled=%v url=%q key=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL, cfg.FirecrawlAPIKey)
+	}
+	if strings.Join(cfg.WebFetchOrder, ",") != "jina,tinyfish,tavily" || !cfg.WebFetchStrictOrder {
+		t.Fatalf("web fetch order = %v strict=%v", cfg.WebFetchOrder, cfg.WebFetchStrictOrder)
+	}
 	if len(cfg.ReasoningEndpoints) != 1 || cfg.ReasoningEndpoints[0].BaseURL != "https://reason.example/v1" {
 		t.Fatalf("reasoning = %+v", cfg.ReasoningEndpoints)
+	}
+}
+
+func TestLoadFile_V2CapabilitiesLoadsFirecrawlWebFetchOrderAndKeys(t *testing.T) {
+	path := writeConfig(t, `{
+	  "version": 2,
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {
+	      "providers": [
+	        {
+	          "type": "firecrawl",
+	          "apiURL": "https://firecrawl.test/v2",
+	          "apiKey": "fc-primary",
+	          "keys": [
+	            {"name": "backup", "apiKey": "fc-backup"},
+	            {"apiKey": "   "},
+	            {"apiKey": "fc-third"}
+	          ],
+	          "enabled": true
+	        },
+	        {"type": "jina", "apiURL": "https://jina.test"}
+	      ]
+	    },
+	    "web_enhance": {"providers": []}
+	  }
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if !cfg.FirecrawlEnabled || cfg.FirecrawlAPIURL != "https://firecrawl.test/v2" {
+		t.Fatalf("firecrawl = enabled=%v url=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL)
+	}
+	if len(cfg.FirecrawlKeys) != 3 {
+		t.Fatalf("firecrawl keys len = %d: %+v", len(cfg.FirecrawlKeys), cfg.FirecrawlKeys)
+	}
+	if cfg.FirecrawlKeys[0].Name != "primary" || cfg.FirecrawlKeys[0].APIKey != "fc-primary" {
+		t.Fatalf("primary key = %+v", cfg.FirecrawlKeys[0])
+	}
+	if cfg.FirecrawlKeys[1].Name != "backup" || cfg.FirecrawlKeys[1].APIKey != "fc-backup" {
+		t.Fatalf("backup key = %+v", cfg.FirecrawlKeys[1])
+	}
+	if cfg.FirecrawlKeys[2].Name != "key-2" || cfg.FirecrawlKeys[2].APIKey != "fc-third" {
+		t.Fatalf("third key = %+v", cfg.FirecrawlKeys[2])
+	}
+	if strings.Join(cfg.WebFetchOrder, ",") != "firecrawl,jina" || !cfg.WebFetchStrictOrder {
+		t.Fatalf("web fetch order = %v strict=%v", cfg.WebFetchOrder, cfg.WebFetchStrictOrder)
+	}
+	if !cfg.WebFetchConfigured {
+		t.Fatal("WebFetchConfigured = false, want true")
+	}
+}
+
+func TestLoadFile_DefaultWebFetchOrderIsQualityFirst(t *testing.T) {
+	cfg, err := LoadFile(writeConfig(t, `{}`))
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if strings.Join(cfg.WebFetchOrder, ",") != "firecrawl,jina,exa,tavily,tinyfish" || cfg.WebFetchStrictOrder {
+		t.Fatalf("web fetch order = %v strict=%v", cfg.WebFetchOrder, cfg.WebFetchStrictOrder)
+	}
+}
+
+func TestLoadFile_V2CapabilitiesLoadsFirecrawlEnhanceProvider(t *testing.T) {
+	path := writeConfig(t, `{
+	  "version": 2,
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {"providers": []},
+	    "web_enhance": {
+	      "providers": [
+	        {"type": "firecrawl", "apiURL": "https://firecrawl.test/v2", "apiKey": "fc-test", "enabled": true}
+	      ]
+	    }
+	  }
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if cfg.FirecrawlAPIURL != "https://firecrawl.test/v2" || cfg.FirecrawlAPIKey != "fc-test" || !cfg.FirecrawlEnabled {
+		t.Fatalf("firecrawl = enabled=%v url=%q key=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL, cfg.FirecrawlAPIKey)
+	}
+}
+
+func TestLoadFile_V2CapabilitiesRequiresExplicitFirecrawlEnabled(t *testing.T) {
+	path := writeConfig(t, `{
+	  "version": 2,
+	  "capabilities": {
+	    "main_search": {"providers": []},
+	    "docs_search": {"providers": []},
+	    "web_fetch": {"providers": []},
+	    "web_enhance": {
+	      "providers": [
+	        {"type": "firecrawl", "apiURL": "https://firecrawl.test/v2", "apiKey": "fc-test"}
+	      ]
+	    }
+	  }
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if cfg.FirecrawlAPIURL != "https://api.firecrawl.dev/v2" || cfg.FirecrawlAPIKey != "" || cfg.FirecrawlEnabled {
+		t.Fatalf("firecrawl default = enabled=%v url=%q key=%q", cfg.FirecrawlEnabled, cfg.FirecrawlAPIURL, cfg.FirecrawlAPIKey)
 	}
 }
 
