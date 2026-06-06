@@ -295,10 +295,11 @@ Keep these separate from npm release maintenance:
 
 ```text
 macOS Developer ID signing and notarization
-bootstrap status stale-binary/stale-config/wrong-scope diagnostics
 Scrapling/browser adapter exploration
 ```
 
 npm is an install channel. It does not replace macOS signing/notarization or
-runtime diagnostics.
-
+runtime diagnostics. Use `sourcemux bootstrap status --config-status --json`
+after npm/global install work to check `binary_status`,
+`runtime_config_status`, `scope_status`, and `issues[].code` before changing
+generated skills.

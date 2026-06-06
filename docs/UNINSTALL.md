@@ -23,6 +23,20 @@ Project scope:
 sourcemux bootstrap status --scope project --config-status --json
 ```
 
+Status JSON is compact enough for agents. Before uninstalling, look at:
+
+* `binary_status` and `issues[].code=missing_binary|stale_binary` to identify a
+  generated skill that still points at an old or removed executable.
+* `runtime_config_status` and
+  `issues[].code=missing_config|stale_config` to identify an explicit SourceMux
+  config path that is missing or no longer matches the checked scope/config.
+* `scope_status` and `issues[].code=wrong_scope` to avoid uninstalling project
+  scope when the remaining generated skill is user scope, or vice versa.
+
+`config_status` reports the supported MCP client config entry only; it does not
+replace the runtime `--config` path check above. SourceMux still uses one
+explicit config file path and does not scan hidden fallback configs.
+
 ## 2. Remove generated agent skills and MCP config entries
 
 Dry-run first:
