@@ -860,3 +860,38 @@ Archived the completed npm release maintenance docs task after confirming its ac
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Firecrawl CLI routing and skill guidance
+
+**Date**: 2026-06-07
+**Task**: Firecrawl CLI routing and skill guidance
+**Branch**: `main`
+
+### Summary
+
+Implemented Firecrawl direct CLI commands, policy-first fetch routing, architecture/docs updates, and CLI-first generated SourceMux routing skill guidance. Refreshed global sourcemux binary and user-scope skills outside git.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6f85f61` | (see git log) |
+| `305d142` | (see git log) |
+| `20aa6b3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
