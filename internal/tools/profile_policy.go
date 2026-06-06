@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/500tpig/sourcemux-go/internal/config"
 	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 const (
-	SearchProfileAuto = "auto"
+	SearchProfileAuto = config.SearchProfileAuto
 
 	searchProfileFlowSearch   = "search"
 	searchProfileFlowResearch = "research"
@@ -16,10 +17,11 @@ const (
 
 // SearchProfileContext describes the caller intent used by profile=auto.
 type SearchProfileContext struct {
-	Flow     string
-	Depth    string
-	Query    string
-	Platform string
+	Flow         string
+	Depth        string
+	Query        string
+	Platform     string
+	SearchPolicy config.SearchPolicy
 }
 
 // SearchProfileResolution records both user intent and the concrete Grok pool
@@ -31,12 +33,13 @@ type SearchProfileResolution struct {
 }
 
 // ResolveSearchProfile maps a user-requested profile to the concrete Grok pool
-// profile. Empty requested profile keeps normal fast search on the default
-// profile. Explicit heavy must be configured; auto safely degrades to default.
+// profile. Empty requested profile follows searchPolicy.defaultProfile.
+// Explicit heavy must be configured; auto safely degrades to default.
 func ResolveSearchProfile(pool *engine.GrokPool, requested string, ctx SearchProfileContext) (SearchProfileResolution, error) {
+	policy := effectiveSearchPolicy(ctx.SearchPolicy)
 	requested = normalizeSearchProfile(requested)
 	if requested == "" {
-		requested = engine.DefaultGrokEndpointProfile
+		requested = policy.DefaultProfile
 	}
 
 	switch requested {
@@ -60,7 +63,7 @@ func ResolveSearchProfile(pool *engine.GrokPool, requested string, ctx SearchPro
 			ProfileReason:    "explicit heavy profile requested",
 		}, nil
 	case SearchProfileAuto:
-		wantsHeavy, reason := autoProfileWantsHeavy(ctx)
+		wantsHeavy, reason := autoProfileWantsHeavy(ctx, policy)
 		if wantsHeavy && poolHasProfile(pool, engine.HeavyGrokEndpointProfile) {
 			return SearchProfileResolution{
 				RequestedProfile: SearchProfileAuto,
@@ -78,7 +81,7 @@ func ResolveSearchProfile(pool *engine.GrokPool, requested string, ctx SearchPro
 		return SearchProfileResolution{
 			RequestedProfile: SearchProfileAuto,
 			EffectiveProfile: engine.DefaultGrokEndpointProfile,
-			ProfileReason:    "auto selected default: no heavy intent signal",
+			ProfileReason:    "auto selected default: " + reason,
 		}, nil
 	default:
 		return SearchProfileResolution{
@@ -101,17 +104,42 @@ func defaultResearchProfile(profile string) string {
 	return profile
 }
 
+func effectiveSearchPolicy(policy config.SearchPolicy) config.SearchPolicy {
+	if strings.TrimSpace(policy.DefaultProfile) == "" {
+		return config.DefaultSearchPolicy()
+	}
+	if strings.TrimSpace(policy.AgentProfile) == "" {
+		policy.AgentProfile = config.SearchProfileAuto
+	}
+	if strings.TrimSpace(policy.AutoPreference) == "" {
+		policy.AutoPreference = config.SearchAutoPreferenceIntentBased
+	}
+	if policy.FallbackAfterSec == 0 && policy.FallbackAfter == 0 {
+		policy.FallbackAfterSec = config.DefaultSearchFallbackAfterSec
+	}
+	if policy.TimeoutSec == 0 && policy.Timeout == 0 {
+		policy.TimeoutSec = config.DefaultSearchTimeoutSec
+	}
+	return policy
+}
+
 func poolHasProfile(pool *engine.GrokPool, profile string) bool {
 	return pool != nil && pool.HasProfile(profile)
 }
 
-func autoProfileWantsHeavy(ctx SearchProfileContext) (bool, string) {
+func autoProfileWantsHeavy(ctx SearchProfileContext, policy config.SearchPolicy) (bool, string) {
+	switch policy.AutoPreference {
+	case config.SearchAutoPreferenceHeavyFirst:
+		return true, "searchPolicy.autoPreference=heavy-first"
+	case config.SearchAutoPreferenceDefaultFirst:
+		return false, "searchPolicy.autoPreference=default-first"
+	}
 	flow := strings.ToLower(strings.TrimSpace(ctx.Flow))
 	if flow == searchProfileFlowResearch {
-		return true, "research flow"
+		return true, "intent-based research flow"
 	}
 	if strings.EqualFold(strings.TrimSpace(ctx.Depth), "deep") {
-		return true, "deep research depth"
+		return true, "intent-based deep research depth"
 	}
 
 	q := strings.ToLower(strings.Join([]string{ctx.Query, ctx.Platform}, " "))
@@ -151,8 +179,8 @@ func autoProfileWantsHeavy(ctx SearchProfileContext) (bool, string) {
 	}
 	for _, signal := range signals {
 		if strings.Contains(q, signal.needle) {
-			return true, signal.reason
+			return true, "intent-based " + signal.reason
 		}
 	}
-	return false, ""
+	return false, "no intent-based heavy signal"
 }

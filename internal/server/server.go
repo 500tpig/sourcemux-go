@@ -54,7 +54,7 @@ func Run(cfg *config.Config) error {
 	)
 
 	// Register tools
-	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app)
+	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app, cfg.SearchPolicy)
 	tools.RegisterDocsSearch(s, app.Exa, app)
 	tools.RegisterFetch(s, app.Jina, app.TinyFish, app.Exa, app.Tavily)
 	tools.RegisterExaSearchAdvanced(s, app.Exa)
@@ -66,11 +66,12 @@ func Run(cfg *config.Config) error {
 	tools.RegisterSearchPlanning(s)
 	researchExecutor := tools.NewResearchExecutor(tools.ResearchExecutorDeps{
 		Search: tools.WebSearchClients{
-			Pool:     app.GrokPool,
-			TinyFish: app.TinyFish,
-			Exa:      app.Exa,
-			Tavily:   app.Tavily,
-			Cache:    app,
+			Pool:         app.GrokPool,
+			TinyFish:     app.TinyFish,
+			Exa:          app.Exa,
+			Tavily:       app.Tavily,
+			Cache:        app,
+			SearchPolicy: cfg.SearchPolicy,
 		},
 		Fetch: tools.WebFetchClients{
 			Jina:     app.Jina,

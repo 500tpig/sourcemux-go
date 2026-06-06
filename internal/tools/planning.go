@@ -346,18 +346,13 @@ func primaryRoute(depth string, signals []string) []string {
 
 func profilePolicyForPlan(signals []string) PlanSearchProfilePolicy {
 	heavySignals := matchingSignals(signals, "deep", "current", "comparison", "high-risk", "source-critical")
-	reason := "profile=auto keeps routine planning on the configured default profile unless heavy intent is detected"
-	effective := "default"
-	if len(heavySignals) > 0 {
-		reason = "profile=auto can resolve to heavy for deep/current/comparison/high-risk/source-critical intent when a heavy Grok profile is configured"
-		effective = "heavy"
-	}
+	reason := "profile=auto follows searchPolicy.autoPreference; intent-based policy uses heavy for deep/current/comparison/high-risk/source-critical flows when configured and falls back to default when heavy is unavailable"
 	return PlanSearchProfilePolicy{
 		DefaultProfile:       SearchProfileAuto,
 		PlannedProfile:       SearchProfileAuto,
 		HeavyWhen:            []string{"deep", "current", "comparison", "high-risk", "source-critical"},
 		HeavyIntentSignals:   heavySignals,
-		EffectiveIfAvailable: effective,
+		EffectiveIfAvailable: "heavy",
 		FallbackProfile:      "default",
 		Reason:               reason,
 	}

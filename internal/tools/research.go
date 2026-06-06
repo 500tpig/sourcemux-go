@@ -23,8 +23,8 @@ const (
 	researchPerCallTimeout       = 25 * time.Second
 	researchDefaultSearchTimeout = 60 * time.Second
 	researchDefaultFallbackAfter = 20 * time.Second
-	researchHeavySearchTimeout   = 180 * time.Second
-	researchHeavyFallbackAfter   = 60 * time.Second
+	researchHeavySearchTimeout   = 300 * time.Second
+	researchHeavyFallbackAfter   = 180 * time.Second
 	mcpResearchPlanLimit         = 4
 	mcpResearchSearchLimit       = 4
 	mcpResearchSourceLimit       = 6
@@ -213,25 +213,30 @@ type webSearchResearchProvider struct {
 
 func (p webSearchResearchProvider) ResolveSearchProfile(requested string, opts ResearchOptions) (SearchProfileResolution, error) {
 	return ResolveSearchProfile(p.clients.Pool, requested, SearchProfileContext{
-		Flow:     searchProfileFlowResearch,
-		Depth:    normalizeDepth(opts.Depth),
-		Query:    opts.Query,
-		Platform: opts.Platform,
+		Flow:         searchProfileFlowResearch,
+		Depth:        normalizeDepth(opts.Depth),
+		Query:        opts.Query,
+		Platform:     opts.Platform,
+		SearchPolicy: p.clients.SearchPolicy,
 	})
 }
 
 func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, profile string) (*WebSearchResult, error) {
 	clients := p.clients
 	profileCtx := SearchProfileContext{
-		Flow:     searchProfileFlowResearch,
-		Query:    query,
-		Platform: platform,
+		Flow:         searchProfileFlowResearch,
+		Query:        query,
+		Platform:     platform,
+		SearchPolicy: p.clients.SearchPolicy,
 	}
 	resolution, err := ResolveSearchProfile(p.clients.Pool, profile, profileCtx)
 	if err != nil {
 		return nil, err
 	}
 	fallbackAfter := researchGrokFallbackAfter(resolution.EffectiveProfile)
+	if resolution.RequestedProfile == SearchProfileAuto || resolution.EffectiveProfile == engine.HeavyGrokEndpointProfile {
+		fallbackAfter = effectiveFallbackAfter(p.clients.SearchPolicy)
+	}
 	if p.grokFallbackAfter != nil {
 		fallbackAfter = p.grokFallbackAfter(resolution.EffectiveProfile)
 	}

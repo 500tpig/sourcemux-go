@@ -649,7 +649,7 @@ func TestRunSearchGrokPoolTimeoutZeroOverrideDisablesConfiguredCap(t *testing.T)
 	}
 }
 
-func TestRunSearchProfileAutoUsesHeavyButPlainSearchUsesDefault(t *testing.T) {
+func TestRunSearchUsesPublicSafeDefaultAndPolicyOptInHeavyFirst(t *testing.T) {
 	var defaultCalls, heavyCalls int32
 	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&defaultCalls, 1)
@@ -681,7 +681,10 @@ func TestRunSearchProfileAutoUsesHeavyButPlainSearchUsesDefault(t *testing.T) {
 		t.Fatalf("decode plain output: %v\n%s", err, out)
 	}
 	if plain.Engine != "default" || plain.RequestedProfile != "default" || plain.EffectiveProfile != "default" {
-		t.Fatalf("plain output = %+v, want default profile", plain)
+		t.Fatalf("plain output = %+v, want default/default profile", plain)
+	}
+	if plain.CallerTimeout != "5m0s" || plain.GrokPoolTimeout != "3m0s" {
+		t.Fatalf("plain timeouts = caller %q pool %q, want 5m0s/3m0s", plain.CallerTimeout, plain.GrokPoolTimeout)
 	}
 
 	out = captureStdout(t, func() {
@@ -696,8 +699,30 @@ func TestRunSearchProfileAutoUsesHeavyButPlainSearchUsesDefault(t *testing.T) {
 	if auto.Engine != "heavy" || auto.RequestedProfile != "auto" || auto.EffectiveProfile != "heavy" {
 		t.Fatalf("auto output = %+v, want auto/heavy", auto)
 	}
-	if atomic.LoadInt32(&defaultCalls) != 1 || atomic.LoadInt32(&heavyCalls) != 1 {
-		t.Fatalf("calls default=%d heavy=%d, want 1/1", defaultCalls, heavyCalls)
+	optInPath := writeCLIConfig(t, `{
+	  "searchPolicy": {"defaultProfile":"auto","autoPreference":"heavy-first","fallbackAfterSec":7,"timeoutSec":8},
+	  "grokEndpoints": [
+	    {"name":"default","baseURL":"`+defaultSrv.URL+`","apiKey":"sk-default","model":"grok-fast"},
+	    {"name":"heavy","baseURL":"`+heavySrv.URL+`","apiKey":"sk-heavy","model":"grok-heavy","profile":"heavy"}
+	  ]
+	}`)
+	out = captureStdout(t, func() {
+		if got := Run([]string{"--config", optInPath, "search", "quick lookup", "--json"}); got != 0 {
+			t.Fatalf("Run(policy opt-in search) = %d, want 0", got)
+		}
+	})
+	var optIn searchOutput
+	if err := json.Unmarshal([]byte(out), &optIn); err != nil {
+		t.Fatalf("decode opt-in output: %v\n%s", err, out)
+	}
+	if optIn.Engine != "heavy" || optIn.RequestedProfile != "auto" || optIn.EffectiveProfile != "heavy" {
+		t.Fatalf("opt-in output = %+v, want auto/heavy", optIn)
+	}
+	if optIn.CallerTimeout != "8s" || optIn.GrokPoolTimeout != "7s" {
+		t.Fatalf("opt-in timeouts = caller %q pool %q, want 8s/7s", optIn.CallerTimeout, optIn.GrokPoolTimeout)
+	}
+	if atomic.LoadInt32(&defaultCalls) != 1 || atomic.LoadInt32(&heavyCalls) != 2 {
+		t.Fatalf("calls default=%d heavy=%d, want 1/2", defaultCalls, heavyCalls)
 	}
 }
 

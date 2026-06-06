@@ -220,9 +220,8 @@ result, err := pool.Fetch(ctx, request)
 - Research depth (`quick`, `standard`, `deep`) controls breadth/concurrency and fetch limits, not model tier selection.
 - A separate `profile` option controls which Grok endpoint profile the research search phase uses.
 - `profile` must be threaded through the CLI, MCP tool, and shared research executor to the underlying `web_search` call.
-- Plain one-shot `search` stays on the default Grok profile unless the caller passes `--profile`.
-- Agent/research flows default to `profile=auto`.
-- `auto` resolves to `heavy` for research/deep/current/comparison/high-risk flows when a heavy Grok profile exists, otherwise it safely resolves to `default`.
+- Raw one-shot `search` defaults to `searchPolicy.defaultProfile` (`default` publicly). Agent-generated one-shot search examples use `searchPolicy.agentProfile`; research and smart-answer flows default to `profile=auto`.
+- `auto` follows `searchPolicy.autoPreference`: `intent-based`, `heavy-first`, or `default-first`; when heavy is wanted but unavailable, it safely resolves to `default`.
 - Explicit `profile=default` forces default; explicit `profile=heavy` forces heavy and should return a clear error when no heavy profile is configured.
 - Heavy/multi-agent search models must be configured in `grokEndpoints[]`; `reasoningEndpoints[]` alone is only for final synthesis and is not part of `web_search` / `research_run`.
 - User-facing research/search must preserve fallback. `--no-fallback` is diagnostics-only.
@@ -787,7 +786,8 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
   - If a generated skill points at a missing/stale binary or config, tell agents to run `bootstrap status --scope <scope> --config-status` and then update/reinstall with a known binary while keeping the configured path; do not silently invent a replacement config path.
   - Prefer top-level short commands (`sourcemux search`, `sourcemux fetch`, `sourcemux docs-search`, `sourcemux research`) over the compatibility `sourcemux cli ...` form in generated guidance.
   - Generated routing skills must distinguish user-facing research from Grok/profile diagnostics. `--no-fallback` examples must be labeled diagnostics-only and use a short probe query; do not pair broad research queries with `--grok-pool-timeout 0 --no-fallback`.
-  - Heavy or multi-agent search examples for user-facing work must preserve fallback, for example `search "query" --profile heavy --fallback-after 60s --timeout 180s --json`, so source-first fallback providers can still return useful evidence.
+  - Generated user-facing search examples must be derived from `searchPolicy.agentProfile`, `searchPolicy.fallbackAfterSec`, and `searchPolicy.timeoutSec`, and must preserve fallback. Public defaults are `agentProfile=auto`, `fallbackAfterSec=180`, and `timeoutSec=300`; power-user configs may intentionally generate heavy-first examples.
+  - `searchPolicy.autoPreference` controls how `--profile auto` resolves: `intent-based`, `heavy-first`, or `default-first`. Do not hard-code heavy-first behavior in raw CLI or generated skills; explicit `--profile heavy` should still fail clearly when no heavy endpoint is configured.
   - Generated skill manifests must record enough mode metadata (for example `mcp_mode`) for `install status` to distinguish `cli-only`, `mcp-configured`, and unmanaged skills.
 - Entry payload:
   - Codex/Gemini write only command and args: `command=<sourcemux binary>`, `args=["--config", <active config path>]`.
@@ -812,6 +812,12 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 - Update:
   - `sourcemux install update` reuses the install plan, but may refresh an existing generated skill without `--force` only when the existing content still matches its manifest hash.
   - If the generated skill was user-modified, update must refuse unless `--force` is passed.
+- Status diagnostics:
+  - `bootstrap status --json` must keep output compact and machine-readable. Use structured `issues[]` entries with stable `code`, `message`, path fields, and repair guidance instead of parsing prose-only notes.
+  - Managed skills should report `binary_status` from the generated manifest's `binary` path. Detect `missing_binary` when the path is absent and `stale_binary` when it is temporary or differs from the current/`--binary` path.
+  - `runtime_config_status` is emitted only with `--config-status`. It checks the generated manifest's SourceMux `--config` path for existence and mismatch with the resolved scope/explicit `--config` path. It must not load hidden home configs, legacy endpoint files, or invent replacement config paths.
+  - `config_status` remains the supported MCP client config entry check; do not overload it with SourceMux runtime config file existence.
+  - `scope_status` should distinguish wrong-scope installs by checking whether the opposite user/project skill root has the generated skill when the requested scope does not, or when manifest `skill_path` does not match the requested scope path.
 
 #### 4. Validation & Error Matrix
 
@@ -838,14 +844,20 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 | Uninstall modified generated skill with `--force` | Back up the modified skill, remove the skill and manifest, preserve unrelated files |
 | Update unmodified generated skill | Rewrite skill and manifest to the current template/mode without backup |
 | Update modified generated skill without `--force` | Refuse and preserve the user-edited file |
+| Manifest binary path is missing | `status --json` reports `binary_status.status=missing` plus `issues[].code=missing_binary` |
+| Manifest binary path exists but differs from current/`--binary` | `status --json` reports `binary_status.status=stale` plus `issues[].code=stale_binary` |
+| `--config-status` and manifest config path is missing | `status --json` reports `runtime_config_status.status=missing` plus `issues[].code=missing_config`; do not search fallback configs |
+| `--config-status` and manifest config path differs from resolved scope/explicit config | `status --json` reports `runtime_config_status.status=stale` plus `issues[].code=stale_config` |
+| Requested user scope has no skill but project scope does, or reverse | `status --json` reports `scope_status.status=wrong_scope` plus `issues[].code=wrong_scope` |
 | Any JSON output path | Keep machine-readable JSON on stdout; human backup notices go to stderr |
 
 #### 5. Good/Base/Bad Cases
 
 - Good: `sourcemux install gemini --write-config --dry-run --json` reports a `merge_config` action with backup intent for an existing settings file and creates no files.
+- Good: `sourcemux bootstrap status codex --scope user --config-status --json` reports manifest-derived `binary_status`, `runtime_config_status`, `scope_status`, and actionable `issues[]` without reading any provider secrets.
 - Base: `sourcemux install codex --write-config --scope project --binary "$(pwd)/sourcemux" --config ./sourcemux.json` creates `.codex/config.toml` with `[mcp_servers.sourcemux]`.
 - Base: `sourcemux bootstrap codex --scope user --binary /usr/local/bin/sourcemux` creates a CLI-first skill whose examples all include `/usr/local/bin/sourcemux --config ~/.config/sourcemux/sourcemux.json ...`.
-- Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, calling `gemini mcp add` from tests, or generating a CLI-only skill that says to use MCP tools.
+- Bad: overwriting an existing `mcpServers` string with an object, creating backups during dry-run, deleting `settings.json` on uninstall, calling `gemini mcp add` from tests, generating a CLI-only skill that says to use MCP tools, or "fixing" stale status by silently switching to a hidden/default config path.
 
 #### 6. Tests Required
 
@@ -870,6 +882,9 @@ _ = os.WriteFile(currentConfigPath(), data, 0o600)
 - Status:
   - `--config-status --json` reports supported/path/exists/entry_present/matches/drifted/status.
   - Skill status reports managed/modified plus install mode (`cli-only`, `mcp-configured`, or unmanaged).
+  - Missing/stale manifest binary paths report `binary_status` and `missing_binary` / `stale_binary` issues.
+  - `--config-status` reports missing/stale manifest SourceMux config paths as `runtime_config_status` with `missing_config` / `stale_config` issues.
+  - Wrong user/project scope reports `scope_status.status=wrong_scope` and a `wrong_scope` issue.
 - Error paths:
   - Malformed JSON/TOML/JSONC leaves file unchanged and creates no backup.
   - Non-object MCP parent leaves file unchanged and creates no backup.
@@ -901,7 +916,7 @@ Wrong:
 ```markdown
 Use SourceMux MCP tools for quick searches.
 
-sourcemux cli search "query" --json
+sourcemux cli search "query" --profile auto --fallback-after 180s --timeout 300s --json
 ```
 
 Correct:
@@ -909,7 +924,23 @@ Correct:
 ```markdown
 Use the SourceMux CLI by default.
 
-/usr/local/bin/sourcemux cli --config ~/.config/sourcemux/sourcemux.json search "query" --json
+/usr/local/bin/sourcemux cli --config ~/.config/sourcemux/sourcemux.json search "query" --profile auto --fallback-after 180s --timeout 300s --json
+```
+
+Wrong:
+
+```go
+if !configExists(manifest.ConfigFile) {
+	cfgPath = defaultConfigPathForScope(scope)
+}
+```
+
+Correct:
+
+```go
+if !configExists(manifest.ConfigFile) {
+	status.Issues = append(status.Issues, StatusIssue{Code: "missing_config"})
+}
 ```
 
 ---

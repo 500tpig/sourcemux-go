@@ -88,8 +88,8 @@ Use CLI when the workflow should be reproducible or the result may be large:
 Typical commands:
 
 ```bash
-sourcemux search "query" --json
-sourcemux search "query" --platform Twitter --json
+sourcemux search "query" --profile auto --fallback-after 180s --timeout 300s --json
+sourcemux search "query" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
 sourcemux docs-search "library or API question" --json
 sourcemux exa-search "official docs API reference" --type deep --json
 sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
@@ -100,6 +100,13 @@ sourcemux research "topic" --depth standard --profile auto --json
 sourcemux smart-answer "question" --depth standard --profile auto --json
 ```
 
+Generated `sourcemux-routing` skills should derive one-shot search examples
+from `searchPolicy.agentProfile`, `searchPolicy.fallbackAfterSec`, and
+`searchPolicy.timeoutSec`. Public configs default raw `search` to
+`searchPolicy.defaultProfile=default`; power users can set
+`defaultProfile=auto` with `autoPreference=heavy-first` to make raw search
+heavy-first.
+
 ### Capability selection for generated skills
 
 Generated `sourcemux-routing` skills should route user intent to capabilities,
@@ -107,12 +114,12 @@ not just list commands:
 
 | User intent | Preferred surface |
 | --- | --- |
-| Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --json` or `search --json` |
+| Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --profile <searchPolicy.agentProfile> --fallback-after <searchPolicy.fallbackAfterSec>s --timeout <searchPolicy.timeoutSec>s --json` or the same without `--platform` |
 | Official docs, SDK/API reference, product docs, pricing pages | `docs-search --json` |
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
 | Known URL content extraction | `fetch --json` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
-| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 60s --timeout 180s --json` |
+| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 180s --timeout 300s --json` |
 | Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
 | Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --json` |
 | Multi-source investigation with synthesis | `research --depth standard --profile auto --json` or `research --depth deep --profile auto --json` |
@@ -120,7 +127,7 @@ not just list commands:
 
 Evidence policy:
 
-1. Discover candidate URLs with `search`, `docs-search`, `exa-search`, or `research`.
+1. Discover candidate URLs with policy-driven `search`, `docs-search`, `exa-search`, or `research`.
 2. Fetch key URLs before high-risk, precise, or source-critical claims.
 3. Cite fetched or source URL evidence in the final answer.
 4. Treat the fetch provider label, such as `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
@@ -147,7 +154,7 @@ explicitly:
 
 ```bash
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "query" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "query" --profile auto --fallback-after 180s --timeout 300s --json
 ```
 
 Use the installer in user scope. `bootstrap --scope user` defaults generated
@@ -192,10 +199,30 @@ manifest records the target and content hash, so `bootstrap status` can report
 managed/modified state, `bootstrap update` can refresh unmodified generated
 skills, and `uninstall` can refuse to remove user-edited or pre-manifest files
 unless `--force` backs them up first.
+Status JSON also includes compact diagnostics for stale generated metadata:
+
+* `binary_status` checks the manifest's SourceMux binary path and reports
+  `missing_binary` or `stale_binary` issues when the path is gone, temporary, or
+  differs from the current/`--binary` path.
+* `runtime_config_status` is emitted with `--config-status`; it checks the
+  manifest's SourceMux `--config` file path and reports `missing_config` or
+  `stale_config` without searching hidden fallback locations.
+* `scope_status` reports `wrong_scope` when a project-scope skill is found while
+  checking user scope, or the reverse.
+* `config_status` remains the supported MCP client config entry check; it is
+  separate from `runtime_config_status`.
+
 If a generated skill references a missing/stale binary or config path, run
-`sourcemux bootstrap status --scope <scope> --config-status` and then
-`sourcemux bootstrap update <target> --scope <scope> ...`; do not silently swap
-user-scope skills to a maintainer-local project config.
+`sourcemux bootstrap status <target> --scope <scope> --config-status --json`
+and then update with the intended binary and explicit config path:
+
+```bash
+sourcemux bootstrap update <target> --scope <scope> --binary /absolute/path/to/sourcemux --config <intended-config>
+```
+
+Do not silently swap user-scope skills to a maintainer-local project config or
+invent hidden config fallbacks.
+
 Pass `--write-config` to safely merge supported MCP client config files for
 Codex, Gemini, and OpenCode without invoking external agent CLIs. Existing
 matching `sourcemux` entries are reported as unchanged; drifted entries may be

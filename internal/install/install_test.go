@@ -131,9 +131,11 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"SourceMux routing",
 		"custom.sourcemux.json",
 		"--config",
+		"Effective searchPolicy",
+		"defaultProfile=default, agentProfile=auto, autoPreference=intent-based, fallbackAfterSec=180, timeoutSec=300",
 		"Capability routing",
 		"Evidence policy",
-		"search \"query\" --platform Twitter --json",
+		"search \"query\" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json",
 		"docs-search",
 		"exa-search",
 		"exa-contents",
@@ -158,6 +160,47 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		if strings.Contains(text, bad) {
 			t.Fatalf("generated skill contains non-portable %q:\n%s", bad, text)
 		}
+	}
+}
+
+func TestInstallCodexGeneratedSkillUsesConfigSearchPolicy(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	cfgPath := filepath.Join(dir, "power.sourcemux.json")
+	if err := os.WriteFile(cfgPath, []byte(`{
+	  "searchPolicy": {
+	    "defaultProfile": "auto",
+	    "agentProfile": "heavy",
+	    "autoPreference": "heavy-first",
+	    "fallbackAfterSec": 42,
+	    "timeoutSec": 77
+	  }
+	}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if got := RunInstall([]string{"codex", "--config", cfgPath}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex) = %d, want 0", got)
+	}
+	path := filepath.Join(dir, ".agents", "skills", skillName, "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated skill: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"defaultProfile=auto, agentProfile=heavy, autoPreference=heavy-first, fallbackAfterSec=42, timeoutSec=77",
+		"Generated quick search examples use --profile heavy --fallback-after 42s --timeout 77s",
+		"--config " + shellQuote(cfgPath) + " search \"query\" --profile heavy --fallback-after 42s --timeout 77s --json",
+		"--config " + shellQuote(cfgPath) + " search \"query\" --platform Twitter --profile heavy --fallback-after 42s --timeout 77s --json",
+		"--config " + shellQuote(cfgPath) + " search \"complex query\" --profile heavy --fallback-after 42s --timeout 77s --json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated skill missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "--fallback-after 180s --timeout 300s") {
+		t.Fatalf("generated skill kept default search windows:\n%s", text)
 	}
 }
 
@@ -207,7 +250,7 @@ func TestInstallUserScopeDefaultsToGlobalConfigPath(t *testing.T) {
 		commandPrefix + " bootstrap status --scope user --config-status",
 		commandPrefix + " bootstrap update <target> --scope user --binary /absolute/path/to/sourcemux",
 		"missing, stale",
-		"| Quick search | Fresh/current facts, community feedback, one-hop discovery | " + commandPrefix + " search \"query\" --json |",
+		"| Quick search | Fresh/current facts, community feedback, one-hop discovery | " + commandPrefix + " search \"query\" --profile auto --fallback-after 180s --timeout 300s --json |",
 		commandPrefix + " research \"topic\" --depth standard --profile auto --json",
 		commandPrefix + " search \"ping\" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json",
 	} {
@@ -925,6 +968,102 @@ func TestStatusReportsManagedAndModifiedSkill(t *testing.T) {
 	}
 }
 
+func TestStatusReportsMissingAndStaleBinaryFromManifest(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	oldBin := filepath.Join(dir, "old-sourcemux")
+	newBin := filepath.Join(dir, "new-sourcemux")
+	writeExecutable(t, oldBin)
+	writeExecutable(t, newBin)
+
+	if got := RunInstall([]string{"codex", "--binary", oldBin, "--config", "custom.sourcemux.json"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex --binary old) = %d, want 0", got)
+	}
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--json", "--binary", newBin}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status codex --binary new) = %d, want 0", got)
+		}
+	})
+	statuses := decodeStatuses(t, out)
+	if len(statuses) != 1 || statuses[0].BinaryStatus == nil || statuses[0].BinaryStatus.Status != "stale" || statuses[0].BinaryStatus.Path != oldBin || statuses[0].BinaryStatus.Expected != newBin {
+		t.Fatalf("stale binary status = %+v", statuses)
+	}
+	if !hasIssue(statuses[0].Issues, "stale_binary") {
+		t.Fatalf("stale binary issue missing: %+v", statuses[0].Issues)
+	}
+
+	if err := os.Remove(oldBin); err != nil {
+		t.Fatal(err)
+	}
+	out = captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--json", "--binary", newBin}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status codex missing binary) = %d, want 0", got)
+		}
+	})
+	statuses = decodeStatuses(t, out)
+	if len(statuses) != 1 || statuses[0].BinaryStatus == nil || statuses[0].BinaryStatus.Status != "missing" || statuses[0].BinaryStatus.Exists {
+		t.Fatalf("missing binary status = %+v", statuses)
+	}
+	if !hasIssue(statuses[0].Issues, "missing_binary") {
+		t.Fatalf("missing binary issue missing: %+v", statuses[0].Issues)
+	}
+}
+
+func TestInstallStatusReportsStaleRuntimeConfigFromManifest(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	bin := filepath.Join(dir, "sourcemux")
+	oldConfig := filepath.Join(dir, "old.sourcemux.json")
+	newConfig := filepath.Join(dir, "new.sourcemux.json")
+	writeExecutable(t, bin)
+	if err := os.WriteFile(oldConfig, []byte(`{"logLevel":"info"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newConfig, []byte(`{"logLevel":"info"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := RunInstall([]string{"codex", "--binary", bin, "--config", oldConfig}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex old config) = %d, want 0", got)
+	}
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--config-status", "--json", "--binary", bin, "--config", newConfig}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status stale config) = %d, want 0", got)
+		}
+	})
+	statuses := decodeStatuses(t, out)
+	if len(statuses) != 1 || statuses[0].RuntimeConfigStatus == nil || statuses[0].RuntimeConfigStatus.Status != "stale" || statuses[0].RuntimeConfigStatus.Path != oldConfig || statuses[0].RuntimeConfigStatus.Expected != newConfig {
+		t.Fatalf("stale runtime config status = %+v", statuses)
+	}
+	if !hasIssue(statuses[0].Issues, "stale_config") {
+		t.Fatalf("stale config issue missing: %+v", statuses[0].Issues)
+	}
+}
+
+func TestInstallStatusReportsWrongScope(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Setenv("HOME", dir)
+	bin := filepath.Join(dir, "sourcemux")
+	writeExecutable(t, bin)
+
+	if got := RunInstall([]string{"codex", "--scope", "project", "--binary", bin, "--config", "custom.sourcemux.json"}, "sourcemux.json"); got != 0 {
+		t.Fatalf("RunInstall(codex project) = %d, want 0", got)
+	}
+	out := captureStdout(t, func() {
+		if got := RunInstall([]string{"status", "codex", "--scope", "user", "--json", "--binary", bin}, "sourcemux.json"); got != 0 {
+			t.Fatalf("RunInstall(status user) = %d, want 0", got)
+		}
+	})
+	statuses := decodeStatuses(t, out)
+	if len(statuses) != 1 || statuses[0].Installed || statuses[0].ScopeStatus == nil || statuses[0].ScopeStatus.Status != "wrong_scope" || statuses[0].ScopeStatus.Detected != "project" {
+		t.Fatalf("wrong-scope status = %+v", statuses)
+	}
+	if !hasIssue(statuses[0].Issues, "wrong_scope") {
+		t.Fatalf("wrong-scope issue missing: %+v", statuses[0].Issues)
+	}
+}
+
 func TestInstallStatusConfigStatusReportsMatchAndDrift(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -1101,6 +1240,22 @@ func decodeStatuses(t *testing.T, out string) []TargetStatus {
 		t.Fatalf("decode statuses: %v\n%s", err, out)
 	}
 	return statuses
+}
+
+func hasIssue(issues []StatusIssue, code string) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func writeExecutable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func readJSONMap(t *testing.T, path string) map[string]any {

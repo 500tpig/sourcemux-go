@@ -98,17 +98,21 @@ type Target struct {
 }
 
 type TargetStatus struct {
-	Name         string        `json:"name"`
-	Support      SupportLevel  `json:"support"`
-	Scope        string        `json:"scope"`
-	SkillPath    string        `json:"skill_path,omitempty"`
-	ManifestPath string        `json:"manifest_path,omitempty"`
-	Installed    bool          `json:"installed"`
-	Managed      bool          `json:"managed"`
-	Modified     bool          `json:"modified"`
-	InstallMode  string        `json:"install_mode,omitempty"`
-	Notes        []string      `json:"notes,omitempty"`
-	ConfigStatus *ConfigStatus `json:"config_status,omitempty"`
+	Name                string        `json:"name"`
+	Support             SupportLevel  `json:"support"`
+	Scope               string        `json:"scope"`
+	SkillPath           string        `json:"skill_path,omitempty"`
+	ManifestPath        string        `json:"manifest_path,omitempty"`
+	Installed           bool          `json:"installed"`
+	Managed             bool          `json:"managed"`
+	Modified            bool          `json:"modified"`
+	InstallMode         string        `json:"install_mode,omitempty"`
+	Notes               []string      `json:"notes,omitempty"`
+	Issues              []StatusIssue `json:"issues,omitempty"`
+	BinaryStatus        *PathStatus   `json:"binary_status,omitempty"`
+	RuntimeConfigStatus *PathStatus   `json:"runtime_config_status,omitempty"`
+	ScopeStatus         *ScopeStatus  `json:"scope_status,omitempty"`
+	ConfigStatus        *ConfigStatus `json:"config_status,omitempty"`
 }
 
 type ConfigStatus struct {
@@ -121,6 +125,32 @@ type ConfigStatus struct {
 	Status       string `json:"status"`
 	Error        string `json:"error,omitempty"`
 	Message      string `json:"message,omitempty"`
+}
+
+type PathStatus struct {
+	Path            string `json:"path,omitempty"`
+	Expected        string `json:"expected,omitempty"`
+	Exists          bool   `json:"exists"`
+	MatchesExpected bool   `json:"matches_expected"`
+	Status          string `json:"status"`
+	Message         string `json:"message,omitempty"`
+}
+
+type ScopeStatus struct {
+	Requested string `json:"requested"`
+	Detected  string `json:"detected,omitempty"`
+	SkillPath string `json:"skill_path,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+}
+
+type StatusIssue struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Path     string `json:"path,omitempty"`
+	Expected string `json:"expected,omitempty"`
+	Repair   string `json:"repair,omitempty"`
 }
 
 type Plan struct {
@@ -384,14 +414,13 @@ func runStatus(args []string, configPath string) int {
 		return 2
 	}
 	var statuses []TargetStatus
-	bin := ""
+	bin, err := resolveBinaryPath(opts.BinaryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "install status error: %v\n", err)
+		return 2
+	}
 	cfgPath := ""
 	if opts.ConfigStatus {
-		bin, err = resolveBinaryPath(opts.BinaryPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "install status error: %v\n", err)
-			return 2
-		}
 		cfgPath, err = resolveConfigPath(opts.Scope, opts.ConfigPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "install status error: resolve config path: %v\n", err)
@@ -428,6 +457,9 @@ func runStatus(args []string, configPath string) int {
 			} else {
 				fmt.Fprintf(os.Stdout, "  config: unsupported\n")
 			}
+		}
+		for _, issue := range s.Issues {
+			fmt.Fprintf(os.Stdout, "  issue: %s: %s\n", issue.Code, issue.Message)
 		}
 	}
 	return 0
@@ -848,6 +880,20 @@ func statusFor(target Target, scope string, includeConfig bool, binary string, c
 		if manifest.Target != target.Name {
 			status.Notes = append(status.Notes, fmt.Sprintf("manifest target is %q", manifest.Target))
 		}
+		if scopeStatus, issue := manifestScopeStatus(target, scope, path, manifest.SkillPath); scopeStatus != nil {
+			status.ScopeStatus = scopeStatus
+			if issue != nil {
+				status.Issues = append(status.Issues, *issue)
+			}
+		}
+		binaryStatus, binaryIssues := binaryPathStatus(target.Name, scope, manifest.Binary, binary)
+		status.BinaryStatus = &binaryStatus
+		status.Issues = append(status.Issues, binaryIssues...)
+		if includeConfig {
+			configFileStatus, configIssues := runtimeConfigPathStatus(target.Name, scope, manifest.ConfigFile, configPath)
+			status.RuntimeConfigStatus = &configFileStatus
+			status.Issues = append(status.Issues, configIssues...)
+		}
 		if status.Installed {
 			currentHash := contentSHA256(skillData)
 			status.Modified = currentHash != manifest.ContentSHA256
@@ -865,7 +911,224 @@ func statusFor(target Target, scope string, includeConfig bool, binary string, c
 	} else {
 		status.Notes = append(status.Notes, manifestErr.Error())
 	}
+	if !status.Installed {
+		if scopeStatus, issue := wrongScopeStatus(target, scope); scopeStatus != nil {
+			status.ScopeStatus = scopeStatus
+			status.Issues = append(status.Issues, *issue)
+		}
+	}
 	return status
+}
+
+func binaryPathStatus(target, scope, path, expected string) (PathStatus, []StatusIssue) {
+	status := PathStatus{
+		Path:            strings.TrimSpace(path),
+		Expected:        strings.TrimSpace(expected),
+		Status:          "ok",
+		MatchesExpected: samePath(path, expected),
+	}
+	repair := binaryRepair(target, scope)
+	if status.Path == "" {
+		status.Status = "missing"
+		status.Message = "Generated skill manifest does not record a SourceMux binary path."
+		return status, []StatusIssue{newStatusIssue("missing_binary", status.Message, "", expected, repair)}
+	}
+	exists, err := regularFileExists(status.Path)
+	if err != nil {
+		status.Status = "error"
+		status.Message = err.Error()
+		return status, []StatusIssue{newStatusIssue("binary_path_error", status.Message, status.Path, expected, repair)}
+	}
+	status.Exists = exists
+	switch {
+	case !exists:
+		status.Status = "missing"
+		status.Message = fmt.Sprintf("Generated skill points at missing SourceMux binary path %s.", status.Path)
+		return status, []StatusIssue{newStatusIssue("missing_binary", status.Message, status.Path, expected, repair)}
+	case looksTemporaryExecutable(status.Path):
+		status.Status = "stale"
+		status.Message = fmt.Sprintf("Generated skill points at temporary SourceMux binary path %s.", status.Path)
+		return status, []StatusIssue{newStatusIssue("stale_binary", status.Message, status.Path, expected, repair)}
+	case status.Expected != "" && !status.MatchesExpected:
+		status.Status = "stale"
+		status.Message = fmt.Sprintf("Generated skill binary path %s differs from the requested/current SourceMux binary %s.", status.Path, status.Expected)
+		return status, []StatusIssue{newStatusIssue("stale_binary", status.Message, status.Path, expected, repair)}
+	default:
+		status.Message = "Generated skill binary path exists and matches the requested/current SourceMux binary."
+		return status, nil
+	}
+}
+
+func runtimeConfigPathStatus(target, scope, path, expected string) (PathStatus, []StatusIssue) {
+	status := PathStatus{
+		Path:            strings.TrimSpace(path),
+		Expected:        strings.TrimSpace(expected),
+		Status:          "ok",
+		MatchesExpected: samePath(path, expected),
+	}
+	repair := configRepair(target, scope, expected)
+	if status.Path == "" {
+		status.Status = "missing"
+		status.Message = "Generated skill manifest does not record a SourceMux config path."
+		return status, []StatusIssue{newStatusIssue("missing_config", status.Message, "", expected, repair)}
+	}
+	exists, err := regularFileExists(status.Path)
+	if err != nil {
+		status.Status = "error"
+		status.Message = err.Error()
+		return status, []StatusIssue{newStatusIssue("config_path_error", status.Message, status.Path, expected, repair)}
+	}
+	status.Exists = exists
+	switch {
+	case !exists:
+		status.Status = "missing"
+		status.Message = fmt.Sprintf("Generated skill points at missing SourceMux config path %s.", status.Path)
+		return status, []StatusIssue{newStatusIssue("missing_config", status.Message, status.Path, expected, repair)}
+	case status.Expected != "" && !status.MatchesExpected:
+		status.Status = "stale"
+		status.Message = fmt.Sprintf("Generated skill config path %s differs from the requested scope/config path %s.", status.Path, status.Expected)
+		return status, []StatusIssue{newStatusIssue("stale_config", status.Message, status.Path, expected, repair)}
+	default:
+		status.Message = "Generated skill config path exists and matches the requested scope/config path."
+		return status, nil
+	}
+}
+
+func manifestScopeStatus(target Target, requestedScope, currentSkillPath, manifestSkillPath string) (*ScopeStatus, *StatusIssue) {
+	manifestSkillPath = strings.TrimSpace(manifestSkillPath)
+	if manifestSkillPath == "" || samePath(manifestSkillPath, currentSkillPath) {
+		return nil, nil
+	}
+	detectedScope := scopeForSkillPath(target, manifestSkillPath)
+	statusValue := "stale"
+	code := "stale_skill_path"
+	message := fmt.Sprintf("Generated skill manifest path %s differs from requested %s-scope path %s.", manifestSkillPath, requestedScope, currentSkillPath)
+	if detectedScope != "" && detectedScope != requestedScope {
+		statusValue = "wrong_scope"
+		code = "wrong_scope"
+		message = fmt.Sprintf("Generated skill manifest was created for %s scope, but status is checking %s scope.", detectedScope, requestedScope)
+	}
+	scopeStatus := &ScopeStatus{
+		Requested: requestedScope,
+		Detected:  detectedScope,
+		SkillPath: manifestSkillPath,
+		Status:    statusValue,
+		Message:   message,
+	}
+	issue := newStatusIssue(code, message, manifestSkillPath, currentSkillPath, scopeRepair(target.Name, requestedScope, detectedScope))
+	return scopeStatus, &issue
+}
+
+func wrongScopeStatus(target Target, requestedScope string) (*ScopeStatus, *StatusIssue) {
+	otherScope := oppositeScope(requestedScope)
+	if otherScope == "" {
+		return nil, nil
+	}
+	otherPath, err := skillPath(target, otherScope)
+	if err != nil {
+		return nil, nil
+	}
+	exists, err := regularFileExists(otherPath)
+	if err != nil || !exists {
+		return nil, nil
+	}
+	message := fmt.Sprintf("%s is not installed for %s scope, but a %s-scope skill exists at %s.", target.Name, requestedScope, otherScope, otherPath)
+	scopeStatus := &ScopeStatus{
+		Requested: requestedScope,
+		Detected:  otherScope,
+		SkillPath: otherPath,
+		Status:    "wrong_scope",
+		Message:   message,
+	}
+	issue := newStatusIssue("wrong_scope", message, otherPath, "", scopeRepair(target.Name, requestedScope, otherScope))
+	return scopeStatus, &issue
+}
+
+func oppositeScope(scope string) string {
+	switch scope {
+	case "project":
+		return "user"
+	case "user":
+		return "project"
+	default:
+		return ""
+	}
+}
+
+func scopeForSkillPath(target Target, path string) string {
+	for _, scope := range []string{"project", "user"} {
+		scopePath, err := skillPath(target, scope)
+		if err == nil && samePath(path, scopePath) {
+			return scope
+		}
+	}
+	return ""
+}
+
+func newStatusIssue(code, message, path, expected, repair string) StatusIssue {
+	return StatusIssue{
+		Code:     code,
+		Severity: "warning",
+		Message:  message,
+		Path:     strings.TrimSpace(path),
+		Expected: strings.TrimSpace(expected),
+		Repair:   strings.TrimSpace(repair),
+	}
+}
+
+func binaryRepair(target, scope string) string {
+	return fmt.Sprintf("Run sourcemux bootstrap update %s --scope %s --binary /absolute/path/to/sourcemux and keep the configured --config path.", target, scope)
+}
+
+func configRepair(target, scope, expected string) string {
+	if strings.TrimSpace(expected) == "" {
+		return fmt.Sprintf("Run sourcemux bootstrap status %s --scope %s --config-status with the intended explicit --config path, then update the skill.", target, scope)
+	}
+	return fmt.Sprintf("Create %s or run sourcemux bootstrap update %s --scope %s --config %s; do not invent a hidden config fallback.", shellQuote(expected), target, scope, shellQuote(expected))
+}
+
+func scopeRepair(target, requestedScope, detectedScope string) string {
+	if detectedScope == "" {
+		return fmt.Sprintf("Reinstall or update %s with --scope %s so the generated skill path matches the requested scope.", target, requestedScope)
+	}
+	return fmt.Sprintf("Run sourcemux bootstrap status %s --scope %s --config-status to inspect the existing install, or reinstall/update with --scope %s.", target, detectedScope, requestedScope)
+}
+
+func regularFileExists(path string) (bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return false, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.IsDir() {
+		return false, fmt.Errorf("%s is a directory, not a file", path)
+	}
+	return true, nil
+}
+
+func samePath(a, b string) bool {
+	a = comparablePath(a)
+	b = comparablePath(b)
+	return a != "" && b != "" && a == b
+}
+
+func comparablePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return filepath.Clean(path)
 }
 
 func skillPath(target Target, scope string) (string, error) {
@@ -1096,6 +1359,27 @@ func marshalSnippet(payload any) string {
 func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 	configFlag := "--config " + shellQuote(configPath)
 	commandPrefix := shellQuote(binary) + " " + configFlag
+	searchPolicy, policyNote := routingSearchPolicy(configPath)
+	agentProfile := searchPolicy.AgentProfile
+	fallbackAfter := fmt.Sprintf("%ds", searchPolicy.FallbackAfterSec)
+	callerTimeout := fmt.Sprintf("%ds", searchPolicy.TimeoutSec)
+	quickSearch := fmt.Sprintf(`%s search "query" --profile %s --fallback-after %s --timeout %s --json`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
+	twitterSearch := fmt.Sprintf(`%s search "query" --platform Twitter --profile %s --fallback-after %s --timeout %s --json`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
+	heavySearch := fmt.Sprintf(`%s search "query" --profile heavy --fallback-after %s --timeout %s --json`, commandPrefix, fallbackAfter, callerTimeout)
+	complexHeavySearch := fmt.Sprintf(`%s search "complex query" --profile heavy --fallback-after %s --timeout %s --json`, commandPrefix, fallbackAfter, callerTimeout)
+	policySummary := fmt.Sprintf(`- Effective searchPolicy: defaultProfile=%s, agentProfile=%s, autoPreference=%s, fallbackAfterSec=%d, timeoutSec=%d.
+- %s
+- Generated quick search examples use --profile %s --fallback-after %s --timeout %s. Explicit --profile, --fallback-after, --grok-pool-timeout, and --timeout always override this policy.`,
+		searchPolicy.DefaultProfile,
+		searchPolicy.AgentProfile,
+		searchPolicy.AutoPreference,
+		searchPolicy.FallbackAfterSec,
+		searchPolicy.TimeoutSec,
+		policyNote,
+		agentProfile,
+		fallbackAfter,
+		callerTimeout,
+	)
 	modeLabel := "project development mode"
 	if scope == "user" {
 		modeLabel = "public user mode"
@@ -1107,8 +1391,8 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- Plain search stays fast on the default Grok profile; research and smart-answer should use --profile auto so SourceMux can choose heavy when appropriate.
-- Do not pass a known slow multi-agent model override to routine one-hop search unless the user explicitly wants to force that model.
+- Follow the effective searchPolicy below for generated one-shot search defaults. Use --profile default when the user explicitly asks for a fast, low-cost, or lightweight search.
+- Use --profile heavy only when the user asks to force heavy/multi-agent search or when diagnosing whether heavy is configured.
 - Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
 - Do not assume any specific endpoint name; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
@@ -1120,8 +1404,8 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
 - Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
-- Plain search stays fast on the default Grok profile; research and smart-answer should use --profile auto so SourceMux can choose heavy when appropriate.
-- Do not pass a known slow multi-agent model override to routine one-hop search unless the user explicitly wants to force that model.
+- Follow the effective searchPolicy below for generated one-shot search defaults. Use --profile default when the user explicitly asks for a fast, low-cost, or lightweight search.
+- Use --profile heavy only when the user asks to force heavy/multi-agent search or when diagnosing whether heavy is configured.
 - Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
 - Do not assume any specific endpoint name; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
@@ -1139,17 +1423,21 @@ Use SourceMux as the default web research capability.
 
 %s
 
+## Effective searchPolicy
+
+%s
+
 ## Mode selection
 
 Choose one mode before running commands:
 
 | Mode | Use when | Command pattern |
 | --- | --- | --- |
-| Quick search | Fresh/current facts, community feedback, one-hop discovery | %s search "query" --json |
+| Quick search | Fresh/current facts, community feedback, one-hop discovery | %s |
 | Broad research | Project lists, comparisons, current source discovery, citation-heavy work | %s research "topic" --depth standard --profile auto --json |
 | Deep planning | %s where decomposition is useful before execution | %s plan "topic" --json --depth deep |
 | Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | %s research "topic" --depth deep --profile auto --json |
-| Explicit heavy search | User asks to use heavy/multi-agent search directly | %s search "query" --profile heavy --fallback-after 60s --timeout 180s --json |
+| Explicit heavy search | User asks to use heavy/multi-agent search directly | %s |
 | Final synthesis | Evidence is collected and the user wants an answer/plan | %s smart-answer "question" --profile auto --json |
 | Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
 
@@ -1159,20 +1447,20 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 
 | Profile | Intended use | Notes |
 | --- | --- | --- |
-| default | Routine one-hop search | Normal search should rely on the configured default pool without pinning endpoint names. |
-| auto | Agent/research default | Resolves to heavy for research/deep/current/comparison/high-risk flows when a heavy Grok profile exists; otherwise safely resolves to default. |
-| heavy | Explicit multi-agent search | Use --profile heavy when the user asks to force heavy; keep fallback available with --fallback-after for user-facing search. |
+| auto | Agent/search/research default | Resolves according to searchPolicy.autoPreference: intent-based, heavy-first, or default-first; safely falls back to default when heavy is unavailable. |
+| heavy | Explicit multi-agent search | Use --profile heavy when the user asks to force heavy or to fail if heavy is not configured; keep fallback available with --fallback-after for user-facing search. |
+| default | Fast/lightweight search | Raw search uses this when searchPolicy.defaultProfile=default, and agents may use it when the user explicitly asks for quick, low-cost, or non-heavy search. |
 
 ## Capability routing
 
 | User intent | Prefer | Why |
 | --- | --- | --- |
-| Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | %s search "query" --platform Twitter --json or %s search "query" --json | Grok search is the freshness/community-first route and preserves SourceMux fallback tracing. |
+| Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | %s or %s | Grok search with configured policy is the freshness/community-first route and preserves SourceMux fallback tracing. |
 | Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | %s docs-search "library or API question" --json | Uses the configured source-first docs search path. |
 | Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | %s exa-search "official docs API reference" --type deep --json | Calls Exa directly when Exa-specific controls matter. |
 | Known URL page extraction | %s fetch "https://example.com" --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
-| Explicit slow heavy or multi-agent Grok search | %s search "query" --profile heavy --fallback-after 60s --timeout 180s --json | Lets Grok try first, then preserves fallback results for the user's actual task. |
+| Explicit slow heavy or multi-agent Grok search | %s | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
 | %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
 | Multi-source investigation with synthesis | %s research "topic" --depth standard --profile auto --json or %s research "topic" --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
@@ -1221,9 +1509,9 @@ If the binary path itself is missing, replace only the command binary with a kno
 
 ## CLI examples
 
-%s search "query" --json
-%s search "query" --platform Twitter --json
-%s search "complex query" --profile heavy --fallback-after 60s --timeout 180s --json
+%s
+%s
+%s
 %s fetch "https://example.com" --json
 %s docs-search "library or API question" --json
 %s exa-search "official docs API reference" --type deep --json
@@ -1238,11 +1526,40 @@ Diagnostics only; do not use for user-facing research answers:
 
 %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 `, cliPolicy,
-		commandPrefix, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
-		commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
+		policySummary,
+		quickSearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, heavySearch, commandPrefix, commandPrefix,
+		twitterSearch, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, heavySearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
 		shellQuote(configPath), commandPrefix,
 		scope, modeLabel, commandPrefix, scope, commandPrefix, scope, binary, configPath,
-		commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix)
+		quickSearch, twitterSearch, complexHeavySearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix)
+}
+
+func routingSearchPolicy(configPath string) (config.SearchPolicy, string) {
+	policy := config.DefaultSearchPolicy()
+	if strings.TrimSpace(configPath) == "" {
+		return policy, "No config path was provided; generated guidance is using public-safe searchPolicy defaults."
+	}
+	cfg, err := config.LoadFile(expandTilde(configPath))
+	if err != nil {
+		return policy, fmt.Sprintf("Could not load %s while generating this skill (%v); generated guidance is using public-safe searchPolicy defaults.", configPath, err)
+	}
+	return cfg.SearchPolicy, fmt.Sprintf("Loaded searchPolicy from %s at generation time.", configPath)
+}
+
+func expandTilde(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return home
+		}
+		return path
+	}
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+		}
+	}
+	return path
 }
 
 func writeGeneratedSkill(path string, content []byte, force bool, manifest installManifest) (string, string, error) {

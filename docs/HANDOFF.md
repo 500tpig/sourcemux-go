@@ -136,6 +136,20 @@ sourcemux bootstrap codex --scope user --dry-run
 sourcemux bootstrap status --scope user --config-status
 ```
 
+When handing off an npm/global install, prefer the JSON status output:
+
+```bash
+sourcemux bootstrap status codex --scope user --config-status --json
+```
+
+Use `issues[].code` to identify repairs: `missing_binary` / `stale_binary`
+means the generated skill manifest points at the wrong executable;
+`missing_config` / `stale_config` means the manifest's explicit `--config` file
+is gone or differs from the checked path; `wrong_scope` means status is checking
+user scope while the installed skill is in project scope, or the reverse.
+Repair with `bootstrap update ... --binary <path> --config <path>` for the
+intended scope. Do not add hidden config fallbacks during handoff.
+
 Project development CLI:
 
 ```bash
@@ -151,7 +165,7 @@ MCP:
 3. Call `get_sources` with the returned `session_id`.
 4. Call `web_fetch` on one returned URL or `https://example.com`.
 5. If Tavily is configured, call `web_map` and `web_crawl`.
-6. Call `research_run` for a bounded research pack; it defaults to `profile=auto` so configured heavy search is used when appropriate.
+6. Call `research_run` for a bounded research pack; it defaults to `profile=auto`, which follows `searchPolicy.autoPreference`.
 7. If `reasoningEndpoints[]` is configured, call `smart_answer`; pass `profile` if you need to force `default` or `heavy` for its research phase.
 
 Expected behavior:
@@ -202,7 +216,8 @@ Set `exa.apiKey` and keep `exa.enabled` true. Exa is a fallback behind Grok and 
 
 ### Slow endpoint pool
 
-Set `grokPoolTimeoutSec`, and keep heavy models out of the default profile. For
+Set `grokPoolTimeoutSec` or `searchPolicy.fallbackAfterSec`, and keep heavy
+models out of the default profile unless the user explicitly opts in. For
 example:
 
 ```json
@@ -223,15 +238,23 @@ example:
       "profile": "heavy"
     }
   ],
-  "grokPoolTimeoutSec": 300
+  "grokPoolTimeoutSec": 300,
+  "searchPolicy": {
+    "defaultProfile": "default",
+    "agentProfile": "auto",
+    "autoPreference": "intent-based",
+    "fallbackAfterSec": 180,
+    "timeoutSec": 300
+  }
 }
 ```
 
 This bounds the total wall-clock time spent across the selected Grok endpoint
-profile. Plain `search` stays on `default`; `research` and `smart-answer`
-default to `profile=auto`, which resolves to `heavy` for research/deep/current/
-comparison/high-risk flows when a heavy Grok profile exists. Multi-agent search
-models (e.g. `grok-4.20-multi-agent-xhigh`) must be in `grokEndpoints[]` with
+profile. Raw `search` defaults to `searchPolicy.defaultProfile` (`default` in
+public configs). `research` and `smart-answer` default to `profile=auto`, and
+`auto` follows `searchPolicy.autoPreference`: `intent-based`, `heavy-first`, or
+`default-first`. Multi-agent search models (e.g.
+`grok-4.20-multi-agent-xhigh`) must be in `grokEndpoints[]` with
 `profile: "heavy"`; placing them only in `reasoningEndpoints[]` makes them
 available for final synthesis, not search.
 
@@ -239,7 +262,7 @@ For heavy multi-agent searches, always pass `--timeout` above the pool cap:
 
 ```bash
 ./sourcemux --config /path/to/sourcemux.json search "complex current topic" \
-  --profile heavy --fallback-after 60s --timeout 180s --json
+  --profile heavy --fallback-after 180s --timeout 300s --json
 
 ./sourcemux --config /path/to/sourcemux.json research "complex current topic" \
   --depth deep --profile auto --json

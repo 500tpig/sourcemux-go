@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/router"
 	"github.com/500tpig/sourcemux-go/internal/tools"
@@ -38,9 +37,9 @@ func runSearch(args []string) int {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	model := fs.String("model", "", "One-shot Grok model override (e.g. grok-4.20-fast)")
-	profile := fs.String("profile", "", "Grok endpoint profile to use: default, auto, heavy, or another configured profile (default: default)")
+	profile := fs.String("profile", "", "Grok endpoint profile to use: default, auto, heavy, or another configured profile (default: searchPolicy.defaultProfile)")
 	platform := fs.String("platform", "", "Focus a platform, e.g. 'Twitter', 'GitHub, Reddit'")
-	timeout := fs.Duration("timeout", 60*time.Second, "Per-call timeout")
+	timeout := fs.Duration("timeout", 0, "Per-call timeout")
 	grokPoolTimeout := fs.Duration("grok-pool-timeout", 0, "Override configured Grok pool timeout; 0 disables the pool cap")
 	fallbackAfter := fs.Duration("fallback-after", 0, "Alias for --grok-pool-timeout; controls when Grok gives way to fallback providers")
 	noFallback := fs.Bool("no-fallback", false, "Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")
@@ -63,6 +62,8 @@ func runSearch(args []string) int {
 	if poolTimeoutProvided && fallbackAfterProvided {
 		return reportSearchErrCode(*jsonOut, query, "search: use only one of --grok-pool-timeout or --fallback-after", 2)
 	}
+	timeoutProvided := flagWasProvided(fs, "timeout")
+	profileProvided := flagWasProvided(fs, "profile")
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -72,7 +73,11 @@ func runSearch(args []string) int {
 		return reportSearchErrCode(*jsonOut, query, msg, 3)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	effectiveTimeout := *timeout
+	if !timeoutProvided {
+		effectiveTimeout = cfg.SearchPolicy.Timeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), effectiveTimeout)
 	defer cancel()
 
 	clients := buildWebSearchClients(cfg, tools.NewMemorySourceCache())
@@ -80,6 +85,10 @@ func runSearch(args []string) int {
 		clients.DisableFallbacks = true
 	}
 	effectiveGrokPoolTimeout := cfg.GrokPoolTimeout
+	if !cfg.GrokPoolTimeoutSet {
+		effectiveGrokPoolTimeout = cfg.SearchPolicy.FallbackAfter
+		clients = clients.WithGrokPoolTimeout(effectiveGrokPoolTimeout)
+	}
 	if poolTimeoutProvided || fallbackAfterProvided {
 		effectiveGrokPoolTimeout = *grokPoolTimeout
 		if fallbackAfterProvided {
@@ -88,7 +97,11 @@ func runSearch(args []string) int {
 		clients = clients.WithGrokPoolTimeout(effectiveGrokPoolTimeout)
 	}
 
-	res, err := tools.RunWebSearch(ctx, clients, query, "", *model, *profile)
+	effectiveProfile := *profile
+	if !profileProvided {
+		effectiveProfile = cfg.SearchPolicy.DefaultProfile
+	}
+	res, err := tools.RunWebSearch(ctx, clients, query, "", *model, effectiveProfile)
 	if err != nil {
 		return reportSearchErr(*jsonOut, query, err.Error())
 	}
@@ -105,7 +118,7 @@ func runSearch(args []string) int {
 		SourcesCount:     res.SourcesCount,
 		Fallback:         res.Fallback,
 		GrokError:        res.GrokError,
-		CallerTimeout:    timeout.String(),
+		CallerTimeout:    effectiveTimeout.String(),
 		GrokPoolTimeout:  effectiveGrokPoolTimeout.String(),
 		NoFallback:       *noFallback,
 		RouteDecision:    res.RouteTrace.Decisions,

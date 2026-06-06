@@ -46,6 +46,13 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 			sb.WriteString(fmt.Sprintf("\n        Model:    %s", ep.Model))
 		}
 		sb.WriteString(fmt.Sprintf("\nDebug: %v", cfg.Debug))
+		sb.WriteString(fmt.Sprintf("\nSearch Policy: defaultProfile=%s agentProfile=%s autoPreference=%s fallbackAfterSec=%d timeoutSec=%d",
+			cfg.SearchPolicy.DefaultProfile,
+			cfg.SearchPolicy.AgentProfile,
+			cfg.SearchPolicy.AutoPreference,
+			cfg.SearchPolicy.FallbackAfterSec,
+			cfg.SearchPolicy.TimeoutSec,
+		))
 
 		sb.WriteString(fmt.Sprintf("\n\n=== Grok Endpoint Pool (%d configured, in priority order) ===", pool.Len()))
 		for i, c := range pool.Clients() {

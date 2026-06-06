@@ -104,20 +104,21 @@ want live provider checks.
 ## 3. Run CLI commands
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest Go release notes" --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest community feedback on GPT-5.4 Codex" --platform Twitter --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest Go release notes" --profile auto --fallback-after 180s --timeout 300s --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "latest community feedback on GPT-5.4 Codex" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json docs-search "next.js middleware auth" --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json plan "Evaluate current Go module proxy behavior" --depth standard
 sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth standard --profile auto --json
 ```
 
-Use `search --platform Twitter` for freshness/community discovery, `docs-search`
+Use `search --profile auto --platform Twitter` for freshness/community discovery, `docs-search`
 or direct `exa-search` for source-first docs/API discovery, and `fetch` to
 verify key URLs before source-critical claims. `plan` is offline and
-deterministic. `research` defaults to `profile=auto`, so configured heavy search
-is used for research/deep/current/comparison/high-risk flows while fallback
-providers remain available.
+deterministic. `research` defaults to `profile=auto`, which follows
+`searchPolicy.autoPreference`; with the public `intent-based` default,
+configured heavy search is used for research/deep/current/comparison/high-risk
+flows while fallback providers remain available.
 
 Fetch starts with Jina Reader because it is a lightweight, zero-key,
 fetch-first URL extraction path. That does not make Jina the whole product:
@@ -151,7 +152,16 @@ sourcemux bootstrap codex --scope user --write-config --dry-run --json
 The installer never writes provider API keys into agent config; it only passes
 the selected config file path to the SourceMux binary. If status reports a
 missing/stale binary or config path, reinstall or update the skill instead of
-guessing a replacement path.
+guessing a replacement path. In `--json` output, check:
+
+* `binary_status` / `issues[].code=missing_binary|stale_binary`
+* `runtime_config_status` / `issues[].code=missing_config|stale_config`
+  (emitted with `--config-status`)
+* `scope_status` / `issues[].code=wrong_scope`
+
+`config_status` is the MCP client config entry check; it is separate from the
+runtime `--config` file path above. Keep passing one explicit config path; there
+is no hidden home or legacy config fallback.
 
 ## Optional: add MCP server manually
 

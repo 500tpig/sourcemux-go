@@ -94,9 +94,10 @@ type configListOutput struct {
 	TinyFishFetchURL  string                 `json:"tinyfish_fetch_url"`
 	TinyFishKeys      []configNamedKeyOutput `json:"tinyfish_keys"`
 
-	Debug              bool   `json:"debug"`
-	LogLevel           string `json:"log_level"`
-	GrokPoolTimeoutSec int64  `json:"grok_pool_timeout_sec"`
+	Debug              bool                `json:"debug"`
+	LogLevel           string              `json:"log_level"`
+	GrokPoolTimeoutSec int64               `json:"grok_pool_timeout_sec"`
+	SearchPolicy       cfgpkg.SearchPolicy `json:"search_policy"`
 }
 
 func runConfig(args []string) int {
@@ -241,8 +242,19 @@ func buildV2ConfigMap(cfg *cfgpkg.Config) map[string]any {
 		},
 		"reasoning_endpoints": cfg.ReasoningEndpoints,
 		"grokPoolTimeoutSec":  int64(cfg.GrokPoolTimeout.Seconds()),
+		"searchPolicy":        searchPolicyMap(cfg.SearchPolicy),
 		"logLevel":            cfg.LogLevel,
 		"debug":               cfg.Debug,
+	}
+}
+
+func searchPolicyMap(policy cfgpkg.SearchPolicy) map[string]any {
+	return map[string]any{
+		"defaultProfile":   policy.DefaultProfile,
+		"agentProfile":     policy.AgentProfile,
+		"autoPreference":   policy.AutoPreference,
+		"fallbackAfterSec": policy.FallbackAfterSec,
+		"timeoutSec":       policy.TimeoutSec,
 	}
 }
 
@@ -418,6 +430,13 @@ func runConfigList(args []string) int {
 	fmt.Printf("Debug: %v\n", out.Debug)
 	fmt.Printf("Log level: %s\n", out.LogLevel)
 	fmt.Printf("Grok pool timeout: %ds\n", out.GrokPoolTimeoutSec)
+	fmt.Printf("Search policy: defaultProfile=%s agentProfile=%s autoPreference=%s fallbackAfterSec=%d timeoutSec=%d\n",
+		out.SearchPolicy.DefaultProfile,
+		out.SearchPolicy.AgentProfile,
+		out.SearchPolicy.AutoPreference,
+		out.SearchPolicy.FallbackAfterSec,
+		out.SearchPolicy.TimeoutSec,
+	)
 	return 0
 }
 
@@ -479,6 +498,7 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		Debug:              cfg.Debug,
 		LogLevel:           cfg.LogLevel,
 		GrokPoolTimeoutSec: int64(cfg.GrokPoolTimeout.Seconds()),
+		SearchPolicy:       cfg.SearchPolicy,
 	}
 
 	for _, ep := range cfg.GrokEndpoints {

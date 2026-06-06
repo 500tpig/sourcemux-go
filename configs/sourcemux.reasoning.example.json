@@ -54,5 +54,12 @@
     "apiKey": ""
   },
   "grokPoolTimeoutSec": 45,
+  "searchPolicy": {
+    "defaultProfile": "default",
+    "agentProfile": "auto",
+    "autoPreference": "intent-based",
+    "fallbackAfterSec": 180,
+    "timeoutSec": 300
+  },
   "logLevel": "INFO"
 }

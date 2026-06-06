@@ -78,13 +78,13 @@ func TestBuildStructuredSearchPlanDeepProfilePolicy(t *testing.T) {
 	}
 }
 
-func TestBuildStructuredSearchPlanRoutineUsesAutoDefaultHint(t *testing.T) {
+func TestBuildStructuredSearchPlanRoutineUsesAutoHeavyFirstHint(t *testing.T) {
 	plan := BuildStructuredSearchPlan("SourceMux overview", "standard", "")
 	if plan.ProfilePolicy.PlannedProfile != SearchProfileAuto {
 		t.Fatalf("planned profile = %q", plan.ProfilePolicy.PlannedProfile)
 	}
-	if plan.ProfilePolicy.EffectiveIfAvailable != "default" {
-		t.Fatalf("effective_if_available = %q, want default", plan.ProfilePolicy.EffectiveIfAvailable)
+	if plan.ProfilePolicy.EffectiveIfAvailable != "heavy" {
+		t.Fatalf("effective_if_available = %q, want heavy", plan.ProfilePolicy.EffectiveIfAvailable)
 	}
 	if !containsString(plan.IntentSignals, "general-research") {
 		t.Fatalf("intent signals = %+v", plan.IntentSignals)

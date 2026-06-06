@@ -24,11 +24,12 @@ func buildWebSearchClients(cfg *config.Config, cache tools.SourceCacher) tools.W
 	}
 
 	return tools.WebSearchClients{
-		Pool:     pool,
-		TinyFish: tinyfish,
-		Exa:      exa,
-		Tavily:   tavily,
-		Cache:    cache,
+		Pool:         pool,
+		TinyFish:     tinyfish,
+		Exa:          exa,
+		Tavily:       tavily,
+		Cache:        cache,
+		SearchPolicy: cfg.SearchPolicy,
 	}
 }
 

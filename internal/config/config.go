@@ -45,7 +45,32 @@ type Config struct {
 	Debug    bool
 	LogLevel string
 
-	GrokPoolTimeout time.Duration
+	GrokPoolTimeout    time.Duration
+	GrokPoolTimeoutSet bool
+	SearchPolicy       SearchPolicy
+}
+
+const (
+	SearchProfileDefault = engine.DefaultGrokEndpointProfile
+	SearchProfileAuto    = "auto"
+	SearchProfileHeavy   = engine.HeavyGrokEndpointProfile
+
+	SearchAutoPreferenceIntentBased  = "intent-based"
+	SearchAutoPreferenceHeavyFirst   = "heavy-first"
+	SearchAutoPreferenceDefaultFirst = "default-first"
+
+	DefaultSearchFallbackAfterSec = 180
+	DefaultSearchTimeoutSec       = 300
+)
+
+type SearchPolicy struct {
+	DefaultProfile   string        `json:"defaultProfile"`
+	AgentProfile     string        `json:"agentProfile"`
+	AutoPreference   string        `json:"autoPreference"`
+	FallbackAfterSec int           `json:"fallbackAfterSec"`
+	TimeoutSec       int           `json:"timeoutSec"`
+	FallbackAfter    time.Duration `json:"-"`
+	Timeout          time.Duration `json:"-"`
 }
 
 type fileConfig struct {
@@ -63,9 +88,18 @@ type fileConfig struct {
 
 	TinyFish tinyFishFileConfig `json:"tinyfish"`
 
-	Debug              *bool  `json:"debug"`
-	LogLevel           string `json:"logLevel"`
-	GrokPoolTimeoutSec *int   `json:"grokPoolTimeoutSec"`
+	Debug              *bool                   `json:"debug"`
+	LogLevel           string                  `json:"logLevel"`
+	GrokPoolTimeoutSec *int                    `json:"grokPoolTimeoutSec"`
+	SearchPolicy       *searchPolicyFileConfig `json:"searchPolicy"`
+}
+
+type searchPolicyFileConfig struct {
+	DefaultProfile   string `json:"defaultProfile"`
+	AgentProfile     string `json:"agentProfile"`
+	AutoPreference   string `json:"autoPreference"`
+	FallbackAfterSec *int   `json:"fallbackAfterSec"`
+	TimeoutSec       *int   `json:"timeoutSec"`
 }
 
 type capabilitiesFileConfig struct {
@@ -156,6 +190,10 @@ func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s reasoningEndpoints: %w", path, err)
 	}
+	searchPolicy, err := normalizeSearchPolicy(fileCfg.SearchPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s searchPolicy: %w", path, err)
+	}
 
 	return &Config{
 		Version:              1,
@@ -182,9 +220,11 @@ func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {
 		TinyFishSearchURL: stringOr(fileCfg.TinyFish.SearchURL, engine.DefaultTinyFishSearchURL),
 		TinyFishFetchURL:  stringOr(fileCfg.TinyFish.FetchURL, engine.DefaultTinyFishFetchURL),
 
-		Debug:           boolPtrOr(fileCfg.Debug, false),
-		LogLevel:        stringOr(fileCfg.LogLevel, "INFO"),
-		GrokPoolTimeout: secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+		Debug:              boolPtrOr(fileCfg.Debug, false),
+		LogLevel:           stringOr(fileCfg.LogLevel, "INFO"),
+		GrokPoolTimeout:    secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+		GrokPoolTimeoutSet: fileCfg.GrokPoolTimeoutSec != nil,
+		SearchPolicy:       searchPolicy,
 	}, nil
 }
 
@@ -197,20 +237,26 @@ func buildConfigV2(fileCfg fileConfig, raw map[string]json.RawMessage, path stri
 	}
 
 	out := &Config{
-		Version:           2,
-		MinimumProfile:    normalizeMinimumProfile(fileCfg.MinimumProfile),
-		TavilyAPIURL:      "https://api.tavily.com",
-		TavilyEnabled:     true,
-		ExaAPIURL:         "https://api.exa.ai",
-		ExaEnabled:        true,
-		JinaAPIURL:        "https://r.jina.ai",
-		TinyFishEnabled:   true,
-		TinyFishSearchURL: engine.DefaultTinyFishSearchURL,
-		TinyFishFetchURL:  engine.DefaultTinyFishFetchURL,
-		Debug:             boolPtrOr(fileCfg.Debug, false),
-		LogLevel:          stringOr(fileCfg.LogLevel, "INFO"),
-		GrokPoolTimeout:   secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+		Version:            2,
+		MinimumProfile:     normalizeMinimumProfile(fileCfg.MinimumProfile),
+		TavilyAPIURL:       "https://api.tavily.com",
+		TavilyEnabled:      true,
+		ExaAPIURL:          "https://api.exa.ai",
+		ExaEnabled:         true,
+		JinaAPIURL:         "https://r.jina.ai",
+		TinyFishEnabled:    true,
+		TinyFishSearchURL:  engine.DefaultTinyFishSearchURL,
+		TinyFishFetchURL:   engine.DefaultTinyFishFetchURL,
+		Debug:              boolPtrOr(fileCfg.Debug, false),
+		LogLevel:           stringOr(fileCfg.LogLevel, "INFO"),
+		GrokPoolTimeout:    secondsPtrToDuration(fileCfg.GrokPoolTimeoutSec),
+		GrokPoolTimeoutSet: fileCfg.GrokPoolTimeoutSec != nil,
 	}
+	searchPolicy, err := normalizeSearchPolicy(fileCfg.SearchPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s searchPolicy: %w", path, err)
+	}
+	out.SearchPolicy = searchPolicy
 
 	reasoning, err := normalizeReasoningEndpoints(fileCfg.ReasoningEndpointsV2)
 	if err != nil {
@@ -363,6 +409,72 @@ func normalizeMinimumProfile(value string) string {
 		return "off"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func DefaultSearchPolicy() SearchPolicy {
+	return SearchPolicy{
+		DefaultProfile:   SearchProfileDefault,
+		AgentProfile:     SearchProfileAuto,
+		AutoPreference:   SearchAutoPreferenceIntentBased,
+		FallbackAfterSec: DefaultSearchFallbackAfterSec,
+		TimeoutSec:       DefaultSearchTimeoutSec,
+		FallbackAfter:    time.Duration(DefaultSearchFallbackAfterSec) * time.Second,
+		Timeout:          time.Duration(DefaultSearchTimeoutSec) * time.Second,
+	}
+}
+
+func normalizeSearchPolicy(in *searchPolicyFileConfig) (SearchPolicy, error) {
+	out := DefaultSearchPolicy()
+	if in == nil {
+		return out, nil
+	}
+	if strings.TrimSpace(in.DefaultProfile) != "" {
+		profile, err := normalizeConfiguredSearchProfile(in.DefaultProfile, "defaultProfile")
+		if err != nil {
+			return SearchPolicy{}, err
+		}
+		out.DefaultProfile = profile
+	}
+	if strings.TrimSpace(in.AgentProfile) != "" {
+		profile, err := normalizeConfiguredSearchProfile(in.AgentProfile, "agentProfile")
+		if err != nil {
+			return SearchPolicy{}, err
+		}
+		out.AgentProfile = profile
+	}
+	if strings.TrimSpace(in.AutoPreference) != "" {
+		switch value := strings.ToLower(strings.TrimSpace(in.AutoPreference)); value {
+		case SearchAutoPreferenceIntentBased, SearchAutoPreferenceHeavyFirst, SearchAutoPreferenceDefaultFirst:
+			out.AutoPreference = value
+		default:
+			return SearchPolicy{}, fmt.Errorf("autoPreference %q is invalid: must be %q, %q, or %q", in.AutoPreference, SearchAutoPreferenceIntentBased, SearchAutoPreferenceHeavyFirst, SearchAutoPreferenceDefaultFirst)
+		}
+	}
+	if in.FallbackAfterSec != nil {
+		if *in.FallbackAfterSec < 0 {
+			return SearchPolicy{}, fmt.Errorf("fallbackAfterSec must be non-negative")
+		}
+		out.FallbackAfterSec = *in.FallbackAfterSec
+	}
+	if in.TimeoutSec != nil {
+		if *in.TimeoutSec <= 0 {
+			return SearchPolicy{}, fmt.Errorf("timeoutSec must be positive")
+		}
+		out.TimeoutSec = *in.TimeoutSec
+	}
+	out.FallbackAfter = time.Duration(out.FallbackAfterSec) * time.Second
+	out.Timeout = time.Duration(out.TimeoutSec) * time.Second
+	return out, nil
+}
+
+func normalizeConfiguredSearchProfile(value, field string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case SearchProfileDefault, SearchProfileAuto, SearchProfileHeavy:
+		return value, nil
+	default:
+		return "", fmt.Errorf("%s %q is invalid: must be %q, %q, or %q", field, value, SearchProfileDefault, SearchProfileAuto, SearchProfileHeavy)
 	}
 }
 

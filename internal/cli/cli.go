@@ -49,18 +49,20 @@ Common flags (subcommand-dependent):
   --platform <name>   Focus a platform, e.g. 'Twitter' or 'GitHub, Reddit'.
                       Useful for content blocked by CF or hosted on X.
   --model <name>      One-shot Grok model override, e.g. 'grok-4.20-fast'.
-  --profile <name>    Search profile: auto/default/heavy or another configured Grok profile.
-  --timeout <dur>     Per-call timeout, e.g. '60s', '2m'.
+  --profile <name>    Search profile: default/auto/heavy or another configured Grok profile.
+                      Raw search defaults to searchPolicy.defaultProfile; research defaults to auto.
+  --timeout <dur>     Per-call timeout, defaults to searchPolicy.timeoutSec for search.
   --grok-pool-timeout <dur>
                       Override configured Grok pool cap; 0 disables it.
   --fallback-after <dur>
-                      Alias for --grok-pool-timeout on search.
+                      Alias for --grok-pool-timeout on search; defaults to 180s when unset.
   --no-fallback       Search only the selected Grok pool; use for diagnostics, not normal research.
   --help, -h          Show this usage.
 
 Examples:
-  sourcemux cli search "X 上 grok 4 的最新评价" --platform Twitter --json
-  sourcemux cli search "复杂搜索问题" --profile heavy --fallback-after 60s --timeout 180s --json
+  sourcemux cli search "latest Go release notes" --json
+  sourcemux cli search "X 上 grok 4 的最新评价" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
+  sourcemux cli search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --json
   sourcemux cli search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
   sourcemux cli docs-search "middleware auth" --json
   sourcemux cli fetch  "https://example.com/article" --json

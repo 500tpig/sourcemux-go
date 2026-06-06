@@ -121,8 +121,11 @@ func TestLoadFile_LoadsSingleConfig(t *testing.T) {
 	if cfg.TinyFishSearchURL != "https://tinyfish-search.test" || cfg.TinyFishFetchURL != "https://tinyfish-fetch.test" {
 		t.Fatalf("tinyfish urls = %q %q", cfg.TinyFishSearchURL, cfg.TinyFishFetchURL)
 	}
-	if !cfg.Debug || cfg.LogLevel != "DEBUG" || cfg.GrokPoolTimeout != 45*time.Second {
-		t.Fatalf("debug/log/timeout = %v %q %s", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout)
+	if !cfg.Debug || cfg.LogLevel != "DEBUG" || cfg.GrokPoolTimeout != 45*time.Second || !cfg.GrokPoolTimeoutSet {
+		t.Fatalf("debug/log/timeout = %v %q %s set=%v", cfg.Debug, cfg.LogLevel, cfg.GrokPoolTimeout, cfg.GrokPoolTimeoutSet)
+	}
+	if cfg.SearchPolicy.DefaultProfile != SearchProfileDefault || cfg.SearchPolicy.AgentProfile != SearchProfileAuto || cfg.SearchPolicy.AutoPreference != SearchAutoPreferenceIntentBased {
+		t.Fatalf("default search policy = %+v", cfg.SearchPolicy)
 	}
 }
 
@@ -268,8 +271,74 @@ func TestLoadFile_PoolTimeoutZeroDisables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
 	}
-	if cfg.GrokPoolTimeout != 0 {
-		t.Fatalf("timeout = %s, want 0", cfg.GrokPoolTimeout)
+	if cfg.GrokPoolTimeout != 0 || !cfg.GrokPoolTimeoutSet {
+		t.Fatalf("timeout = %s set=%v, want 0/set", cfg.GrokPoolTimeout, cfg.GrokPoolTimeoutSet)
+	}
+}
+
+func TestLoadFile_SearchPolicyDefaultsAndOverrides(t *testing.T) {
+	path := writeConfig(t, `{
+	  "searchPolicy": {
+	    "defaultProfile": " AUTO ",
+	    "agentProfile": "HEAVY",
+	    "autoPreference": "heavy-first",
+	    "fallbackAfterSec": 12,
+	    "timeoutSec": 34
+	  }
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	policy := cfg.SearchPolicy
+	if policy.DefaultProfile != SearchProfileAuto || policy.AgentProfile != SearchProfileHeavy || policy.AutoPreference != SearchAutoPreferenceHeavyFirst {
+		t.Fatalf("policy profiles = %+v", policy)
+	}
+	if policy.FallbackAfterSec != 12 || policy.FallbackAfter != 12*time.Second || policy.TimeoutSec != 34 || policy.Timeout != 34*time.Second {
+		t.Fatalf("policy timeouts = %+v", policy)
+	}
+}
+
+func TestLoadFile_InvalidSearchPolicyErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "default profile",
+			body: `{"searchPolicy":{"defaultProfile":"xhigh"}}`,
+			want: "defaultProfile",
+		},
+		{
+			name: "agent profile",
+			body: `{"searchPolicy":{"agentProfile":"xhigh"}}`,
+			want: "agentProfile",
+		},
+		{
+			name: "auto preference",
+			body: `{"searchPolicy":{"autoPreference":"always"}}`,
+			want: "autoPreference",
+		},
+		{
+			name: "negative fallback",
+			body: `{"searchPolicy":{"fallbackAfterSec":-1}}`,
+			want: "fallbackAfterSec",
+		},
+		{
+			name: "zero timeout",
+			body: `{"searchPolicy":{"timeoutSec":0}}`,
+			want: "timeoutSec",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := LoadFile(writeConfig(t, tt.body))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want containing %q", err, tt.want)
+			}
+		})
 	}
 }
 

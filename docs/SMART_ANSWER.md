@@ -32,9 +32,10 @@ belongs in `reasoningEndpoints[]`.
 Heavy multi-agent search models such as `grok-4.20-multi-agent-xhigh` should
 not be in the default search profile. Put search-capable multi-agent models in
 `grokEndpoints[]` with `"profile": "heavy"`; `smart-answer` and `research`
-default to `profile=auto`, which resolves to heavy for research/deep/current/
-comparison/high-risk flows when configured. `reasoningEndpoints[]` alone is
-only for final synthesis and is not used by `web_search` or `research`.
+default to `profile=auto`, which follows `searchPolicy.autoPreference`
+(`intent-based`, `heavy-first`, or `default-first`) and safely falls back to
+default when heavy is unavailable. `reasoningEndpoints[]` alone is only for
+final synthesis and is not used by `web_search` or `research`.
 
 ## Why `reasoningEndpoints` are separate
 
@@ -108,8 +109,8 @@ Explicit heavy search profile:
 ```bash
 ./sourcemux search "Investigate this complex current topic" \
   --profile heavy \
-  --fallback-after 60s \
-  --timeout 180s \
+  --fallback-after 180s \
+  --timeout 300s \
   --json
 
 ./sourcemux search "ping" \

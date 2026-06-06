@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/capability"
+	"github.com/500tpig/sourcemux-go/internal/config"
 	"github.com/500tpig/sourcemux-go/internal/engine"
 	"github.com/500tpig/sourcemux-go/internal/router"
 	"github.com/500tpig/sourcemux-go/internal/router/adapters"
@@ -31,6 +32,7 @@ type WebSearchClients struct {
 	Tavily           *engine.TavilyClient
 	Cache            SourceCacher
 	DisableFallbacks bool
+	SearchPolicy     config.SearchPolicy
 }
 
 // WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
@@ -71,13 +73,13 @@ type WebSearchOptions struct {
 //  4. Tavily Search                              — final fallback when every
 //     previous engine fails.
 //     endpoint either errors or returns empty content.
-func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *engine.TinyFishPool, exa *engine.ExaClient, tavily *engine.TavilyClient, cache SourceCacher) {
+func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *engine.TinyFishPool, exa *engine.ExaClient, tavily *engine.TavilyClient, cache SourceCacher, policy config.SearchPolicy) {
 	tool := mcp.NewTool("web_search",
 		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to TinyFish Search, Exa Search, and Tavily Search. Returns answer/source text, an engine label, and a session_id for source retrieval."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
-		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile: default, auto, heavy, or another configured profile")),
+		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile: default, auto, heavy, or another configured profile; omitted uses searchPolicy.defaultProfile")),
 		mcp.WithNumber("grok_pool_timeout_sec", mcp.Description("Optional per-call Grok pool timeout in seconds; 0 disables the pool cap and leaves cancellation to the caller context")),
 		mcp.WithBoolean("no_fallback", mcp.Description("Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")),
 		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
@@ -90,17 +92,20 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 		profile, _ := req.Params.Arguments["profile"].(string)
 		includeTrace := boolArgOr(req.Params.Arguments, "include_trace", false)
 		clients := WebSearchClients{
-			Pool:     pool,
-			TinyFish: tinyfish,
-			Exa:      exa,
-			Tavily:   tavily,
-			Cache:    cache,
+			Pool:         pool,
+			TinyFish:     tinyfish,
+			Exa:          exa,
+			Tavily:       tavily,
+			Cache:        cache,
+			SearchPolicy: policy,
 		}
 		if boolArgOr(req.Params.Arguments, "no_fallback", false) {
 			clients.DisableFallbacks = true
 		}
 		if seconds, ok := nonNegativeIntArg(req.Params.Arguments, "grok_pool_timeout_sec"); ok {
 			clients = clients.WithGrokPoolTimeout(time.Duration(seconds) * time.Second)
+		} else {
+			clients = clients.WithGrokPoolTimeout(effectiveFallbackAfter(policy))
 		}
 
 		res, err := RunWebSearch(ctx, clients, query, platform, model, profile)
@@ -137,8 +142,9 @@ func RunWebSearch(ctx context.Context, clients WebSearchClients, query, platform
 		Model:    model,
 		Profile:  profile,
 		ProfileContext: SearchProfileContext{
-			Flow:  searchProfileFlowSearch,
-			Query: query,
+			Flow:         searchProfileFlowSearch,
+			Query:        query,
+			SearchPolicy: clients.SearchPolicy,
 		},
 	})
 }
@@ -169,6 +175,7 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 	if profileCtx.Platform == "" {
 		profileCtx.Platform = platform
 	}
+	profileCtx.SearchPolicy = effectivePolicyForCall(profileCtx.SearchPolicy, clients.SearchPolicy)
 	profileResolution, err := ResolveSearchProfile(clients.Pool, profile, profileCtx)
 	if err != nil {
 		return nil, err
@@ -208,6 +215,26 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 		GrokError:        grokFailureDetail(trace),
 		RouteTrace:       trace,
 	}, nil
+}
+
+func effectivePolicyForCall(primary, fallback config.SearchPolicy) config.SearchPolicy {
+	if strings.TrimSpace(primary.DefaultProfile) != "" {
+		return primary
+	}
+	if strings.TrimSpace(fallback.DefaultProfile) != "" {
+		return fallback
+	}
+	return config.DefaultSearchPolicy()
+}
+
+func effectiveFallbackAfter(policy config.SearchPolicy) time.Duration {
+	if policy.FallbackAfter > 0 {
+		return policy.FallbackAfter
+	}
+	if policy.FallbackAfterSec > 0 {
+		return time.Duration(policy.FallbackAfterSec) * time.Second
+	}
+	return time.Duration(config.DefaultSearchFallbackAfterSec) * time.Second
 }
 
 func webSearchTinyFishResult(query string, res *engine.TinyFishPoolSearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
