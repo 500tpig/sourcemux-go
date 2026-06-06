@@ -827,3 +827,36 @@ Added configurable SourceMux searchPolicy behavior, refreshed generated sourcemu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Archive npm release maintenance docs
+
+**Date**: 2026-06-06
+**Task**: Archive npm release maintenance docs
+**Branch**: `main`
+
+### Summary
+
+Archived the completed npm release maintenance docs task after confirming its acceptance criteria were already satisfied by the existing maintenance guide, release-doc link, and agent-facing guidance.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f48b2b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
