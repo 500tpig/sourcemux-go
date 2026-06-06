@@ -793,3 +793,37 @@ Ran isolated local npm tarball smoke for the current platform. Packed root and p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Search policy and bootstrap diagnostics
+
+**Date**: 2026-06-06
+**Task**: Search policy and bootstrap diagnostics
+**Branch**: `main`
+
+### Summary
+
+Added configurable SourceMux searchPolicy behavior, refreshed generated sourcemux-routing skill policy guidance, hardened bootstrap status diagnostics, updated docs/specs, and archived the completed search policy plus bootstrap diagnostics tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16e2bfc` | (see git log) |
+| `5e1c162` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
