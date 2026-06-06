@@ -133,12 +133,22 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"--config",
 		"Effective searchPolicy",
 		"defaultProfile=default, agentProfile=auto, autoPreference=intent-based, fallbackAfterSec=180, timeoutSec=300",
+		"Treat this skill as the routing/decision layer and the SourceMux CLI as the execution layer",
 		"Capability routing",
 		"Evidence policy",
 		"search \"query\" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json",
 		"docs-search",
 		"exa-search",
 		"exa-contents",
+		"firecrawl-scrape",
+		"firecrawl-map",
+		"SourceMux policy-first fetch",
+		"fetch \"https://example.com\" --profile auto --json",
+		"fetch \"https://example.com\" --profile cheap --json",
+		"Do not call Jina directly unless the user explicitly asks for cheap, zero-key, or diagnostic mode",
+		"Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls",
+		"Use firecrawl-map only for site structure discovery",
+		"Do not install, configure, or call Firecrawl MCP",
 		"plan \"research question\" --depth standard",
 		"plan \"deep research question\" --json --depth deep",
 		"Deep planning",
@@ -149,14 +159,24 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"--grok-pool-timeout 0 --no-fallback",
 		"diagnostics-only",
 		"grokEndpoints[]",
-		"fetch --json",
 		"Jina Reader",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("generated skill missing %q:\n%s", want, text)
 		}
 	}
-	for _, bad := range []string{"grok-search-routing", "/Users/johnsmith/Project/Study/grok-search-go", "Use SourceMux MCP tools", "playwright", "browser", "%!(EXTRA"} {
+	for _, bad := range []string{
+		"grok-search-routing",
+		"/Users/johnsmith/Project/Study/grok-search-go",
+		"Use SourceMux MCP tools",
+		"playwright",
+		"browser",
+		"%!(EXTRA",
+		"must not be wired into default fetch/search/map fallback routes",
+		"do not treat it as fetch/search/map fallback",
+		"Public/default fetch remains Jina-first",
+		"Firecrawl may participate only when the active v2 config explicitly lists it in capabilities.web_fetch.providers",
+	} {
 		if strings.Contains(text, bad) {
 			t.Fatalf("generated skill contains non-portable %q:\n%s", bad, text)
 		}

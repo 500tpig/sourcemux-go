@@ -1385,25 +1385,37 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 		modeLabel = "public user mode"
 	}
 	deepIntentLabels := "Deep search, \u6df1\u5ea6\u641c\u7d22, deep research, \u6df1\u5ea6\u8c03\u7814, complex comparison, \u590d\u6742\u5bf9\u6bd4, or verification/\u6838\u9a8c"
-	cliPolicy := `- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
+	cliPolicy := `- Treat this skill as the routing/decision layer and the SourceMux CLI as the execution layer.
+- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
-- Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- Use direct provider commands only when the capability rules below call for them; otherwise honor SourceMux policy-first routing unless the user explicitly asks.
+- Ordinary known URLs use SourceMux fetch --profile auto. Default fetch is policy-first / quality-first: GitHub URLs use repository-aware routing, ordinary pages prefer Firecrawl when configured, and cheap/zero-key requests use --profile cheap.
+- Do not call Jina directly unless the user explicitly asks for cheap, zero-key, or diagnostic mode. Use SourceMux fetch --profile cheap for that route.
+- Use firecrawl-scrape as an explicit one-off hard-page command only when the user asks for Firecrawl-specific controls; ordinary hard pages should start with fetch --profile auto.
+- Use firecrawl-map only for site structure discovery, URL inventory, or relevance-filtered URL discovery; do not use it for ordinary single-page extraction.
+- Do not install, configure, or call Firecrawl MCP. Firecrawl is available through SourceMux CLI direct commands and ordinary SourceMux fetch routing when configured.
 - Follow the effective searchPolicy below for generated one-shot search defaults. Use --profile default when the user explicitly asks for a fast, low-cost, or lightweight search.
 - Use --profile heavy only when the user asks to force heavy/multi-agent search or when diagnosing whether heavy is configured.
 - Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
 - Do not assume any specific endpoint name; rely on the active sourcemux.json.
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	if mcpMode {
-		cliPolicy = `- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
+		cliPolicy = `- Treat this skill as the routing/decision layer and SourceMux tools/CLI as execution surfaces.
+- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
 - Use the SourceMux CLI for deep research, reproducible JSON, large outputs, shell/script chaining, or saved artifacts.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
 - --grok-pool-timeout 0 --no-fallback is diagnostics-only. Never use it for broad/current research, source discovery, project lists, citations, or answering the user's substantive question.
-- Use direct provider commands only when the capability rules below call for them; otherwise do not bypass SourceMux fallback routing unless the user explicitly asks.
+- Use direct provider commands only when the capability rules below call for them; otherwise honor SourceMux policy-first routing unless the user explicitly asks.
+- Ordinary known URLs use SourceMux fetch --profile auto. Default fetch is policy-first / quality-first: GitHub URLs use repository-aware routing, ordinary pages prefer Firecrawl when configured, and cheap/zero-key requests use --profile cheap.
+- Do not call Jina directly unless the user explicitly asks for cheap, zero-key, or diagnostic mode. Use SourceMux fetch --profile cheap for that route.
+- Use firecrawl-scrape as an explicit one-off hard-page command only when the user asks for Firecrawl-specific controls; ordinary hard pages should start with fetch --profile auto.
+- Use firecrawl-map only for site structure discovery, URL inventory, or relevance-filtered URL discovery; do not use it for ordinary single-page extraction.
+- Do not install, configure, or call Firecrawl MCP. Firecrawl is available through SourceMux CLI direct commands and ordinary SourceMux fetch routing when configured.
 - Follow the effective searchPolicy below for generated one-shot search defaults. Use --profile default when the user explicitly asks for a fast, low-cost, or lightweight search.
 - Use --profile heavy only when the user asks to force heavy/multi-agent search or when diagnosing whether heavy is configured.
 - Multi-agent search models must be configured in grokEndpoints[] with a search profile such as heavy; reasoningEndpoints[] alone is only for final synthesis.
@@ -1458,8 +1470,11 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 | Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | %s or %s | Grok search with configured policy is the freshness/community-first route and preserves SourceMux fallback tracing. |
 | Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | %s docs-search "library or API question" --json | Uses the configured source-first docs search path. |
 | Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | %s exa-search "official docs API reference" --type deep --json | Calls Exa directly when Exa-specific controls matter. |
-| Known URL page extraction | %s fetch "https://example.com" --json | Uses SourceMux fetch fallbacks and returns the actual fetch provider label. |
+| Known URL page extraction | %s fetch "https://example.com" --profile auto --json | Uses SourceMux policy-first fetch: GitHub-aware for repo URLs, Firecrawl-first quality routing for ordinary pages when configured, then provider fallbacks. |
+| Cheap or zero-key known URL extraction | %s fetch "https://example.com" --profile cheap --json | Uses the low-cost route: Jina -> Firecrawl -> Exa -> Tavily. |
+| Difficult known URL extraction with Firecrawl-specific controls | %s firecrawl-scrape "https://example.com" --json | Use only as an explicit direct command when Firecrawl scrape flags matter; this direct command does not use Firecrawl MCP. |
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
+| Site structure discovery for hard sites, URL inventory, or relevance-filtered sections | %s firecrawl-map "https://example.com" --search "docs" --limit 100 --json | Use for URL inventory and site structure, not ordinary page extraction; existing SourceMux map remains Tavily. |
 | Explicit slow heavy or multi-agent Grok search | %s | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
 | %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
@@ -1483,9 +1498,13 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 
 - For source-critical claims, do not rely on a search summary alone.
 - First discover candidate URLs with search, docs-search, exa-search, or research.
-- Then fetch 1-3 key URLs with fetch --json before making high-risk or precise claims.
+- Then fetch 1-3 key URLs with fetch --profile auto --json before making high-risk or precise claims.
+- For known URLs, use fetch --profile auto first. This is SourceMux policy-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer quality extraction, and cheap/zero-key requests must explicitly use --profile cheap.
+- Do not call Jina directly unless the user asks for cheap, zero-key, or diagnostic mode.
+- Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls.
+- For site URL inventory or section discovery, use firecrawl-map explicitly.
 - In final answers, cite fetched or source URL evidence and mention the engine/provider when it matters.
-- A fetch result may show a provider such as Jina Reader; that verifies the URL content and does not mean Jina performed the original search.
+- A fetch result may show a provider such as Firecrawl, GitHub Provider, Jina Reader, Exa, or Tavily; that verifies URL content and does not mean that provider performed the original search.
 
 ## Public user mode vs project development mode
 
@@ -1512,7 +1531,10 @@ If the binary path itself is missing, replace only the command binary with a kno
 %s
 %s
 %s
-%s fetch "https://example.com" --json
+%s fetch "https://example.com" --profile auto --json
+%s fetch "https://example.com" --profile cheap --json
+%s firecrawl-scrape "https://example.com" --json
+%s firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 %s docs-search "library or API question" --json
 %s exa-search "official docs API reference" --type deep --json
 %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
@@ -1528,10 +1550,10 @@ Diagnostics only; do not use for user-facing research answers:
 `, cliPolicy,
 		policySummary,
 		quickSearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, heavySearch, commandPrefix, commandPrefix,
-		twitterSearch, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, heavySearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
+		twitterSearch, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, heavySearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
 		shellQuote(configPath), commandPrefix,
 		scope, modeLabel, commandPrefix, scope, commandPrefix, scope, binary, configPath,
-		quickSearch, twitterSearch, complexHeavySearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix)
+		quickSearch, twitterSearch, complexHeavySearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix)
 }
 
 func routingSearchPolicy(configPath string) (config.SearchPolicy, string) {
