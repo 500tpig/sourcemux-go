@@ -207,7 +207,7 @@ flowchart TB
     github["GitHub Provider\nrepo metadata + README"]:::provider
     jina["Jina Reader\ncheap profile first"]:::provider
     tiny["TinyFish Fetch\nmulti-key pool"]:::provider
-    fire["Firecrawl Scrape\nquality profile first when configured"]:::provider
+    fire["Firecrawl Scrape\nauto first without clean-content\nquality enables slow clean-content"]:::provider
     exa["Exa Contents"]:::provider
     tavily["Tavily Extract"]:::provider
 
@@ -238,11 +238,12 @@ flowchart TB
 Firecrawl / profile fetch 规则：
 
 - `fetch --profile auto`：GitHub repo/blob/tree/issues/releases URL 先走 GitHub Provider；普通网页默认 Firecrawl -> Jina -> Exa -> Tavily -> TinyFish。
-- `fetch --profile quality`：普通网页走质量优先顺序。
+- `fetch --profile auto` 的 Firecrawl adapter 默认不打开 clean-content，以便给 fallback 留出预算。
+- `fetch --profile quality`：普通网页走质量优先顺序，并打开 Firecrawl clean-content；这是慢速路径，使用更长的 Firecrawl timeout 预算。
 - `fetch --profile cheap`：Jina -> Firecrawl -> Exa -> Tavily。
 - V2：`capabilities.web_fetch.providers` 可显式指定 `auto` 的普通 provider 顺序。
 - Firecrawl 只有在启用且带有 key 时才会实际参与；未配置时 provider 会被跳过。
-- 共享 fetch 路由里，Firecrawl 使用 `FirecrawlPool`，每次轮换起始 key；遇到上游错误或空 markdown，会继续尝试剩余 key。
+- 共享 fetch 路由里，Firecrawl 使用 `FirecrawlPool`，每次轮换起始 key；遇到上游错误或空 markdown，会继续尝试剩余 key，并在 route trace 里记录 key-level attempt 细节。
 - 直接 `firecrawl-scrape` 和 `firecrawl-map` 当前通过 `buildFirecrawlClient` 使用第一个规范化后的 Firecrawl key。
 
 代码位置：
@@ -308,7 +309,7 @@ flowchart LR
     subgraph OptionalFetch["可选共享 fetch provider"]
         v2["firecrawl config\ntop-level or v2 provider"]:::config
         pool["FirecrawlPool\n轮换起始 key"]:::engine
-        adapter["FirecrawlFetchProvider\nonlyCleanContent=true"]:::direct
+        adapter["FirecrawlFetchProvider\nauto clean=false\nquality clean=true"]:::direct
         fetchRoute["共享 web_fetch 路由"]:::core
     end
 
@@ -343,7 +344,7 @@ flowchart LR
 | Exa | fallback | fallback | 是 | 否 | 否 | `exa.apiKey`；也有 advanced direct tools |
 | Tavily | fallback | fallback | 否 | 是 | 否 | `tavily.apiKey`；direct map/crawl |
 | Jina Reader | 否 | cheap profile 第一位 / quality fallback | 否 | 否 | 否 | 可不带 key 使用 |
-| Firecrawl | 否 | quality profile 第一位（配置 key 后） | 否 | 仅直接 CLI map | 否 | 直接 CLI 命令要求 `firecrawl.enabled=true`；共享 fetch 支持 policy-first 和显式 v2 provider 顺序 |
+| Firecrawl | 否 | auto/quality 第一位（配置 key 后） | 否 | 仅直接 CLI map | 否 | 直接 CLI 命令要求 `firecrawl.enabled=true`；auto 不开 clean-content，quality 开启并使用更长 timeout 预算；共享 fetch 支持 policy-first 和显式 v2 provider 顺序 |
 | Reasoning endpoints | 否 | 否 | 否 | 否 | 是 | `reasoningEndpoints[]`；只给 `smart_answer` 使用 |
 
 ## 更新规则

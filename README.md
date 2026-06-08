@@ -24,8 +24,9 @@ SourceMux 是一个面向 AI Agent、MCP 客户端和命令行自动化的单二
 
 Firecrawl 通过 SourceMux 自己的 CLI direct commands 和普通 fetch routing
 使用，不是 Firecrawl MCP server 集成。默认 `fetch --profile auto` 在
-Firecrawl 配置可用时会把普通网页放到质量优先路线；`fetch --profile cheap`
-才用于轻量、低成本、零 key 优先的 Jina-first 路线。
+Firecrawl 配置可用时会把普通网页放到质量优先路线，但不会默认开启
+Firecrawl clean-content；`fetch --profile quality` 才会打开该额外清理。
+`fetch --profile cheap` 才用于轻量、低成本、零 key 优先的 Jina-first 路线。
 
 仓库默认只保存安全示例配置。真实 API key 只应该放在本地 `sourcemux.json`，或用 `--config /path/to/sourcemux.json` 显式指定的本地配置文件里。不要提交真实密钥、私有 provider endpoint 或 provider dashboard 导出文件。
 
@@ -140,7 +141,9 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com
 
 普通已知 URL 先用 `fetch --profile auto`：GitHub repo / issues / releases /
 blob / tree URL 会优先走 GitHub enrichment，普通网页在 Firecrawl 配置可用时
-优先用 Firecrawl 质量抓取，再 fallback 到 Jina / Exa / Tavily / TinyFish。
+优先用 Firecrawl 抓取，再 fallback 到 Jina / Exa / Tavily / TinyFish。
+默认 Firecrawl fetch 对齐官方 scrape 默认值，不开启 clean-content；需要额外
+清理时用 `fetch --profile quality`。
 只有明确要低成本或零 key sanity check 时才用 `fetch --profile cheap`。需要
 Firecrawl-specific flags 时使用 `firecrawl-scrape`；站点结构、URL 盘点或按
 主题发现站内链接时才用 `firecrawl-map`。不要安装或调用 Firecrawl MCP。
@@ -433,6 +436,7 @@ The default routing is:
 
 - `web_search` / `sourcemux search`: Grok endpoint pool -> TinyFish Search -> Exa Search -> Tavily Search
 - `web_fetch` / `sourcemux fetch --profile auto`: GitHub Provider for GitHub URLs; otherwise Firecrawl -> Jina Reader -> Exa Contents -> Tavily Extract -> TinyFish Fetch
+- `sourcemux fetch --profile quality`: Firecrawl-first and enables Firecrawl clean-content with a longer timeout budget before fallbacks
 - `sourcemux fetch --profile cheap`: Jina Reader -> Firecrawl -> Exa Contents -> Tavily Extract
 - `docs_search` / `sourcemux docs-search`: Exa docs/web search fallback
 - `research_run` / `sourcemux research`: plan queries -> search -> collect sources -> rank URLs -> fetch top pages (defaults to `--profile auto`)

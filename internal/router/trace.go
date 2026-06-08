@@ -3,14 +3,15 @@ package router
 import "github.com/500tpig/sourcemux-go/internal/capability"
 
 type RouteDecision struct {
-	Capability     capability.Kind           `json:"capability"`
-	Provider       string                    `json:"provider"`
-	Attempt        int                       `json:"attempt"`
-	Status         string                    `json:"status"`
-	LatencyMS      int64                     `json:"latency_ms,omitempty"`
-	FallbackReason capability.FallbackReason `json:"fallback_reason,omitempty"`
-	FallbackDetail string                    `json:"fallback_detail,omitempty"`
-	SubAttempts    int                       `json:"sub_attempts,omitempty"`
+	Capability        capability.Kind            `json:"capability"`
+	Provider          string                     `json:"provider"`
+	Attempt           int                        `json:"attempt"`
+	Status            string                     `json:"status"`
+	LatencyMS         int64                      `json:"latency_ms,omitempty"`
+	FallbackReason    capability.FallbackReason  `json:"fallback_reason,omitempty"`
+	FallbackDetail    string                     `json:"fallback_detail,omitempty"`
+	SubAttempts       int                        `json:"sub_attempts,omitempty"`
+	SubAttemptDetails []capability.AttemptDetail `json:"sub_attempt_details,omitempty"`
 }
 
 type RouteTrace struct {

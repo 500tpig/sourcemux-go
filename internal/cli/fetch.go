@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/router"
 	"github.com/500tpig/sourcemux-go/internal/tools"
@@ -24,13 +23,14 @@ type fetchOutput struct {
 func runFetch(args []string) int {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	timeout := fs.Duration("timeout", 60*time.Second, "Per-call timeout")
+	timeout := fs.Duration("timeout", 0, "Per-call timeout; defaults to 300s for quality and 60s otherwise")
 	profile := fs.String("profile", tools.FetchProfileAuto, "Fetch profile: auto, quality, cheap, github, or compare")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
 	positional, err := parsePositional(fs, args)
 	if err != nil {
 		return 2
 	}
+	timeoutProvided := flagWasProvided(fs, "timeout")
 	if len(positional) == 0 {
 		fmt.Fprintln(os.Stderr, "fetch: url is required")
 		fs.Usage()
@@ -46,7 +46,11 @@ func runFetch(args []string) int {
 		return reportFetchErrCode(*jsonOut, url, msg, 3)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	effectiveTimeout := *timeout
+	if !timeoutProvided {
+		effectiveTimeout = tools.DefaultCallerTimeoutForFetchProfile(*profile)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), effectiveTimeout)
 	defer cancel()
 
 	clients := buildWebFetchClients(cfg)

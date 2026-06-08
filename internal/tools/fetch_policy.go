@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -17,6 +18,11 @@ const (
 	FetchIntentGitHub   = "github"
 	FetchIntentDocs     = "docs"
 	FetchIntentHardPage = "hard-page"
+)
+
+const (
+	DefaultFetchCallerTimeout = 60 * time.Second
+	QualityFetchCallerTimeout = 300 * time.Second
 )
 
 // FetchPolicy describes the fetch profile and classified URL intent used to
@@ -67,6 +73,14 @@ func NormalizeFetchProfile(raw string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported fetch profile %q (want auto, quality, cheap, github, or compare)", raw)
 	}
+}
+
+func DefaultCallerTimeoutForFetchProfile(rawProfile string) time.Duration {
+	profile, err := NormalizeFetchProfile(rawProfile)
+	if err == nil && profile == FetchProfileQuality {
+		return QualityFetchCallerTimeout
+	}
+	return DefaultFetchCallerTimeout
 }
 
 func ClassifyFetchIntent(rawURL string) string {

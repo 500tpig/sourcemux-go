@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/capability"
 	"github.com/500tpig/sourcemux-go/internal/engine"
@@ -73,11 +74,53 @@ func (p *TinyFishFetchProvider) Try(ctx context.Context, req capability.Request)
 }
 
 type FirecrawlFetchProvider struct {
-	Pool *engine.FirecrawlPool
+	Pool               *engine.FirecrawlPool
+	OnlyCleanContent   bool
+	ProviderTimeout    time.Duration
+	KeyTimeout         time.Duration
+	FirecrawlTimeoutMS int
+	lastAttempts       []capability.AttemptDetail
 }
 
-func NewFirecrawlFetch(pool *engine.FirecrawlPool) *FirecrawlFetchProvider {
-	return &FirecrawlFetchProvider{Pool: pool}
+const (
+	DefaultFirecrawlFetchProviderTimeout = 25 * time.Second
+	DefaultFirecrawlFetchKeyTimeout      = 15 * time.Second
+	QualityFirecrawlFetchProviderTimeout = 250 * time.Second
+	QualityFirecrawlFetchKeyTimeout      = 120 * time.Second
+)
+
+type FirecrawlFetchOptions struct {
+	OnlyCleanContent   bool
+	ProviderTimeout    time.Duration
+	KeyTimeout         time.Duration
+	FirecrawlTimeoutMS int
+}
+
+func NewFirecrawlFetch(pool *engine.FirecrawlPool, opts ...FirecrawlFetchOptions) *FirecrawlFetchProvider {
+	option := FirecrawlFetchOptions{
+		ProviderTimeout:    DefaultFirecrawlFetchProviderTimeout,
+		KeyTimeout:         DefaultFirecrawlFetchKeyTimeout,
+		FirecrawlTimeoutMS: int(DefaultFirecrawlFetchKeyTimeout / time.Millisecond),
+	}
+	if len(opts) > 0 {
+		option = opts[0]
+		if option.ProviderTimeout == 0 {
+			option.ProviderTimeout = DefaultFirecrawlFetchProviderTimeout
+		}
+		if option.KeyTimeout == 0 {
+			option.KeyTimeout = DefaultFirecrawlFetchKeyTimeout
+		}
+		if option.FirecrawlTimeoutMS == 0 {
+			option.FirecrawlTimeoutMS = int(option.KeyTimeout / time.Millisecond)
+		}
+	}
+	return &FirecrawlFetchProvider{
+		Pool:               pool,
+		OnlyCleanContent:   option.OnlyCleanContent,
+		ProviderTimeout:    option.ProviderTimeout,
+		KeyTimeout:         option.KeyTimeout,
+		FirecrawlTimeoutMS: option.FirecrawlTimeoutMS,
+	}
 }
 
 func (p *FirecrawlFetchProvider) Name() string { return "firecrawl-scrape" }
@@ -85,33 +128,76 @@ func (p *FirecrawlFetchProvider) Kind() capability.Kind {
 	return capability.WebFetch
 }
 func (p *FirecrawlFetchProvider) AttemptCount() int {
-	if p == nil || p.Pool == nil {
+	if p == nil {
+		return 0
+	}
+	if len(p.lastAttempts) > 0 {
+		return len(p.lastAttempts)
+	}
+	if p.Pool == nil {
 		return 0
 	}
 	return p.Pool.Len()
+}
+
+func (p *FirecrawlFetchProvider) AttemptDetails() []capability.AttemptDetail {
+	if p == nil || len(p.lastAttempts) == 0 {
+		return nil
+	}
+	return append([]capability.AttemptDetail(nil), p.lastAttempts...)
 }
 
 func (p *FirecrawlFetchProvider) Try(ctx context.Context, req capability.Request) (capability.Result, error) {
 	if p == nil || p.Pool == nil || p.Pool.Len() == 0 {
 		return capability.Result{}, fmt.Errorf("firecrawl pool is empty: no keys configured")
 	}
-	onlyClean := true
+	p.lastAttempts = nil
+	attemptCtx := ctx
+	cancel := func() {}
+	if p.ProviderTimeout > 0 {
+		attemptCtx, cancel = context.WithTimeout(ctx, p.ProviderTimeout)
+	}
+	defer cancel()
+
+	onlyClean := p.OnlyCleanContent
 	removeBase64Images := true
 	blockAds := true
 	storeInCache := true
-	res, err := p.Pool.Scrape(ctx, engine.FirecrawlScrapeRequest{
+	res, err := p.Pool.ScrapeWithOptions(attemptCtx, engine.FirecrawlScrapeRequest{
 		URL:                req.URL,
 		Formats:            []string{"markdown"},
 		OnlyCleanContent:   &onlyClean,
+		Timeout:            p.FirecrawlTimeoutMS,
 		RemoveBase64Images: &removeBase64Images,
 		BlockAds:           &blockAds,
 		StoreInCache:       &storeInCache,
+	}, engine.FirecrawlPoolOptions{
+		PerKeyTimeout: p.KeyTimeout,
 	})
+	if res != nil {
+		p.lastAttempts = firecrawlAttemptDetails(res.Attempts)
+	}
 	if err != nil {
 		return capability.Result{}, err
 	}
 	resultURL := engine.FirecrawlScrapeResultURL(res.FirecrawlScrapeResult, req.URL)
 	return fetchResult("Firecrawl Scrape ("+res.KeyName+")", resultURL, res.Data.Markdown), nil
+}
+
+func firecrawlAttemptDetails(attempts []engine.FirecrawlPoolAttempt) []capability.AttemptDetail {
+	if len(attempts) == 0 {
+		return nil
+	}
+	out := make([]capability.AttemptDetail, 0, len(attempts))
+	for _, attempt := range attempts {
+		out = append(out, capability.AttemptDetail{
+			Name:      attempt.KeyName,
+			Status:    attempt.Status,
+			LatencyMS: attempt.LatencyMS,
+			Error:     attempt.Error,
+		})
+	}
+	return out
 }
 
 func (p *FirecrawlFetchProvider) Classify(result capability.Result, err error) (capability.Outcome, capability.FallbackReason, string) {

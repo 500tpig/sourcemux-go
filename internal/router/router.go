@@ -49,13 +49,14 @@ func (r *Router) Run(ctx context.Context, kind capability.Kind, req capability.R
 			allowed, reason := m.CanHandle(req)
 			if !allowed {
 				trace.Decisions = append(trace.Decisions, RouteDecision{
-					Capability:     kind,
-					Provider:       p.Name(),
-					Attempt:        i + 1,
-					Status:         "skipped",
-					FallbackReason: capability.ReasonNotApplicable,
-					FallbackDetail: reason,
-					SubAttempts:    subAttempts(p),
+					Capability:        kind,
+					Provider:          p.Name(),
+					Attempt:           i + 1,
+					Status:            "skipped",
+					FallbackReason:    capability.ReasonNotApplicable,
+					FallbackDetail:    reason,
+					SubAttempts:       subAttempts(p),
+					SubAttemptDetails: subAttemptDetails(p),
 				})
 				continue
 			}
@@ -72,14 +73,15 @@ func (r *Router) Run(ctx context.Context, kind capability.Kind, req capability.R
 
 		outcome, reason, detail := classify(p, res, err)
 		decision := RouteDecision{
-			Capability:     kind,
-			Provider:       p.Name(),
-			Attempt:        i + 1,
-			Status:         routeStatus(outcome, reason),
-			LatencyMS:      time.Since(start).Milliseconds(),
-			FallbackReason: reason,
-			FallbackDetail: detail,
-			SubAttempts:    subAttempts(p),
+			Capability:        kind,
+			Provider:          p.Name(),
+			Attempt:           i + 1,
+			Status:            routeStatus(outcome, reason),
+			LatencyMS:         time.Since(start).Milliseconds(),
+			FallbackReason:    reason,
+			FallbackDetail:    detail,
+			SubAttempts:       subAttempts(p),
+			SubAttemptDetails: subAttemptDetails(p),
 		}
 		trace.Decisions = append(trace.Decisions, decision)
 		if outcome == capability.OK {
@@ -101,6 +103,13 @@ func subAttempts(p capability.Provider) int {
 		return counter.AttemptCount()
 	}
 	return 0
+}
+
+func subAttemptDetails(p capability.Provider) []capability.AttemptDetail {
+	if detailer, ok := p.(capability.AttemptDetailer); ok {
+		return detailer.AttemptDetails()
+	}
+	return nil
 }
 
 func fallbackTriggered(decisions []RouteDecision, finalProvider string) bool {

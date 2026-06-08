@@ -1431,8 +1431,11 @@ func TestRunFetchUsesFirecrawlFirstWhenV2WebFetchOrdersItFirst(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode firecrawl body: %v", err)
 		}
-		if body["onlyCleanContent"] != true {
+		if body["onlyCleanContent"] != false {
 			t.Fatalf("onlyCleanContent = %#v", body["onlyCleanContent"])
+		}
+		if body["timeout"] != float64(15000) {
+			t.Fatalf("timeout = %#v", body["timeout"])
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"clean firecrawl content","metadata":{"sourceURL":"https://example.com/final"}}}`))
@@ -1483,8 +1486,61 @@ func TestRunFetchUsesFirecrawlFirstWhenV2WebFetchOrdersItFirst(t *testing.T) {
 	if len(decoded.RouteDecision) != 1 || decoded.RouteDecision[0].Provider != "firecrawl-scrape" {
 		t.Fatalf("route_decision = %+v", decoded.RouteDecision)
 	}
+	if decoded.RouteDecision[0].SubAttempts != 1 || len(decoded.RouteDecision[0].SubAttemptDetails) != 1 {
+		t.Fatalf("sub-attempts = %+v", decoded.RouteDecision[0])
+	}
+	if detail := decoded.RouteDecision[0].SubAttemptDetails[0]; detail.Name != "primary" || detail.Status != "ok" {
+		t.Fatalf("sub-attempt detail = %+v", detail)
+	}
 	if atomic.LoadInt32(&firecrawlCalls) != 1 || atomic.LoadInt32(&jinaCalls) != 0 {
 		t.Fatalf("calls firecrawl=%d jina=%d", firecrawlCalls, jinaCalls)
+	}
+}
+
+func TestRunFetchQualityProfileEnablesFirecrawlCleanContent(t *testing.T) {
+	var gotBody map[string]any
+	firecrawl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode firecrawl body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"quality firecrawl content"}}`))
+	}))
+	defer firecrawl.Close()
+
+	path := writeCLIConfig(t, `{
+	  "firecrawl": {"apiURL": "`+firecrawl.URL+`", "apiKey": "fc-test", "enabled": true}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://docs.example.com", "--profile", "quality", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch --profile quality) = %d, want 0", got)
+		}
+	})
+	var decoded fetchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Policy.EffectiveProfile != "quality" || !strings.HasPrefix(decoded.Source, "Firecrawl Scrape") {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+	if gotBody["onlyCleanContent"] != true {
+		t.Fatalf("onlyCleanContent = %#v", gotBody["onlyCleanContent"])
+	}
+	if gotBody["timeout"] != float64(120000) {
+		t.Fatalf("timeout = %#v", gotBody["timeout"])
+	}
+}
+
+func TestDefaultCallerTimeoutForFetchProfile(t *testing.T) {
+	if got := tools.DefaultCallerTimeoutForFetchProfile(tools.FetchProfileAuto); got != 60*time.Second {
+		t.Fatalf("auto timeout = %s", got)
+	}
+	if got := tools.DefaultCallerTimeoutForFetchProfile(tools.FetchProfileCheap); got != 60*time.Second {
+		t.Fatalf("cheap timeout = %s", got)
+	}
+	if got := tools.DefaultCallerTimeoutForFetchProfile(tools.FetchProfileQuality); got != 300*time.Second {
+		t.Fatalf("quality timeout = %s", got)
 	}
 }
 

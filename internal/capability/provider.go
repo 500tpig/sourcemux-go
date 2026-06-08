@@ -53,3 +53,17 @@ type Matcher interface {
 type AttemptCounter interface {
 	AttemptCount() int
 }
+
+// AttemptDetail is optional provider-level trace data for folded attempts such
+// as trying several API keys inside one router provider attempt.
+type AttemptDetail struct {
+	Name      string `json:"name,omitempty"`
+	Status    string `json:"status"`
+	LatencyMS int64  `json:"latency_ms,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// AttemptDetailer lets pool-style providers explain folded sub-attempts.
+type AttemptDetailer interface {
+	AttemptDetails() []AttemptDetail
+}

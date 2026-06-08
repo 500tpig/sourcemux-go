@@ -79,7 +79,7 @@ func RunWebFetch(ctx context.Context, clients WebFetchClients, url string) (*Web
 	clients.Order = policy.ProviderOrder
 	clients.StrictOrder = true
 
-	r := router.New(fetchProviders(clients)...)
+	r := router.New(fetchProviders(clients, policy)...)
 	res, trace := r.Run(ctx, capability.WebFetch, capability.Request{URL: url})
 	if strings.TrimSpace(res.Content) == "" {
 		if detail := firstFailureDetail(trace); detail != "" {
@@ -121,7 +121,7 @@ func FormatWebFetchResult(result *WebFetchResult) string {
 	return sb.String()
 }
 
-func fetchProviders(clients WebFetchClients) []capability.Provider {
+func fetchProviders(clients WebFetchClients, policy FetchPolicy) []capability.Provider {
 	var providers []capability.Provider
 	order := clients.Order
 	if len(order) == 0 && !clients.StrictOrder {
@@ -141,7 +141,7 @@ func fetchProviders(clients WebFetchClients) []capability.Provider {
 			}
 		case "firecrawl":
 			if clients.Firecrawl != nil && clients.Firecrawl.Len() > 0 {
-				providers = append(providers, adapters.NewFirecrawlFetch(clients.Firecrawl))
+				providers = append(providers, adapters.NewFirecrawlFetch(clients.Firecrawl, firecrawlFetchOptions(policy)))
 			}
 		case "exa":
 			if clients.Exa != nil {
@@ -154,6 +154,18 @@ func fetchProviders(clients WebFetchClients) []capability.Provider {
 		}
 	}
 	return providers
+}
+
+func firecrawlFetchOptions(policy FetchPolicy) adapters.FirecrawlFetchOptions {
+	opts := adapters.FirecrawlFetchOptions{
+		OnlyCleanContent: policy.EffectiveProfile == FetchProfileQuality,
+	}
+	if policy.EffectiveProfile == FetchProfileQuality {
+		opts.ProviderTimeout = adapters.QualityFirecrawlFetchProviderTimeout
+		opts.KeyTimeout = adapters.QualityFirecrawlFetchKeyTimeout
+		opts.FirecrawlTimeoutMS = int(adapters.QualityFirecrawlFetchKeyTimeout / time.Millisecond)
+	}
+	return opts
 }
 
 type GitHubFetchProvider struct {

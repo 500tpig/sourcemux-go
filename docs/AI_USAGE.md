@@ -21,7 +21,8 @@ In practice, this means MCP text responses should stay intentionally thin: enoug
 Use a single provider directly only for diagnostics or a provider-specific
 experiment. For ordinary URL reads, use SourceMux `fetch --profile auto`; use
 `fetch --profile cheap` only when the user explicitly asks for cheap,
-zero-key, or quick sanity-check extraction. Use SourceMux when the agent
+zero-key, or quick sanity-check extraction. Use `fetch --profile quality` only
+when Firecrawl clean-content is worth the extra latency. Use SourceMux when the agent
 benefits from one or more of these stable
 outputs:
 
@@ -141,7 +142,7 @@ Evidence policy:
 2. Fetch key URLs before high-risk, precise, or source-critical claims.
 3. Cite fetched or source URL evidence in the final answer.
 4. Treat the fetch provider label, such as `GitHub Provider`, `Firecrawl`, or `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
-5. For known URLs, use `fetch --profile auto --json` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish.
+5. For known URLs, use `fetch --profile auto --json` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish. Auto keeps Firecrawl clean-content off for reliability; `--profile quality` enables it with a longer timeout budget.
 6. Use `firecrawl-map` only for site structure discovery, URL inventory, or relevance-filtered URL discovery.
 7. Use `fetch --profile cheap --json` only when the user asks for cheap, zero-key, or quick sanity-check extraction. Do not call Jina directly for default research.
 8. Use `firecrawl-scrape` as an explicit SourceMux CLI direct command only when Firecrawl scrape flags matter.
@@ -153,7 +154,10 @@ Fetch routing note:
 
 * Public/default `fetch --profile auto` is policy-first / quality-first. It
   classifies GitHub repo URLs before generic page extraction and prefers
-  Firecrawl for ordinary pages when configured.
+  Firecrawl for ordinary pages when configured, with Firecrawl clean-content
+  disabled by default.
+* `fetch --profile quality` keeps the Firecrawl-first route and enables
+  Firecrawl clean-content with a longer timeout budget before falling back.
 * `fetch --profile cheap` is the low-cost route: Jina -> Firecrawl -> Exa ->
   Tavily.
 * In v2 configs, `capabilities.web_fetch.providers` can still express an

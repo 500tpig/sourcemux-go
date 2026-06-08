@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestFirecrawlScrapeRequestAndResponse(t *testing.T) {
@@ -188,6 +189,51 @@ func TestFirecrawlPoolScrapeFallsBackAcrossKeys(t *testing.T) {
 	}
 	if strings.Join(seen, ",") != "fc-limited,fc-ok" {
 		t.Fatalf("seen keys = %v", seen)
+	}
+}
+
+func TestFirecrawlPoolScrapePerKeyTimeoutTracksAttempts(t *testing.T) {
+	var seen []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		seen = append(seen, key)
+		if key == "fc-slow" {
+			time.Sleep(50 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"slow content"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"markdown":"fast fallback"}}`))
+	}))
+	defer ts.Close()
+
+	pool := NewFirecrawlPool([]FirecrawlKey{
+		{Name: "slow", APIKey: "fc-slow"},
+		{Name: "ok", APIKey: "fc-ok"},
+	}, ts.URL)
+	pool.next = 0
+
+	res, err := pool.ScrapeWithOptions(context.Background(), FirecrawlScrapeRequest{URL: "https://example.com"}, FirecrawlPoolOptions{
+		PerKeyTimeout: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.KeyName != "ok" || res.Data.Markdown != "fast fallback" {
+		t.Fatalf("result = %+v", res)
+	}
+	if strings.Join(seen, ",") != "fc-slow,fc-ok" {
+		t.Fatalf("seen keys = %v", seen)
+	}
+	if len(res.Attempts) != 2 {
+		t.Fatalf("attempts = %+v", res.Attempts)
+	}
+	if res.Attempts[0].KeyName != "slow" || res.Attempts[0].Status != "error" || !strings.Contains(res.Attempts[0].Error, "deadline") {
+		t.Fatalf("first attempt = %+v", res.Attempts[0])
+	}
+	if res.Attempts[1].KeyName != "ok" || res.Attempts[1].Status != "ok" || res.Attempts[1].LatencyMS < 0 {
+		t.Fatalf("second attempt = %+v", res.Attempts[1])
 	}
 }
 

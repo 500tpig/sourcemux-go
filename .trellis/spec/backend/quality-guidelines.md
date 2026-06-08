@@ -147,10 +147,12 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
   - Insert new fallbacks at an explicit point in the chain and update README routing diagrams.
   - Source-first search providers must return an engine envelope plus source URLs for `get_sources`.
   - Fetch providers must return clean content and a source label; empty provider content is a fallback signal, not a success.
+  - Default fetch routes must not enable provider-specific beta, LLM, or high-latency cleanup modes unless a profile or explicit parameter requests that extra quality. Keep the default path reliable enough to leave time for fallback providers.
 - Multi-key pools:
   - Start requests on a rotating key for basic fairness.
   - Try the remaining configured keys on upstream errors, rate limits, or empty provider results.
   - Aggregate per-key failures without leaking full keys.
+  - When a pool is used inside a provider-level timeout, key attempts should have bounded per-key budgets and route trace detail so one slow key does not make fallback behavior opaque.
 
 #### 4. Validation & Error Matrix
 
@@ -166,6 +168,8 @@ fmt.Printf("key=%s error=%s\n", keyStatus(apiKey), redact(upstreamBody, apiKey))
 | Provider returns 200 with empty content/results | Treat as fallback signal |
 | Upstream body echoes a secret | Redact before surfacing errors |
 | All provider keys fail | Continue to next provider in the route when available |
+| Provider-specific cleanup mode is slow or experimental | Keep it off in default/auto routes; expose it through an explicit quality profile or direct command flag |
+| Provider-specific cleanup mode needs LLM post-processing | Give the explicit quality profile a separate, longer timeout budget instead of reusing the default fast-fallback budget |
 
 #### 5. Good/Base/Bad Cases
 

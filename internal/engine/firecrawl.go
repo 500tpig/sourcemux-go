@@ -50,6 +50,10 @@ type FirecrawlPool struct {
 	clients []*FirecrawlClient
 }
 
+type FirecrawlPoolOptions struct {
+	PerKeyTimeout time.Duration
+}
+
 func NewFirecrawlPool(keys []FirecrawlKey, baseURL string) *FirecrawlPool {
 	clients := make([]*FirecrawlClient, 0, len(keys))
 	for i, key := range keys {
@@ -87,7 +91,8 @@ func (p *FirecrawlPool) Clients() []*FirecrawlClient {
 
 type FirecrawlPoolScrapeResult struct {
 	*FirecrawlScrapeResult
-	KeyName string
+	KeyName  string
+	Attempts []FirecrawlPoolAttempt
 }
 
 type FirecrawlPoolMapResult struct {
@@ -95,25 +100,74 @@ type FirecrawlPoolMapResult struct {
 	KeyName string
 }
 
+type FirecrawlPoolAttempt struct {
+	KeyName   string `json:"key"`
+	Status    string `json:"status"`
+	LatencyMS int64  `json:"latency_ms,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 func (p *FirecrawlPool) Scrape(ctx context.Context, req FirecrawlScrapeRequest) (*FirecrawlPoolScrapeResult, error) {
+	return p.ScrapeWithOptions(ctx, req, FirecrawlPoolOptions{})
+}
+
+func (p *FirecrawlPool) ScrapeWithOptions(ctx context.Context, req FirecrawlScrapeRequest, opts FirecrawlPoolOptions) (*FirecrawlPoolScrapeResult, error) {
 	clients := p.orderedClients()
 	if len(clients) == 0 {
 		return nil, errors.New("firecrawl pool is empty: no keys configured")
 	}
 	var errs []string
+	var attempts []FirecrawlPoolAttempt
 	for _, c := range clients {
-		res, err := c.Scrape(ctx, req)
+		attemptCtx, cancel := firecrawlPoolAttemptContext(ctx, opts.PerKeyTimeout)
+		start := time.Now()
+		res, err := c.Scrape(attemptCtx, req)
+		cancel()
+		latency := time.Since(start).Milliseconds()
 		if err != nil {
+			attempts = append(attempts, FirecrawlPoolAttempt{
+				KeyName:   c.Name,
+				Status:    "error",
+				LatencyMS: latency,
+				Error:     err.Error(),
+			})
 			errs = append(errs, fmt.Sprintf("%s: %v", c.Name, err))
 			continue
 		}
 		if strings.TrimSpace(res.Data.Markdown) == "" {
+			attempts = append(attempts, FirecrawlPoolAttempt{
+				KeyName:   c.Name,
+				Status:    "empty",
+				LatencyMS: latency,
+				Error:     "empty markdown",
+			})
 			errs = append(errs, fmt.Sprintf("%s: empty markdown", c.Name))
 			continue
 		}
-		return &FirecrawlPoolScrapeResult{FirecrawlScrapeResult: res, KeyName: c.Name}, nil
+		attempts = append(attempts, FirecrawlPoolAttempt{
+			KeyName:   c.Name,
+			Status:    "ok",
+			LatencyMS: latency,
+		})
+		return &FirecrawlPoolScrapeResult{FirecrawlScrapeResult: res, KeyName: c.Name, Attempts: attempts}, nil
 	}
-	return nil, fmt.Errorf("all %d firecrawl keys failed: %s", len(clients), strings.Join(errs, "; "))
+	return &FirecrawlPoolScrapeResult{Attempts: attempts}, fmt.Errorf("all %d firecrawl keys failed: %s", len(clients), strings.Join(errs, "; "))
+}
+
+func firecrawlPoolAttemptContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return ctx, func() {}
+		}
+		if remaining < timeout {
+			timeout = remaining
+		}
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func (p *FirecrawlPool) Map(ctx context.Context, req FirecrawlMapRequest) (*FirecrawlPoolMapResult, error) {
