@@ -63,6 +63,9 @@ func Run(args []string) int {
 		fmt.Fprint(os.Stdout, usage)
 		return 0
 	}
+	if len(args) > 0 && (args[0] == "version" || args[0] == "--version" || args[0] == "-v") {
+		return printVersion(args[1:])
+	}
 	if len(args) > 0 && args[0] == "cli" {
 		return cli.RunWithConfig(args[1:], configPath)
 	}
@@ -82,10 +85,6 @@ func Run(args []string) int {
 	if len(args) > 0 && args[0] == "uninstall" {
 		return install.RunUninstall(args[1:], installerConfigPath)
 	}
-	if len(args) > 0 && args[0] == "version" {
-		return printVersion(args[1:])
-	}
-
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)

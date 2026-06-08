@@ -51,6 +51,24 @@ func TestRunVersionJSON(t *testing.T) {
 	}
 }
 
+func TestRunVersionFlagDoesNotLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	SetVersionInfo("v9.9.9", "def456", "2026-06-08T00:00:00Z")
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--version", "--json"}); got != 0 {
+			t.Fatalf("Run(--version --json) = %d, want 0", got)
+		}
+	})
+	var decoded VersionInfo
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode version: %v\n%s", err, out)
+	}
+	if decoded.Version != "v9.9.9" || decoded.Commit != "def456" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+}
+
 func TestRunTopLevelHelpDoesNotLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
