@@ -895,3 +895,37 @@ Implemented Firecrawl direct CLI commands, policy-first fetch routing, architect
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Firecrawl fetch fallback reliability
+
+**Date**: 2026-06-08
+**Task**: Firecrawl fetch fallback reliability
+**Branch**: `main`
+
+### Summary
+
+Fixed version command config loading and tuned Firecrawl fetch routing so auto keeps clean-content off while quality uses a longer clean-content timeout budget; updated docs, generated skill guidance, tests, local binary, and installed skills.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8f906d1` | (see git log) |
+| `4ca2376` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

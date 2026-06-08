@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
-- **Last Active**: 2026-06-07
+- **Total Sessions**: 27
+- **Last Active**: 2026-06-08
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~897 | Active |
+| `journal-1.md` | ~931 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-06-08 | Firecrawl fetch fallback reliability | `8f906d1`, `4ca2376` | `main` |
 | 26 | 2026-06-07 | Firecrawl CLI routing and skill guidance | `6f85f61`, `305d142`, `20aa6b3` | `main` |
 | 25 | 2026-06-06 | Archive npm release maintenance docs | `3f48b2b` | `main` |
 | 24 | 2026-06-06 | Search policy and bootstrap diagnostics | `16e2bfc`, `5e1c162` | `main` |
