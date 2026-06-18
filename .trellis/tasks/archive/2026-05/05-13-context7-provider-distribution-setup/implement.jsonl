@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality, CLI/config/setup, provider fallback, and public-release constraints."}
-{"file": ".trellis/tasks/05-13-context7-provider-distribution-setup/prd.md", "reason": "Current task requirements and acceptance criteria."}
-{"file": ".trellis/tasks/archive/2026-05/05-13-capability-routing-refactor/prd.md", "reason": "Parent architecture and PR2/PR3 decomposition."}
-{"file": ".trellis/tasks/archive/2026-05/05-13-capability-routing-refactor/research/02-context7-integration.md", "reason": "Context7 API and provider integration research."}
-{"file": ".trellis/tasks/archive/2026-05/05-13-capability-routing-refactor/research/03-distribution-homebrew-scoop.md", "reason": "GoReleaser, Homebrew, and Scoop distribution research."}
