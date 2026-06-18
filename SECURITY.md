@@ -2,7 +2,9 @@
 
 ## Supported versions
 
-Security fixes target the `main` branch until versioned releases are published.
+Security fixes are developed on `main` and shipped through the latest published
+release line. If you are unsure whether an issue is still relevant, please
+reproduce it against the current `main` branch before reporting it.
 
 ## Reporting a vulnerability
 
@@ -12,8 +14,10 @@ Do not include live API keys, private provider endpoints, or production config f
 
 ## Secret handling
 
-- Runtime credentials belong in `grok-search.json` or another explicitly selected local config file.
-- `grok-search.json`, `.env`, and `config.local.json` are ignored by Git.
+- Runtime credentials belong in `sourcemux.json` or another explicitly selected
+  local config file.
+- `sourcemux.json`, legacy `grok-search.json`, `.env`, and `config.local.json`
+  are ignored by Git.
 - Example config files must use placeholder keys and safe example endpoints only.
 - Diagnostic commands should print masked key status only.
 - Upstream error bodies that may echo configured secrets should be redacted before being surfaced.

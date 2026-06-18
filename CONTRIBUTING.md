@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for improving Grok Search Go.
+Thanks for improving SourceMux.
 
 ## Development setup
 
 ```bash
-git clone https://github.com/500tpig/grok-search-go.git
-cd grok-search-go
+git clone https://github.com/500tpig/sourcemux-go.git
+cd sourcemux-go
 go mod download
 go test ./...
 go vet ./...
@@ -18,11 +18,15 @@ go build ./...
 Do not commit real credentials. Use a local ignored config file:
 
 ```bash
-cp configs/grok-search.example.json grok-search.json
-chmod 600 grok-search.json
+cp configs/sourcemux.example.json sourcemux.json
+chmod 600 sourcemux.json
 ```
 
 Then replace placeholder values with your own provider endpoints and keys.
+
+If you are migrating from the older `grok-search` name, you can keep an
+existing `grok-search.json` by passing it explicitly with `--config`, but new
+setup and docs should use `sourcemux.json`.
 
 ## Pull requests
 
@@ -31,6 +35,15 @@ Then replace placeholder values with your own provider endpoints and keys.
 - Update README or docs for user-visible behavior.
 - Run `gofmt` on modified Go files.
 - Run `go test ./...`, `go vet ./...`, and `go build ./...` before submitting.
+
+## Repository hygiene
+
+- Keep local AI workflow state out of public commits: `.trellis/`, `.agents/`,
+  `.codex/`, and `.claude/` should stay developer-local.
+- Do not commit local task archives, journals, OS metadata such as `.DS_Store`,
+  or generated release artifacts.
+- Keep docs and example configs free of personal absolute paths, private
+  endpoints, and real credentials.
 
 ## Provider integrations
 

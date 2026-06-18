@@ -170,7 +170,7 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"grok-search-routing",
-		"/Users/johnsmith/Project/Study/grok-search-go",
+		"/Users/",
 		"Use SourceMux MCP tools",
 		"playwright",
 		"browser",
