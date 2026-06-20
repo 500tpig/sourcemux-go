@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const defaultReasoningRequestTimeout = 120 * time.Second
+
 // ReasoningEndpoint is one OpenAI-compatible endpoint used for final synthesis.
 // It is intentionally separate from GrokEndpoint so non-search models do not
 // short-circuit the web_search provider route.
@@ -24,25 +26,25 @@ type ReasoningEndpoint struct {
 // ReasoningClient wraps an OpenAI-compatible chat completions endpoint for
 // evidence-grounded final answers.
 type ReasoningClient struct {
-	Name        string
-	BaseURL     string
-	APIKey      string
-	Model       string
-	HTTPClient  *http.Client
-	RetryConfig RetryConfig
+	Name           string
+	BaseURL        string
+	APIKey         string
+	Model          string
+	HTTPClient     *http.Client
+	RequestTimeout time.Duration
+	RetryConfig    RetryConfig
 }
 
 // NewReasoningClient creates a generic OpenAI-compatible reasoning client.
 func NewReasoningClient(baseURL, apiKey, model string) *ReasoningClient {
 	return &ReasoningClient{
-		Name:    "reasoning",
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		APIKey:  apiKey,
-		Model:   model,
-		HTTPClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
-		RetryConfig: DefaultRetryConfig(),
+		Name:           "reasoning",
+		BaseURL:        strings.TrimRight(baseURL, "/"),
+		APIKey:         apiKey,
+		Model:          model,
+		HTTPClient:     &http.Client{},
+		RequestTimeout: defaultReasoningRequestTimeout,
+		RetryConfig:    DefaultRetryConfig(),
 	}
 }
 
@@ -103,6 +105,9 @@ func (c *ReasoningClient) Complete(ctx context.Context, req ReasoningRequest) (*
 		return nil, fmt.Errorf("marshal reasoning request: %w", err)
 	}
 
+	ctx, cancel := reasoningRequestContext(ctx, c.RequestTimeout)
+	defer cancel()
+
 	factory := func() (*http.Request, error) {
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			c.BaseURL+"/chat/completions", bytes.NewReader(jsonBody))
@@ -122,21 +127,78 @@ func (c *ReasoningClient) Complete(ctx context.Context, req ReasoningRequest) (*
 
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("reasoning API %d: %s", resp.StatusCode, clipReasoningBody(c.redactSecret(data)))
+		return nil, fmt.Errorf("reasoning API %d: %s",
+			resp.StatusCode, formatReasoningBodyDiagnostic(resp.Header.Get("Content-Type"), c.redactSecret(data)))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read reasoning response: %w", err)
+	}
+
+	content, err := c.decodeReasoningContent(data, resp.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, err
+	}
+	return &ReasoningResult{Content: content}, nil
+}
+
+func reasoningRequestContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (c *ReasoningClient) decodeReasoningContent(data []byte, contentType string) (string, error) {
+	body := bytes.TrimSpace(data)
+
+	var responsesRaw responsesAPIResponse
+	if err := json.Unmarshal(body, &responsesRaw); err == nil && len(responsesRaw.Output) > 0 {
+		content, _ := extractResponsesAPIResult(&responsesRaw)
+		content = strings.TrimSpace(content)
+		if content == "" {
+			return "", fmt.Errorf("reasoning response content is empty")
+		}
+		return content, nil
 	}
 
 	var raw reasoningRawResponse
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("decode reasoning response: %w", err)
+	if err := json.Unmarshal(body, &raw); err == nil {
+		if len(raw.Choices) > 0 {
+			content := strings.TrimSpace(raw.Choices[0].Message.Content)
+			if content == "" {
+				return "", fmt.Errorf("reasoning response content is empty")
+			}
+			return content, nil
+		}
+
+		return "", fmt.Errorf("reasoning response contained no choices")
+	} else if looksLikeReasoningEventStream(contentType, body) {
+		streamRes, streamErr := decodeEventStreamSearchResult(bytes.NewReader(body))
+		if streamErr != nil {
+			return "", fmt.Errorf("decode reasoning response: %w; %s",
+				streamErr, formatReasoningBodyDiagnostic(contentType, c.redactSecret(body)))
+		}
+		content := strings.TrimSpace(streamRes.Content)
+		if content == "" {
+			return "", fmt.Errorf("reasoning response content is empty")
+		}
+		return content, nil
+	} else {
+		return "", fmt.Errorf("decode reasoning response: %w; %s",
+			err, formatReasoningBodyDiagnostic(contentType, c.redactSecret(body)))
 	}
-	if len(raw.Choices) == 0 {
-		return nil, fmt.Errorf("reasoning response contained no choices")
+}
+
+func looksLikeReasoningEventStream(contentType string, body []byte) bool {
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+		return true
 	}
-	content := strings.TrimSpace(raw.Choices[0].Message.Content)
-	if content == "" {
-		return nil, fmt.Errorf("reasoning response content is empty")
-	}
-	return &ReasoningResult{Content: content}, nil
+	return bytes.HasPrefix(bytes.TrimLeft(body, " \t\r\n"), []byte("data:"))
 }
 
 func (c *ReasoningClient) redactSecret(data []byte) []byte {
@@ -153,6 +215,15 @@ func clipReasoningBody(data []byte) string {
 		return s
 	}
 	return s[:500] + "..."
+}
+
+func formatReasoningBodyDiagnostic(contentType string, data []byte) string {
+	body := clipReasoningBody(data)
+	contentType = strings.TrimSpace(contentType)
+	if contentType == "" {
+		return body
+	}
+	return fmt.Sprintf("content-type=%q body=%s", contentType, body)
 }
 
 // ReasoningPool tries configured reasoning endpoints in priority order.
