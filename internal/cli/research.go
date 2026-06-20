@@ -39,7 +39,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	profile := fs.String("profile", tools.SearchProfileAuto, "Grok endpoint profile to use: auto, default, heavy, or another configured profile")
 	platform := fs.String("platform", "", "Optional platform focus, e.g. 'GitHub, Reddit'")
 	maxFetches := fs.Int("max-fetches", 0, "Maximum number of ranked URLs to fetch")
-	timeout := fs.Duration("timeout", 180*time.Second, "End-to-end research timeout")
+	timeout := fs.Duration("timeout", 300*time.Second, "End-to-end research timeout")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
 	var domains repeatedStringFlag
 	fs.Var(&domains, "domain", "Domain/site allow-list entry; may be repeated")
@@ -48,6 +48,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	if err != nil {
 		return 2
 	}
+	timeoutProvided := flagWasProvided(fs, "timeout")
 	if len(positional) == 0 {
 		fmt.Fprintln(os.Stderr, "research: query is required")
 		fs.Usage()
@@ -67,6 +68,9 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 		cfg, err := loadConfig()
 		if err != nil {
 			return reportResearchErr(*jsonOut, query, *depth, fmt.Sprintf("config: %v", err))
+		}
+		if !timeoutProvided && cfg.SearchPolicy.Timeout > 0 {
+			*timeout = cfg.SearchPolicy.Timeout
 		}
 		runner = buildResearchRunner(cfg)
 	}

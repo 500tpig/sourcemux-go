@@ -31,7 +31,7 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	maxFetches := fs.Int("max-fetches", 0, "Maximum ranked URLs to fetch during research")
 	reasoningEndpoint := fs.String("reasoning-endpoint", "", "Optional reasoning endpoint name from reasoningEndpoints")
 	reasoningModel := fs.String("reasoning-model", "", "Optional one-shot reasoning model override, e.g. deepseek-v4-pro")
-	timeout := fs.Duration("timeout", 240*time.Second, "End-to-end smart answer timeout")
+	timeout := fs.Duration("timeout", 360*time.Second, "End-to-end smart answer timeout")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
 	var domains repeatedStringFlag
 	fs.Var(&domains, "domain", "Domain/site allow-list entry for research; may be repeated")
@@ -40,6 +40,7 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	if err != nil {
 		return 2
 	}
+	timeoutProvided := flagWasProvided(fs, "timeout")
 	if len(positional) == 0 {
 		fmt.Fprintln(os.Stderr, "smart-answer: query is required")
 		fs.Usage()
@@ -61,6 +62,9 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 		cfg, err := loadConfig()
 		if err != nil {
 			return reportSmartAnswerErr(*jsonOut, tools.SmartAnswerResult{Query: query}, fmt.Sprintf("config: %v", err))
+		}
+		if !timeoutProvided && cfg.SearchPolicy.Timeout > 0 {
+			*timeout = cfg.SearchPolicy.Timeout + 60*time.Second
 		}
 		runner = buildSmartAnswerRunner(cfg)
 	}

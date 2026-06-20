@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/500tpig/sourcemux-go/internal/config"
 	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
@@ -314,6 +315,57 @@ func TestWebSearchResearchProviderAutoDefaultLeavesTimeForFallbackAfterGrokTimeo
 	}
 	if atomic.LoadInt32(&grokCalls) == 0 || atomic.LoadInt32(&tinyfishCalls) == 0 {
 		t.Fatalf("calls: grok=%d tinyfish=%d, want both", grokCalls, tinyfishCalls)
+	}
+}
+
+func TestWebSearchResearchProviderAutoResolvedDefaultKeepsDefaultResearchFallbackWindow(t *testing.T) {
+	var grokCalls int32
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&grokCalls, 1)
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"grok default ok"}}]}`)
+	}))
+	defer grok.Close()
+
+	var tinyfishCalls int32
+	tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tinyfishCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"results":[{"title":"fallback","url":"https://example.com/fallback","snippet":"fallback result"}]}`)
+	}))
+	defer tinyfish.Close()
+
+	provider := webSearchResearchProvider{
+		clients: WebSearchClients{
+			Pool: engine.NewGrokPool([]engine.GrokEndpoint{
+				{Name: "default", BaseURL: grok.URL, APIKey: "sk-local", Model: "grok-test", Profile: "default"},
+			}),
+			TinyFish: engine.NewTinyFishPool([]engine.TinyFishKey{{Name: "tf", APIKey: "tf-secret"}}, tinyfish.URL, ""),
+			SearchPolicy: config.SearchPolicy{
+				DefaultProfile: config.SearchProfileDefault,
+				AgentProfile:   config.SearchProfileAuto,
+				AutoPreference: config.SearchAutoPreferenceIntentBased,
+				FallbackAfter:  20 * time.Millisecond,
+				Timeout:        300 * time.Second,
+			},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	res, err := provider.Search(ctx, "routine research topic", "", SearchProfileAuto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Fallback != "" || res.Engine == "TinyFish Search" {
+		t.Fatalf("result = %+v, want Grok result without fallback", res)
+	}
+	if atomic.LoadInt32(&grokCalls) == 0 {
+		t.Fatal("expected grok call")
+	}
+	if atomic.LoadInt32(&tinyfishCalls) != 0 {
+		t.Fatalf("tinyfishCalls = %d, want 0", tinyfishCalls)
 	}
 }
 

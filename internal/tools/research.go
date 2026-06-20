@@ -234,7 +234,7 @@ func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, 
 		return nil, err
 	}
 	fallbackAfter := researchGrokFallbackAfter(resolution.EffectiveProfile)
-	if resolution.RequestedProfile == SearchProfileAuto || resolution.EffectiveProfile == engine.HeavyGrokEndpointProfile {
+	if resolution.EffectiveProfile == engine.HeavyGrokEndpointProfile {
 		fallbackAfter = effectiveFallbackAfter(p.clients.SearchPolicy)
 	}
 	if p.grokFallbackAfter != nil {

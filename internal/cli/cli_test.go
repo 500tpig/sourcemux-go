@@ -921,6 +921,9 @@ func TestRunResearchDefaultsProfileAuto(t *testing.T) {
 	if runner.opts.Profile != "auto" {
 		t.Fatalf("default research profile = %q, want auto", runner.opts.Profile)
 	}
+	if runner.timeout < 299*time.Second || runner.timeout > 300*time.Second {
+		t.Fatalf("default research timeout = %s, want about 300s", runner.timeout)
+	}
 }
 
 func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
@@ -975,6 +978,9 @@ func TestRunSmartAnswerDefaultsProfileAuto(t *testing.T) {
 	})
 	if runner.opts.Profile != "auto" {
 		t.Fatalf("default smart-answer profile = %q, want auto", runner.opts.Profile)
+	}
+	if runner.timeout < 359*time.Second || runner.timeout > 360*time.Second {
+		t.Fatalf("default smart-answer timeout = %s, want about 360s", runner.timeout)
 	}
 }
 
@@ -1594,11 +1600,15 @@ func TestRunFetchFallsBackFromFirecrawlToJinaInV2Order(t *testing.T) {
 }
 
 type fakeCLIResearchRunner struct {
-	opts tools.ResearchOptions
+	opts    tools.ResearchOptions
+	timeout time.Duration
 }
 
 func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOptions) (tools.ResearchPack, error) {
 	r.opts = opts
+	if deadline, ok := ctx.Deadline(); ok {
+		r.timeout = time.Until(deadline)
+	}
 	return tools.ResearchPack{
 		Query:            opts.Query,
 		EffectiveDepth:   opts.Depth,
@@ -1638,11 +1648,15 @@ func (r *fakeCLIResearchRunner) Run(ctx context.Context, opts tools.ResearchOpti
 }
 
 type fakeCLISmartAnswerRunner struct {
-	opts tools.SmartAnswerOptions
+	opts    tools.SmartAnswerOptions
+	timeout time.Duration
 }
 
 func (r *fakeCLISmartAnswerRunner) Run(ctx context.Context, opts tools.SmartAnswerOptions) (tools.SmartAnswerResult, error) {
 	r.opts = opts
+	if deadline, ok := ctx.Deadline(); ok {
+		r.timeout = time.Until(deadline)
+	}
 	return tools.SmartAnswerResult{
 		Query:             opts.Query,
 		Answer:            "Use Grok for search and DeepSeek for synthesis.",
