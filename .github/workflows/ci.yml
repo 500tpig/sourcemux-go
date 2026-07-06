@@ -30,3 +30,14 @@ jobs:
 
       - name: go build
         run: go build ./...
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+          package-manager-cache: false
+
+      - name: npm wrapper tests
+        run: |
+          npm --prefix npm/package test
+          npm --prefix npm/package run pack:dry-run
