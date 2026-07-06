@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "name": "primary_docs_over_login",
+      "query": "Compare SourceMux fetch profiles",
+      "depth": "standard",
+      "max_fetches": 2,
+      "search_results": [
+        {
+          "query_contains": "official documentation",
+          "urls": [
+            "https://docs.example.com/sourcemux/fetch-profiles",
+            "https://example.com/login"
+          ]
+        },
+        {
+          "query_contains": "latest updates",
+          "urls": [
+            "https://github.com/500tpig/sourcemux-go/releases"
+          ]
+        },
+        {
+          "query_contains": "comparison",
+          "urls": [
+            "https://blog.example.com/sourcemux-fetch-comparison"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://docs.example.com/sourcemux/fetch-profiles",
+          "source": "Fixture Docs",
+          "content": "SourceMux fetch profiles compare auto, quality, cheap, and github modes. The auto profile uses policy-first extraction, quality enables extra cleaning, and cheap keeps low-cost extraction first."
+        },
+        {
+          "url": "https://github.com/500tpig/sourcemux-go/releases",
+          "source": "Fixture GitHub",
+          "content": "SourceMux release notes document fetch profile changes and current routing behavior for auto, quality, and cheap profile usage."
+        },
+        {
+          "url": "https://blog.example.com/sourcemux-fetch-comparison",
+          "source": "Fixture Blog",
+          "content": "A secondary comparison discusses SourceMux fetch profile tradeoffs and when each extraction route is useful."
+        },
+        {
+          "url": "https://example.com/login",
+          "source": "Fixture Login",
+          "content": "Sign in to continue. Accept cookies. Navigation."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://docs.example.com/sourcemux/fetch-profiles",
+          "https://github.com/500tpig/sourcemux-go/releases"
+        ],
+        "high_signal_source_urls_include": [
+          "https://docs.example.com/sourcemux/fetch-profiles"
+        ],
+        "forbid_selected_source_urls": [
+          "https://example.com/login"
+        ],
+        "min_fetched_pages": 2,
+        "min_confirmed_facts": 1
+      }
+    },
+    {
+      "name": "github_primary_source",
+      "query": "SourceMux release status",
+      "depth": "quick",
+      "max_fetches": 1,
+      "search_results": [
+        {
+          "urls": [
+            "https://github.com/500tpig/sourcemux-go/releases",
+            "https://mirror.example.com/sourcemux-release-status"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://github.com/500tpig/sourcemux-go/releases",
+          "source": "Fixture GitHub",
+          "content": "SourceMux release status is recorded in GitHub releases, including version history and release notes."
+        },
+        {
+          "url": "https://mirror.example.com/sourcemux-release-status",
+          "source": "Fixture Mirror",
+          "content": "A mirror page summarizes SourceMux release status."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://github.com/500tpig/sourcemux-go/releases"
+        ],
+        "min_fetched_pages": 1,
+        "min_confirmed_facts": 1
+      }
+    }
+  ]
+}

@@ -32,6 +32,7 @@ Commands:
   firecrawl-map <url> Map a site directly with Firecrawl.
   docs-search <query> Search documentation/source pages.
   research <query>    Run a bounded research workflow.
+  eval-research       Run offline research quality fixture cases.
   config <command>    Inspect the active config path or masked config.
   bootstrap <target>  Install or update generated agent skills/MCP config.
   cli <command>       Compatibility path for one-shot CLI commands.
@@ -117,6 +118,7 @@ func isTopLevelCLICommand(cmd string) bool {
 		"plan",
 		"research",
 		"smart-answer",
+		"eval-research",
 		"tinyfish-bench":
 		return true
 	default:

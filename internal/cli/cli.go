@@ -2,7 +2,7 @@
 // Tavily) as a non-MCP one-shot CLI. It is invoked via `sourcemux cli
 // <subcommand> [flags]` and mirrors the MCP tool surface: search / fetch /
 // map / crawl / doctor / probe / config / setup / plan / research /
-// smart-answer.
+// smart-answer / eval-research.
 //
 // Design notes:
 //
@@ -45,6 +45,7 @@ Commands:
   research <query>    Run a composable in-memory research workflow (defaults --profile auto).
   smart-answer <query>
                       Research sources, then synthesize with a reasoning endpoint.
+  eval-research       Run offline research quality cases with fixture search/fetch data.
   tinyfish-bench      Benchmark TinyFish Search, Fetch, and Agent locally.
 
 Common flags (subcommand-dependent):
@@ -87,6 +88,7 @@ Examples:
   sourcemux cli plan   "Compare current high-risk options" --json --depth deep
   sourcemux cli research "Notion AI agents" --depth deep --profile auto --domain example.com --max-fetches 6 --json
   sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --profile auto --reasoning-model deepseek-v4-flash --json
+  sourcemux cli eval-research --cases docs/research-eval-cases.sample.json --json
   sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json
 `
 
@@ -148,6 +150,8 @@ func RunWithConfig(args []string, configPath string) int {
 		return runResearch(rest)
 	case "smart-answer":
 		return runSmartAnswer(rest)
+	case "eval-research":
+		return runResearchEval(rest)
 	case "tinyfish-bench":
 		return runTinyFishBench(rest)
 	default:

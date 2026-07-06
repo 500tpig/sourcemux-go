@@ -326,6 +326,7 @@ sourcemux --config ./grok-search.json config list --json
 | `sourcemux plan <query>` | 离线生成搜索 / research plan；默认文本兼容，`--json` 输出结构化计划 |
 | `sourcemux research <query>` | 生成 bounded research pack |
 | `sourcemux smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
+| `sourcemux eval-research` | 用离线 fixture cases 验证 research 排序、fetch 和 facts 抽取质量 |
 | `sourcemux config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
 | `sourcemux setup` | 生成本地配置，不必手写 JSON |
 | `sourcemux doctor` / `probe` | 本地配置检查 / 显式 live probe |
@@ -728,6 +729,7 @@ Main subcommands:
 | `plan <query>` | Offline search plan, no network calls. Text stays compatible; `--json` emits a structured research plan. |
 | `research <query>` | Bounded multi-step research pack (defaults to `--profile auto`). |
 | `smart-answer <query>` | Research pack plus reasoning endpoint synthesis (passes `--profile` into research; default `auto`). |
+| `eval-research` | Offline fixture-based research quality checks for ranking, fetch, and fact extraction. |
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
 | `doctor` / `probe` | Local config overview; opt-in live provider probes. |

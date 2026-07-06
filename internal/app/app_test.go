@@ -133,6 +133,46 @@ func TestRunTopLevelSearchRoutesToCLI(t *testing.T) {
 	}
 }
 
+func TestRunTopLevelResearchEvalRoutesToCLI(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	casesPath := filepath.Join(dir, "research-eval-cases.json")
+	if err := os.WriteFile(casesPath, []byte(`{
+	  "cases": [
+	    {
+	      "name": "top-level",
+	      "query": "SourceMux release status",
+	      "max_fetches": 1,
+	      "search_results": [
+	        {"urls": ["https://github.com/500tpig/sourcemux-go/releases"]}
+	      ],
+	      "fetch_pages": [
+	        {
+	          "url": "https://github.com/500tpig/sourcemux-go/releases",
+	          "content": "SourceMux release status appears in GitHub releases."
+	        }
+	      ],
+	      "expect": {
+	        "selected_source_urls_include": ["https://github.com/500tpig/sourcemux-go/releases"],
+	        "min_fetched_pages": 1,
+	        "min_confirmed_facts": 1
+	      }
+	    }
+	  ]
+	}`), 0o600); err != nil {
+		t.Fatalf("write cases: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"eval-research", "--cases", casesPath, "--json"}); got != 0 {
+			t.Fatalf("Run(eval-research --json) = %d, want 0", got)
+		}
+	})
+	if !json.Valid([]byte(out)) || !strings.Contains(out, `"ok": true`) {
+		t.Fatalf("eval-research output is not successful JSON: %s", out)
+	}
+}
+
 func TestRunTopLevelBootstrapDryRun(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
