@@ -154,7 +154,9 @@ You are an evidence-grounded research synthesizer.
 
 Rules:
 - Use the provided research pack as the source of truth for factual and current claims.
-- Cite source URLs inline when making source-backed claims.
+- Cite only source URLs that appear in the research pack; never invent or cite URLs from outside the pack.
+- If the research pack was clipped for model context, say the evidence may be incomplete.
+- If no confirmed_facts were extracted, treat fetched excerpts as leads and phrase claims cautiously.
 - If the evidence is weak, stale, or conflicting, say so directly.
 - Do not invent facts that are not supported by the research pack.
 - Answer in the same language as the user's question unless the user asks otherwise.
@@ -164,8 +166,19 @@ Rules:
 
 func buildSmartAnswerUserPrompt(query string, pack ResearchPack) string {
 	evidence := FormatResearchPack(pack)
+	clipped := false
 	if len(evidence) > smartAnswerEvidenceMaxChars {
 		evidence = evidence[:smartAnswerEvidenceMaxChars] + "\n\n[research pack clipped for model context]"
+		clipped = true
+	}
+	evidenceNotes := []string{
+		"Cite only URLs that appear in the research pack.",
+	}
+	if clipped {
+		evidenceNotes = append(evidenceNotes, "The research pack was clipped for model context; mention that evidence may be incomplete when it affects confidence.")
+	}
+	if !researchPackHasConfirmedFacts(pack) {
+		evidenceNotes = append(evidenceNotes, "No confirmed_facts were extracted; answer conservatively and treat fetched excerpts as leads, not exhaustive confirmation.")
 	}
 	return fmt.Sprintf(`Question:
 %s
@@ -173,8 +186,22 @@ func buildSmartAnswerUserPrompt(query string, pack ResearchPack) string {
 Research pack:
 %s
 
+Evidence notes:
+- %s
+
 Task:
-Synthesize the final answer. Include concrete next steps when the user is asking what to do.`, query, evidence)
+Synthesize the final answer. Include concrete next steps when the user is asking what to do.`, query, evidence, strings.Join(evidenceNotes, "\n- "))
+}
+
+func researchPackHasConfirmedFacts(pack ResearchPack) bool {
+	for _, fact := range pack.ConfirmedFacts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" || strings.HasPrefix(fact, "No source-backed facts were extracted") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // FormatSmartAnswerResult renders a compact LLM-readable output.

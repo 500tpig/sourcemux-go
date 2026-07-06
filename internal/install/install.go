@@ -1504,6 +1504,7 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 - Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls.
 - For site URL inventory or section discovery, use firecrawl-map explicitly.
 - In final answers, cite fetched or source URL evidence and mention the engine/provider when it matters.
+- For final synthesis and smart-answer style responses, cite only URLs present in the research pack, disclose clipped packs as incomplete evidence, and answer conservatively when confirmed_facts is empty or heuristic-only.
 - A fetch result may show a provider such as Firecrawl, GitHub Provider, Jina Reader, Exa, or Tavily; that verifies URL content and does not mean that provider performed the original search.
 
 ## Public user mode vs project development mode

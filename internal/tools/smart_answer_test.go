@@ -57,6 +57,15 @@ func TestSmartAnswererRun(t *testing.T) {
 	if !strings.Contains(reasoner.req.UserPrompt, "research_pack") || !strings.Contains(reasoner.req.UserPrompt, "https://example.com/deepseek") {
 		t.Fatalf("reasoning prompt missing research evidence: %s", reasoner.req.UserPrompt)
 	}
+	for _, want := range []string{
+		"Cite only source URLs that appear in the research pack",
+		"If the research pack was clipped for model context",
+		"If no confirmed_facts were extracted",
+	} {
+		if !strings.Contains(reasoner.req.SystemPrompt, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, reasoner.req.SystemPrompt)
+		}
+	}
 }
 
 func TestSmartAnswererDefaultsResearchProfileToAuto(t *testing.T) {
@@ -76,6 +85,33 @@ func TestSmartAnswererDefaultsResearchProfileToAuto(t *testing.T) {
 	}
 	if researcher.opts.Profile != "auto" {
 		t.Fatalf("research profile = %q, want auto", researcher.opts.Profile)
+	}
+}
+
+func TestBuildSmartAnswerUserPromptAddsEvidenceBoundaries(t *testing.T) {
+	pack := ResearchPack{
+		Query:          "q",
+		EffectiveDepth: "standard",
+		HighSignalSources: []ResearchSource{
+			{URL: "https://example.com/source"},
+		},
+		FetchedPagesSummary: []ResearchFetchedPage{
+			{URL: "https://example.com/source", Success: true, Excerpt: "evidence"},
+		},
+		ConfirmedFacts: []string{"No source-backed facts were extracted by the v1 heuristic; inspect fetched excerpts directly."},
+		OpenQuestions:  []string{strings.Repeat("evidence ", smartAnswerEvidenceMaxChars)},
+	}
+
+	prompt := buildSmartAnswerUserPrompt("q", pack)
+	for _, want := range []string{
+		"[research pack clipped for model context]",
+		"Cite only URLs that appear in the research pack.",
+		"The research pack was clipped for model context; mention that evidence may be incomplete",
+		"No confirmed_facts were extracted; answer conservatively",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
 	}
 }
 
