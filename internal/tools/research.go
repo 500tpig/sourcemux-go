@@ -485,7 +485,7 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 
 	pack.FetchedPagesSummary = e.fetchSelectedSources(ctx, selectedFetchURLs, concurrency)
 	pack.FetchedPagesSummary = append(pack.FetchedPagesSummary, e.crawlTargetDomains(ctx, query, depth, domains, &pack)...)
-	rankedSources = applyFetchSignals(rankedSources, pack.FetchedPagesSummary)
+	rankedSources = applyFetchSignals(rankedSources, pack.FetchedPagesSummary, query)
 	if highSignalLimit > len(rankedSources) {
 		highSignalLimit = len(rankedSources)
 	}
@@ -795,7 +795,7 @@ func scoreResearchSource(source ResearchSource, query string, domainOccurrences 
 	return score, reasons
 }
 
-func applyFetchSignals(sources []ResearchSource, pages []ResearchFetchedPage) []ResearchSource {
+func applyFetchSignals(sources []ResearchSource, pages []ResearchFetchedPage, query string) []ResearchSource {
 	if len(sources) == 0 || len(pages) == 0 {
 		return sources
 	}
@@ -819,6 +819,14 @@ func applyFetchSignals(sources []ResearchSource, pages []ResearchFetchedPage) []
 		case looksBoilerplateExcerpt(page.Excerpt):
 			out[i].Score -= 2
 			out[i].Reasons = append(out[i].Reasons, "boilerplate_content_downrank")
+		case strings.TrimSpace(page.Excerpt) != "":
+			out[i].Score += 1.25
+			out[i].Reasons = append(out[i].Reasons, "fetched_content_available")
+			relevance := queryRelevanceScore(query, page.Excerpt)
+			if relevance > 0 {
+				out[i].Score += float64(relevance) * 1.25
+				out[i].Reasons = append(out[i].Reasons, fmt.Sprintf("content_query_relevance:%d", relevance))
+			}
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -842,6 +850,7 @@ func looksBoilerplateExcerpt(excerpt string) bool {
 		"cookie policy",
 		"accept cookies",
 		"captcha",
+		"navigation",
 	}
 	for _, marker := range boilerplateMarkers {
 		if strings.Contains(lower, marker) {

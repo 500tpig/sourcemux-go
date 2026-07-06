@@ -84,12 +84,46 @@ func TestApplyFetchSignalsDownranksFailures(t *testing.T) {
 	got := applyFetchSignals(sources, []ResearchFetchedPage{
 		{URL: "https://docs.example.com/docs", Success: false, Error: "blocked"},
 		{URL: "https://example.com/blog", Success: true, Excerpt: "SourceMux MCP is useful source text."},
-	})
+	}, "SourceMux MCP")
 	if got[0].URL != "https://example.com/blog" {
 		t.Fatalf("ranking after fetch signals = %+v", got)
 	}
 	if !strings.Contains(strings.Join(got[1].Reasons, ","), "fetch_failed_downrank") {
 		t.Fatalf("failed source reasons = %#v", got[1].Reasons)
+	}
+}
+
+func TestApplyFetchSignalsBoostsRelevantFetchedContent(t *testing.T) {
+	sources := []ResearchSource{
+		{URL: "https://docs.example.com/reference", Domain: "docs.example.com", Score: 10, Occurrences: 1},
+		{URL: "https://example.com/comparison", Domain: "example.com", Score: 8, Occurrences: 1},
+	}
+	got := applyFetchSignals(sources, []ResearchFetchedPage{
+		{URL: "https://docs.example.com/reference", Success: true, Excerpt: "Reference index and API overview."},
+		{URL: "https://example.com/comparison", Success: true, Excerpt: "SourceMux fetch profiles comparison explains default and cheap routing tradeoffs."},
+	}, "SourceMux fetch profiles comparison")
+	if got[0].URL != "https://example.com/comparison" {
+		t.Fatalf("ranking after content relevance = %+v", got)
+	}
+	if !strings.Contains(strings.Join(got[0].Reasons, ","), "content_query_relevance:4") {
+		t.Fatalf("relevant source reasons = %#v", got[0].Reasons)
+	}
+}
+
+func TestApplyFetchSignalsDownranksBoilerplateContent(t *testing.T) {
+	sources := []ResearchSource{
+		{URL: "https://docs.example.com/login", Domain: "docs.example.com", Score: 10, Occurrences: 1},
+		{URL: "https://example.com/guide", Domain: "example.com", Score: 9, Occurrences: 1},
+	}
+	got := applyFetchSignals(sources, []ResearchFetchedPage{
+		{URL: "https://docs.example.com/login", Success: true, Excerpt: "Navigation. Sign in to continue."},
+		{URL: "https://example.com/guide", Success: true, Excerpt: "SourceMux fetch profiles guide with evidence and examples."},
+	}, "SourceMux fetch profiles")
+	if got[0].URL != "https://example.com/guide" {
+		t.Fatalf("ranking after boilerplate downrank = %+v", got)
+	}
+	if !strings.Contains(strings.Join(got[1].Reasons, ","), "boilerplate_content_downrank") {
+		t.Fatalf("boilerplate source reasons = %#v", got[1].Reasons)
 	}
 }
 
