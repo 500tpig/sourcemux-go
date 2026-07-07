@@ -26,6 +26,7 @@ func runFetch(args []string) int {
 	timeout := fs.Duration("timeout", 0, "Per-call timeout; defaults to 300s for quality and 60s otherwise")
 	profile := fs.String("profile", tools.FetchProfileAuto, "Fetch profile: auto, quality, cheap, github, or compare")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
+	agentOut := fs.Bool("agent", false, "Emit compact agent-friendly JSON")
 	positional, err := parsePositional(fs, args)
 	if err != nil {
 		return 2
@@ -40,10 +41,10 @@ func runFetch(args []string) int {
 
 	cfg, err := loadConfig()
 	if err != nil {
-		return reportFetchErr(*jsonOut, url, fmt.Sprintf("config: %v", err))
+		return reportFetchErr(*jsonOut, *agentOut, url, fmt.Sprintf("config: %v", err))
 	}
 	if msg := minimumProfileError(cfg); msg != "" {
-		return reportFetchErrCode(*jsonOut, url, msg, 3)
+		return reportFetchErrCode(*jsonOut, *agentOut, url, msg, 3)
 	}
 
 	effectiveTimeout := *timeout
@@ -57,7 +58,10 @@ func runFetch(args []string) int {
 	clients.Profile = *profile
 	res, err := tools.RunWebFetch(ctx, clients, url)
 	if err != nil {
-		return reportFetchErr(*jsonOut, url, err.Error())
+		return reportFetchErr(*jsonOut, *agentOut, url, err.Error())
+	}
+	if *agentOut {
+		return emitAgent(tools.BuildFetchAgentOutput(res))
 	}
 	return emitFetch(*jsonOut, fetchOutput{
 		Source:        res.Source,
@@ -85,11 +89,14 @@ func emitFetch(asJSON bool, out fetchOutput) int {
 	return 0
 }
 
-func reportFetchErr(asJSON bool, url, msg string) int {
-	return reportFetchErrCode(asJSON, url, msg, 1)
+func reportFetchErr(asJSON, asAgent bool, url, msg string) int {
+	return reportFetchErrCode(asJSON, asAgent, url, msg, 1)
 }
 
-func reportFetchErrCode(asJSON bool, url, msg string, code int) int {
+func reportFetchErrCode(asJSON, asAgent bool, url, msg string, code int) int {
+	if asAgent {
+		return emitAgentError("fetch", msg, code)
+	}
 	if asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(fetchOutput{URL: url, Error: msg})
 	} else {

@@ -1363,13 +1363,13 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 	agentProfile := searchPolicy.AgentProfile
 	fallbackAfter := fmt.Sprintf("%ds", searchPolicy.FallbackAfterSec)
 	callerTimeout := fmt.Sprintf("%ds", searchPolicy.TimeoutSec)
-	quickSearch := fmt.Sprintf(`%s search "query" --profile %s --fallback-after %s --timeout %s --json`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
-	twitterSearch := fmt.Sprintf(`%s search "query" --platform Twitter --profile %s --fallback-after %s --timeout %s --json`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
-	heavySearch := fmt.Sprintf(`%s search "query" --profile heavy --fallback-after %s --timeout %s --json`, commandPrefix, fallbackAfter, callerTimeout)
-	complexHeavySearch := fmt.Sprintf(`%s search "complex query" --profile heavy --fallback-after %s --timeout %s --json`, commandPrefix, fallbackAfter, callerTimeout)
+	quickSearch := fmt.Sprintf(`%s search "query" --profile %s --fallback-after %s --timeout %s --agent`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
+	twitterSearch := fmt.Sprintf(`%s search "query" --platform Twitter --profile %s --fallback-after %s --timeout %s --agent`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
+	heavySearch := fmt.Sprintf(`%s search "query" --profile heavy --fallback-after %s --timeout %s --agent`, commandPrefix, fallbackAfter, callerTimeout)
+	complexHeavySearch := fmt.Sprintf(`%s search "complex query" --profile heavy --fallback-after %s --timeout %s --agent`, commandPrefix, fallbackAfter, callerTimeout)
 	policySummary := fmt.Sprintf(`- Effective searchPolicy: defaultProfile=%s, agentProfile=%s, autoPreference=%s, fallbackAfterSec=%d, timeoutSec=%d.
 - %s
-- Generated quick search examples use --profile %s --fallback-after %s --timeout %s. Explicit --profile, --fallback-after, --grok-pool-timeout, and --timeout always override this policy.`,
+- Generated quick search examples use --profile %s --fallback-after %s --timeout %s --agent. Explicit --profile, --fallback-after, --grok-pool-timeout, and --timeout always override this policy.`,
 		searchPolicy.DefaultProfile,
 		searchPolicy.AgentProfile,
 		searchPolicy.AutoPreference,
@@ -1404,8 +1404,8 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 - Never print API keys, provider dashboard exports, private endpoints, or local credential files.`
 	if mcpMode {
 		cliPolicy = `- Treat this skill as the routing/decision layer and SourceMux tools/CLI as execution surfaces.
-- Use SourceMux MCP tools for quick interactive search, fetch, docs search, source verification, URL mapping, and compact research.
-- Use the SourceMux CLI for deep research, reproducible JSON, large outputs, shell/script chaining, or saved artifacts.
+- Use the SourceMux CLI by default for search, fetch, docs search, research, source verification, URL mapping, and compact outputs.
+- MCP tools are configured and available for host-native interactions, but do not use them as the recommended mainline.
 - Every SourceMux CLI command must include the configured --config path shown below.
 - Keep fetched content compact; summarize instead of pasting full pages unless explicitly requested.
 - User-facing research/search must preserve fallback. Do not use --no-fallback unless the user explicitly asks to diagnose a Grok/profile/endpoint or you are doing a clearly labeled diagnostic probe.
@@ -1431,6 +1431,16 @@ description: Route web search, research, source fetching, docs lookup, and Sourc
 
 Use SourceMux as the default web research capability.
 
+## CLI decision table
+
+| Task | Default command |
+| --- | --- |
+| Fresh/current search | %s |
+| Known URL fetch | %s fetch "https://example.com" --profile auto --agent |
+| Multi-source research | %s research "topic" --depth standard --profile auto --agent |
+| Official docs lookup | %s docs-search "library or API question" --json |
+| Diagnostics only | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
+
 ## Routing policy
 
 %s
@@ -1446,9 +1456,9 @@ Choose one mode before running commands:
 | Mode | Use when | Command pattern |
 | --- | --- | --- |
 | Quick search | Fresh/current facts, community feedback, one-hop discovery | %s |
-| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | %s research "topic" --depth standard --profile auto --json |
+| Broad research | Project lists, comparisons, current source discovery, citation-heavy work | %s research "topic" --depth standard --profile auto --agent |
 | Deep planning | %s where decomposition is useful before execution | %s plan "topic" --json --depth deep |
-| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | %s research "topic" --depth deep --profile auto --json |
+| Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | %s research "topic" --depth deep --profile auto --agent |
 | Explicit heavy search | User asks to use heavy/multi-agent search directly | %s |
 | Final synthesis | Evidence is collected and the user wants an answer/plan | %s smart-answer "question" --profile auto --json |
 | Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
@@ -1470,15 +1480,15 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 | Fresh/current topics, community feedback, X/Twitter, controversy, release reaction | %s or %s | Grok search with configured policy is the freshness/community-first route and preserves SourceMux fallback tracing. |
 | Official docs, SDK/API reference, product docs, pricing pages, low-SEO-noise discovery | %s docs-search "library or API question" --json | Uses the configured source-first docs search path. |
 | Exa-specific deep/source discovery, structured output, text snippets, or low-noise source search | %s exa-search "official docs API reference" --type deep --json | Calls Exa directly when Exa-specific controls matter. |
-| Known URL page extraction | %s fetch "https://example.com" --profile auto --json | Uses SourceMux policy-first fetch: GitHub-aware for repo URLs, Firecrawl-first routing for ordinary pages when configured, then provider fallbacks. Auto keeps Firecrawl clean-content off; use --profile quality when the extra cleaning and longer timeout budget are worth the latency. |
-| Cheap or zero-key known URL extraction | %s fetch "https://example.com" --profile cheap --json | Uses the low-cost route: Jina -> Firecrawl -> Exa -> Tavily. |
+| Known URL page extraction | %s fetch "https://example.com" --profile auto --agent | Uses SourceMux policy-first fetch: GitHub-aware for repo URLs, Firecrawl-first routing for ordinary pages when configured, then provider fallbacks. Auto keeps Firecrawl clean-content off; use --profile quality when the extra cleaning and longer timeout budget are worth the latency. |
+| Cheap or zero-key known URL extraction | %s fetch "https://example.com" --profile cheap --agent | Uses the low-cost route: Jina -> Firecrawl -> Exa -> Tavily. |
 | Difficult known URL extraction with Firecrawl-specific controls | %s firecrawl-scrape "https://example.com" --json | Use only as an explicit direct command when Firecrawl scrape flags matter; this direct command does not use Firecrawl MCP. |
 | Known URL plus Exa contents controls, subpages, or API/documentation subtree discovery | %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json | Uses Exa Contents directly for URL-centered extraction and subpage discovery. |
 | Site structure discovery for hard sites, URL inventory, or relevance-filtered sections | %s firecrawl-map "https://example.com" --search "docs" --limit 100 --json | Use for URL inventory and site structure, not ordinary page extraction; existing SourceMux map remains Tavily. |
 | Explicit slow heavy or multi-agent Grok search | %s | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
-| %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --json | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
-| Multi-source investigation with synthesis | %s research "topic" --depth standard --profile auto --json or %s research "topic" --depth deep --profile auto --json | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
+| %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --agent | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
+| Multi-source investigation with synthesis | %s research "topic" --depth standard --profile auto --agent or %s research "topic" --depth deep --profile auto --agent | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
 | Planning/decomposition without executing the research | %s plan "topic" --json --depth standard or %s plan "topic" --json --depth deep | Produces a deterministic structured plan before running provider calls. Text output remains available with plan --depth. |
 
 ## Diagnostics workflow
@@ -1498,8 +1508,8 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 
 - For source-critical claims, do not rely on a search summary alone.
 - First discover candidate URLs with search, docs-search, exa-search, or research.
-- Then fetch 1-3 key URLs with fetch --profile auto --json before making high-risk or precise claims.
-- For known URLs, use fetch --profile auto first. This is SourceMux policy-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured with clean-content off, --profile quality enables extra cleaning with a longer timeout budget, and cheap/zero-key requests must explicitly use --profile cheap.
+- Then fetch 1-3 key URLs with fetch --profile auto --agent before making high-risk or precise claims.
+- For known URLs, use fetch --profile auto --agent first. This is SourceMux policy-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured with clean-content off, --profile quality enables extra cleaning with a longer timeout budget, and cheap/zero-key requests must explicitly use --profile cheap.
 - Do not call Jina directly unless the user asks for cheap, zero-key, or diagnostic mode.
 - Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls.
 - For site URL inventory or section discovery, use firecrawl-map explicitly.
@@ -1532,8 +1542,8 @@ If the binary path itself is missing, replace only the command binary with a kno
 %s
 %s
 %s
-%s fetch "https://example.com" --profile auto --json
-%s fetch "https://example.com" --profile cheap --json
+%s fetch "https://example.com" --profile auto --agent
+%s fetch "https://example.com" --profile cheap --agent
 %s firecrawl-scrape "https://example.com" --json
 %s firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 %s docs-search "library or API question" --json
@@ -1541,14 +1551,15 @@ If the binary path itself is missing, replace only the command binary with a kno
 %s exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
 %s plan "research question" --depth standard
 %s plan "deep research question" --json --depth deep
-%s research "topic" --depth standard --profile auto --json
-%s research "topic" --depth deep --profile auto --json
+%s research "topic" --depth standard --profile auto --agent
+%s research "topic" --depth deep --profile auto --agent
 %s smart-answer "complex research question" --profile auto --json
 
 Diagnostics only; do not use for user-facing research answers:
 
 %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
-`, cliPolicy,
+`, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
+		cliPolicy,
 		policySummary,
 		quickSearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, heavySearch, commandPrefix, commandPrefix,
 		twitterSearch, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, heavySearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,

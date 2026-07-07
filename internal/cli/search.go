@@ -44,6 +44,7 @@ func runSearch(args []string) int {
 	fallbackAfter := fs.Duration("fallback-after", 0, "Alias for --grok-pool-timeout; controls when Grok gives way to fallback providers")
 	noFallback := fs.Bool("no-fallback", false, "Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
+	agentOut := fs.Bool("agent", false, "Emit compact agent-friendly JSON")
 	positional, err := parsePositional(fs, args)
 	if err != nil {
 		return 2
@@ -60,17 +61,17 @@ func runSearch(args []string) int {
 	poolTimeoutProvided := flagWasProvided(fs, "grok-pool-timeout")
 	fallbackAfterProvided := flagWasProvided(fs, "fallback-after")
 	if poolTimeoutProvided && fallbackAfterProvided {
-		return reportSearchErrCode(*jsonOut, query, "search: use only one of --grok-pool-timeout or --fallback-after", 2)
+		return reportSearchErrCode(*jsonOut, *agentOut, query, "search: use only one of --grok-pool-timeout or --fallback-after", 2)
 	}
 	timeoutProvided := flagWasProvided(fs, "timeout")
 	profileProvided := flagWasProvided(fs, "profile")
 
 	cfg, err := loadConfig()
 	if err != nil {
-		return reportSearchErr(*jsonOut, query, fmt.Sprintf("config: %v", err))
+		return reportSearchErr(*jsonOut, *agentOut, query, fmt.Sprintf("config: %v", err))
 	}
 	if msg := minimumProfileError(cfg); msg != "" {
-		return reportSearchErrCode(*jsonOut, query, msg, 3)
+		return reportSearchErrCode(*jsonOut, *agentOut, query, msg, 3)
 	}
 
 	effectiveTimeout := *timeout
@@ -103,7 +104,10 @@ func runSearch(args []string) int {
 	}
 	res, err := tools.RunWebSearch(ctx, clients, query, "", *model, effectiveProfile)
 	if err != nil {
-		return reportSearchErr(*jsonOut, query, err.Error())
+		return reportSearchErr(*jsonOut, *agentOut, query, err.Error())
+	}
+	if *agentOut {
+		return emitAgent(tools.BuildSearchAgentOutput(query, res))
 	}
 	return emitSearch(*jsonOut, searchOutput{
 		Engine:           res.Engine,
@@ -154,11 +158,14 @@ func emitSearch(asJSON bool, out searchOutput) int {
 	return 0
 }
 
-func reportSearchErr(asJSON bool, query, msg string) int {
-	return reportSearchErrCode(asJSON, query, msg, 1)
+func reportSearchErr(asJSON, asAgent bool, query, msg string) int {
+	return reportSearchErrCode(asJSON, asAgent, query, msg, 1)
 }
 
-func reportSearchErrCode(asJSON bool, query, msg string, code int) int {
+func reportSearchErrCode(asJSON, asAgent bool, query, msg string, code int) int {
+	if asAgent {
+		return emitAgentError("search", msg, code)
+	}
 	if asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(searchOutput{Query: query, GrokError: msg})
 	} else {

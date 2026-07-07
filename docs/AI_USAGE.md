@@ -8,13 +8,13 @@ This document defines the recommended integration model for `sourcemux-go` acros
 
 * **Single-binary agent research router** for both local CLI use and stdio MCP
   server mode
-* **MCP-native** for compact interactive lookups inside an agent host
-* **CLI-peer** for heavy, reproducible, or file-oriented workflows
+* **CLI-first** for compact agent JSON, reproducible runs, and file-oriented workflows
+* **MCP-compatible** for compact interactive lookups inside an agent host
 * **Prompt/skill-routed** so each host knows when to choose MCP vs CLI
 
 The Go engine stays shared. The choice is about the best invocation surface for the workflow.
 
-In practice, this means MCP text responses should stay intentionally thin: enough metadata plus clipped summaries/excerpts for interactive use. The CLI text and especially `--json` outputs are the canonical full-output surfaces for reproducible or downstream processing workflows.
+In practice, this means MCP text responses should stay intentionally thin: enough metadata plus clipped summaries/excerpts for interactive use. For agents, `search`, `fetch`, and `research` should usually use `--agent`, which implies JSON and omits full page bodies/full research packs. Plain `--json` keeps the full existing CLI envelope for reproducible or downstream processing workflows.
 
 ## Why route through SourceMux
 
@@ -61,7 +61,7 @@ These need per-host adaptation:
 
 ### Prefer MCP when
 
-Use MCP for compact interactive work:
+Use MCP for host-native interactive work when the host already exposes SourceMux tools:
 
 * quick current-information lookups
 * quick source discovery
@@ -91,18 +91,18 @@ Use CLI when the workflow should be reproducible or the result may be large:
 Typical commands:
 
 ```bash
-sourcemux search "query" --profile auto --fallback-after 180s --timeout 300s --json
-sourcemux search "query" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
+sourcemux search "query" --profile auto --fallback-after 180s --timeout 300s --agent
+sourcemux search "query" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --agent
 sourcemux docs-search "library or API question" --json
 sourcemux exa-search "official docs API reference" --type deep --json
 sourcemux exa-contents "https://example.com/docs" --subpages 3 --subpage-target api --json
-sourcemux fetch "https://example.com" --profile auto --json
-sourcemux fetch "https://example.com" --profile cheap --json
+sourcemux fetch "https://example.com" --profile auto --agent
+sourcemux fetch "https://example.com" --profile cheap --agent
 sourcemux firecrawl-scrape "https://example.com" --json
 sourcemux firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 sourcemux plan "research question" --depth standard
 sourcemux plan "deep research question" --json --depth deep
-sourcemux research "topic" --depth standard --profile auto --json
+sourcemux research "topic" --depth standard --profile auto --agent
 sourcemux smart-answer "question" --depth standard --profile auto --json
 ```
 
@@ -122,18 +122,18 @@ surface, not a place for provider-specific Firecrawl tools:
 
 | User intent | Preferred surface |
 | --- | --- |
-| Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --profile <searchPolicy.agentProfile> --fallback-after <searchPolicy.fallbackAfterSec>s --timeout <searchPolicy.timeoutSec>s --json` or the same without `--platform` |
+| Fresh topics, community feedback, X/Twitter, controversy, release reaction | `search --platform Twitter --profile <searchPolicy.agentProfile> --fallback-after <searchPolicy.fallbackAfterSec>s --timeout <searchPolicy.timeoutSec>s --agent` or the same without `--platform` |
 | Official docs, SDK/API reference, product docs, pricing pages | `docs-search --json` |
 | Exa-specific deep/source discovery, structured output, or low-noise source search | `exa-search --type deep --json` |
-| Known URL content extraction | `fetch --profile auto --json`; GitHub URLs get repository-aware routing, ordinary pages use quality-first provider order |
-| Cheap or zero-key known URL extraction | `fetch --profile cheap --json`; this is the Jina-first path |
+| Known URL content extraction | `fetch --profile auto --agent`; GitHub URLs get repository-aware routing, ordinary pages use quality-first provider order |
+| Cheap or zero-key known URL extraction | `fetch --profile cheap --agent`; this is the Jina-first path |
 | Difficult known URL extraction with Firecrawl-specific flags | `firecrawl-scrape --json` as an explicit SourceMux CLI command; ordinary difficult pages should start with `fetch --profile auto` |
 | Known URL plus Exa subpage or documentation subtree discovery | `exa-contents --subpages ... --json` |
 | Site structure discovery for hard sites, URL inventory, or relevance-filtered sections | `firecrawl-map --search ... --limit ... --json` as an explicit SourceMux CLI command; do not use it for ordinary single-page extraction |
-| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 180s --timeout 300s --json` |
+| Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 180s --timeout 300s --agent` |
 | Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
-| Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --json` |
-| Multi-source investigation with synthesis | `research --depth standard --profile auto --json` or `research --depth deep --profile auto --json` |
+| Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --agent` |
+| Multi-source investigation with synthesis | `research --depth standard --profile auto --agent` or `research --depth deep --profile auto --agent` |
 | Planning/decomposition without executing provider calls | `plan --json --depth standard` or `plan --json --depth deep`; use plain `plan --depth` for compatible text output |
 
 Evidence policy:
@@ -142,9 +142,9 @@ Evidence policy:
 2. Fetch key URLs before high-risk, precise, or source-critical claims.
 3. Cite fetched or source URL evidence in the final answer.
 4. Treat the fetch provider label, such as `GitHub Provider`, `Firecrawl`, or `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
-5. For known URLs, use `fetch --profile auto --json` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish. Auto keeps Firecrawl clean-content off for reliability; `--profile quality` enables it with a longer timeout budget.
+5. For known URLs, use `fetch --profile auto --agent` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish. Auto keeps Firecrawl clean-content off for reliability; `--profile quality` enables it with a longer timeout budget.
 6. Use `firecrawl-map` only for site structure discovery, URL inventory, or relevance-filtered URL discovery.
-7. Use `fetch --profile cheap --json` only when the user asks for cheap, zero-key, or quick sanity-check extraction. Do not call Jina directly for default research.
+7. Use `fetch --profile cheap --agent` only when the user asks for cheap, zero-key, or quick sanity-check extraction. Do not call Jina directly for default research.
 8. Use `firecrawl-scrape` as an explicit SourceMux CLI direct command only when Firecrawl scrape flags matter.
 9. Do not install, configure, or call Firecrawl MCP. Do not connect Firecrawl to `search`, `map`, or MCP direct routes.
 10. Do not use `--no-fallback` for user-facing research/search. It is only for explicitly diagnosing whether the selected Grok profile itself can return.
@@ -241,7 +241,7 @@ explicitly:
 
 ```bash
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "query" --profile auto --fallback-after 180s --timeout 300s --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "query" --profile auto --fallback-after 180s --timeout 300s --agent
 ```
 
 Use the installer in user scope. `bootstrap --scope user` defaults generated

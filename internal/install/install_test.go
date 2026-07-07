@@ -126,6 +126,9 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		t.Fatalf("manifest = %+v, content hash = %s", manifest, contentSHA256(data))
 	}
 	text := string(data)
+	if idx := strings.Index(text, "## CLI decision table"); idx < 0 || strings.Count(text[:idx], "\n") >= 50 {
+		t.Fatalf("CLI decision table must appear in the first 50 lines:\n%s", text)
+	}
 	for _, want := range []string{
 		"name: sourcemux-routing",
 		"SourceMux routing",
@@ -134,9 +137,10 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"Effective searchPolicy",
 		"defaultProfile=default, agentProfile=auto, autoPreference=intent-based, fallbackAfterSec=180, timeoutSec=300",
 		"Treat this skill as the routing/decision layer and the SourceMux CLI as the execution layer",
+		"CLI decision table",
 		"Capability routing",
 		"Evidence policy",
-		"search \"query\" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json",
+		"search \"query\" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --agent",
 		"docs-search",
 		"exa-search",
 		"exa-contents",
@@ -146,8 +150,8 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"Auto keeps Firecrawl clean-content off",
 		"--profile quality enables clean-content with a longer timeout budget",
 		"extra cleaning and longer timeout budget",
-		"fetch \"https://example.com\" --profile auto --json",
-		"fetch \"https://example.com\" --profile cheap --json",
+		"fetch \"https://example.com\" --profile auto --agent",
+		"fetch \"https://example.com\" --profile cheap --agent",
 		"Do not call Jina directly unless the user explicitly asks for cheap, zero-key, or diagnostic mode",
 		"Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls",
 		"Use firecrawl-map only for site structure discovery",
@@ -159,8 +163,8 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"plan \"deep research question\" --json --depth deep",
 		"Deep planning",
 		"\u6df1\u5ea6\u641c\u7d22",
-		"research \"topic\" --depth standard --profile auto --json",
-		"research \"topic\" --depth deep --profile auto --json",
+		"research \"topic\" --depth standard --profile auto --agent",
+		"research \"topic\" --depth deep --profile auto --agent",
 		"smart-answer \"complex research question\" --profile auto --json",
 		"--grok-pool-timeout 0 --no-fallback",
 		"diagnostics-only",
@@ -217,9 +221,9 @@ func TestInstallCodexGeneratedSkillUsesConfigSearchPolicy(t *testing.T) {
 	for _, want := range []string{
 		"defaultProfile=auto, agentProfile=heavy, autoPreference=heavy-first, fallbackAfterSec=42, timeoutSec=77",
 		"Generated quick search examples use --profile heavy --fallback-after 42s --timeout 77s",
-		"--config " + shellQuote(cfgPath) + " search \"query\" --profile heavy --fallback-after 42s --timeout 77s --json",
-		"--config " + shellQuote(cfgPath) + " search \"query\" --platform Twitter --profile heavy --fallback-after 42s --timeout 77s --json",
-		"--config " + shellQuote(cfgPath) + " search \"complex query\" --profile heavy --fallback-after 42s --timeout 77s --json",
+		"--config " + shellQuote(cfgPath) + " search \"query\" --profile heavy --fallback-after 42s --timeout 77s --agent",
+		"--config " + shellQuote(cfgPath) + " search \"query\" --platform Twitter --profile heavy --fallback-after 42s --timeout 77s --agent",
+		"--config " + shellQuote(cfgPath) + " search \"complex query\" --profile heavy --fallback-after 42s --timeout 77s --agent",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("generated skill missing %q:\n%s", want, text)
@@ -276,8 +280,8 @@ func TestInstallUserScopeDefaultsToGlobalConfigPath(t *testing.T) {
 		commandPrefix + " bootstrap status --scope user --config-status",
 		commandPrefix + " bootstrap update <target> --scope user --binary /absolute/path/to/sourcemux",
 		"missing, stale",
-		"| Quick search | Fresh/current facts, community feedback, one-hop discovery | " + commandPrefix + " search \"query\" --profile auto --fallback-after 180s --timeout 300s --json |",
-		commandPrefix + " research \"topic\" --depth standard --profile auto --json",
+		"| Quick search | Fresh/current facts, community feedback, one-hop discovery | " + commandPrefix + " search \"query\" --profile auto --fallback-after 180s --timeout 300s --agent |",
+		commandPrefix + " research \"topic\" --depth standard --profile auto --agent",
 		commandPrefix + " search \"ping\" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json",
 	} {
 		if !strings.Contains(text, want) {
@@ -392,8 +396,11 @@ func TestInstallUpdateRefreshesUnmodifiedGeneratedSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read updated skill: %v", err)
 	}
-	if !strings.Contains(string(newData), "Use SourceMux MCP tools") {
-		t.Fatalf("updated skill should be MCP-aware:\n%s", newData)
+	if !strings.Contains(string(newData), "MCP tools are configured and available") {
+		t.Fatalf("updated skill should mention MCP-aware optional mode:\n%s", newData)
+	}
+	if strings.Contains(string(newData), "Use SourceMux MCP tools") {
+		t.Fatalf("updated skill should keep CLI as default:\n%s", newData)
 	}
 	manifest, err := readManifest(manifestPath(path))
 	if err != nil {

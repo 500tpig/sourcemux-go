@@ -122,22 +122,26 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
 跑一次搜索：
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "今天 Go 生态有哪些重要更新？" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "今天 Go 生态有哪些重要更新？" --agent
 ```
 
 显式跑较慢的 heavy Grok 搜索时，用户面向的研究应保留 fallback；只有诊断 profile 本身是否可返回时才禁用 fallback：
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --agent
 sourcemux --config ~/.config/sourcemux/sourcemux.json search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
 抓取网页正文：
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile cheap --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile auto --agent
+sourcemux --config ~/.config/sourcemux/sourcemux.json fetch "https://example.com" --profile cheap --agent
 ```
+
+`--agent` 适用于 `search` / `fetch` / `research`，会隐含 JSON 输出，并返回短
+JSON：source id、质量分、warnings 和 next actions。普通 `--json` 的完整
+envelope 契约不变，仍适合脚本和调试。
 
 普通已知 URL 先用 `fetch --profile auto`：GitHub repo / issues / releases /
 blob / tree URL 会优先走 GitHub enrichment，普通网页在 Firecrawl 配置可用时
@@ -217,7 +221,7 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json docs-search "next.js middl
 生成研究包：
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth deep --profile auto --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json research "Evaluate the current status of Go modules" --depth deep --profile auto --agent
 ```
 
 安装 Agent 路由 skill 时，用户级 scope 会默认使用
@@ -324,7 +328,7 @@ sourcemux --config ./grok-search.json config list --json
 | `sourcemux map <url>` | 用 Tavily 发现站点 URL |
 | `sourcemux crawl <url>` | 用 Tavily 抓取站点内容 |
 | `sourcemux plan <query>` | 离线生成搜索 / research plan；默认文本兼容，`--json` 输出结构化计划 |
-| `sourcemux research <query>` | 生成 bounded research pack |
+| `sourcemux research <query>` | 生成 bounded research pack；Agent 默认用 `--agent` 看短 JSON |
 | `sourcemux smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
 | `sourcemux eval-research` | 用离线 fixture cases 验证 research 排序、fetch 和 facts 抽取质量 |
 | `sourcemux config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
@@ -534,7 +538,7 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json setup --non-interactive \
   --model "grok-4.20-fast" \
   --json
 sourcemux --config ~/.config/sourcemux/sourcemux.json doctor --json
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --agent
 ```
 
 Install an agent routing skill in user scope. User-scope bootstrap defaults the
@@ -602,7 +606,7 @@ sourcemux --config ~/.config/sourcemux/sourcemux.json config list --json
 3. Run a search.
 
 ```bash
-sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --json
+sourcemux --config ~/.config/sourcemux/sourcemux.json search "What changed in the latest Go release?" --agent
 ```
 
 More detailed setup examples are in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Safe example config files are in [`configs/`](configs/).
@@ -677,9 +681,9 @@ first in the default search pool. If they are used for search, put them in
 only for final synthesis and is not used by `web_search` / `research`.
 
 ```bash
-sourcemux research "complex current topic" --depth deep --profile auto --json
-sourcemux search "complex current topic" --profile auto --fallback-after 180s --timeout 300s --json
-sourcemux search "complex current topic" --profile heavy --fallback-after 180s --timeout 300s --json
+sourcemux research "complex current topic" --depth deep --profile auto --agent
+sourcemux search "complex current topic" --profile auto --fallback-after 180s --timeout 300s --agent
+sourcemux search "complex current topic" --profile heavy --fallback-after 180s --timeout 300s --agent
 sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 
@@ -694,21 +698,26 @@ See:
 
 ## CLI usage
 
+For agent calls, prefer `--agent` on `search`, `fetch`, and `research`. It
+implies JSON, emits source ids plus quality/warnings/next actions, and omits
+full page bodies and full research packs. Plain `--json` keeps the existing
+full envelope for scripts and diagnostics.
+
 ```bash
 ./sourcemux config path
 ./sourcemux config files --json
 ./sourcemux config list --json
 ./sourcemux doctor --json
 
-./sourcemux search "latest Go release notes" --json
-./sourcemux fetch "https://example.com" --profile auto --json
-./sourcemux fetch "https://example.com" --profile cheap --json
+./sourcemux search "latest Go release notes" --agent
+./sourcemux fetch "https://example.com" --profile auto --agent
+./sourcemux fetch "https://example.com" --profile cheap --agent
 ./sourcemux firecrawl-scrape "https://example.com" --json
 ./sourcemux firecrawl-map "https://example.com" --search "docs" --limit 100 --json
 ./sourcemux plan "Evaluate a new open-source project" --depth deep
 ./sourcemux plan "Compare current high-risk options" --json --depth deep
 ./sourcemux research "Evaluate a new open-source project" \
-  --depth deep --profile auto --domain github.com --max-fetches 6 --json
+  --depth deep --profile auto --domain github.com --max-fetches 6 --agent
 ./sourcemux smart-answer "Should I use project X?" \
   --depth standard --profile auto --reasoning-endpoint deepseek-flash --json
 ```
@@ -877,9 +886,9 @@ smart-answer flows default to `--profile auto`, which follows
 ```
 
 ```bash
-sourcemux research "complex current topic" --depth deep --profile auto --json
-sourcemux search "complex current topic" --profile auto --fallback-after 180s --timeout 300s --json
-sourcemux search "complex current topic" --profile heavy --fallback-after 180s --timeout 300s --json
+sourcemux research "complex current topic" --depth deep --profile auto --agent
+sourcemux search "complex current topic" --profile auto --fallback-after 180s --timeout 300s --agent
+sourcemux search "complex current topic" --profile heavy --fallback-after 180s --timeout 300s --agent
 sourcemux search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
 ```
 

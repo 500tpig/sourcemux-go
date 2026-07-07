@@ -11,6 +11,8 @@
 //     CallToolRequest. Sharing engine.* keeps both surfaces honest about a
 //     single source of behavior.
 //   - Every subcommand supports --json so callers can parse output reliably.
+//   - search/fetch/research also support --agent for compact JSON that avoids
+//     full page bodies and full research packs.
 //   - Run never panics; it returns a Unix-style exit code (0=ok, 1=runtime
 //     failure, 2=usage error, 3=config gate) and lets main.go translate to os.Exit.
 package cli
@@ -51,6 +53,7 @@ Commands:
 Common flags (subcommand-dependent):
   --config <path>     Use one explicit config file (default: ./sourcemux.json).
   --json              Emit machine-readable JSON instead of human text.
+  --agent             Emit compact agent-friendly JSON for search/fetch/research.
   --platform <name>   Focus a platform, e.g. 'Twitter' or 'GitHub, Reddit'.
                       Useful for content blocked by CF or hosted on X.
   --model <name>      One-shot Grok model override, e.g. 'grok-4.20-fast'.
@@ -65,13 +68,13 @@ Common flags (subcommand-dependent):
   --help, -h          Show this usage.
 
 Examples:
-  sourcemux cli search "latest Go release notes" --json
-  sourcemux cli search "X 上 grok 4 的最新评价" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --json
-  sourcemux cli search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --json
+  sourcemux cli search "latest Go release notes" --agent
+  sourcemux cli search "X 上 grok 4 的最新评价" --platform Twitter --profile auto --fallback-after 180s --timeout 300s --agent
+  sourcemux cli search "复杂搜索问题" --profile heavy --fallback-after 180s --timeout 300s --agent
   sourcemux cli search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json
   sourcemux cli docs-search "middleware auth" --json
-  sourcemux cli fetch  "https://example.com/article" --profile auto --json
-  sourcemux cli fetch  "https://example.com/article" --profile cheap --json
+  sourcemux cli fetch  "https://example.com/article" --profile auto --agent
+  sourcemux cli fetch  "https://example.com/article" --profile cheap --agent
   sourcemux cli firecrawl-scrape "https://example.com/article" --json
   sourcemux cli firecrawl-map "https://example.com" --search docs --limit 50 --json
   sourcemux cli exa-search "latest AI chip launches" --type deep --output-schema-json '{"type":"object"}' --json
@@ -86,7 +89,7 @@ Examples:
   sourcemux cli probe  --json
   sourcemux cli plan   "Notion AI agents" --depth deep
   sourcemux cli plan   "Compare current high-risk options" --json --depth deep
-  sourcemux cli research "Notion AI agents" --depth deep --profile auto --domain example.com --max-fetches 6 --json
+  sourcemux cli research "Notion AI agents" --depth deep --profile auto --domain example.com --max-fetches 6 --agent
   sourcemux cli smart-answer "Should I use SuperGrok or DeepSeek?" --profile auto --reasoning-model deepseek-v4-flash --json
   sourcemux cli eval-research --cases docs/research-eval-cases.sample.json --json
   sourcemux cli tinyfish-bench --cases docs/tinyfish-benchmark-cases.sample.json --json

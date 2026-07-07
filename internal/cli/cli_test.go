@@ -749,6 +749,40 @@ func TestRunSearchExplicitHeavyErrorsWhenProfileMissing(t *testing.T) {
 	}
 }
 
+func TestRunSearchAgentOutputIsCompactAndWarnsOnAmbiguousSources(t *testing.T) {
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Candidate sources: https://apps.apple.com/us/app/cherry-studio/id123 https://www.instagram.com/cherrystudio https://docs.cherry-ai.example/guide"}}]}`)
+	}))
+	defer grok.Close()
+
+	path := writeCLIConfig(t, `{
+	  "grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}]
+	}`)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "Cherry Studio linux.do", "--agent", "--json"}); got != 0 {
+			t.Fatalf("Run(search --agent) = %d, want 0", got)
+		}
+	})
+	var decoded tools.AgentOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Mode != "search" || decoded.AnswerReadiness != "needs_fetch" || len(decoded.SelectedSources) != 3 {
+		t.Fatalf("agent search output = %+v", decoded)
+	}
+	if decoded.SelectedSources[0].ID != "S1" || decoded.SelectedSources[0].URL == "" {
+		t.Fatalf("selected sources = %+v", decoded.SelectedSources)
+	}
+	if strings.Contains(out, `"content":`) {
+		t.Fatalf("agent search output should not include full content: %s", out)
+	}
+	warnings := strings.Join(decoded.Warnings, "\n")
+	if !strings.Contains(warnings, "linux.do") || !strings.Contains(warnings, "dispersed") {
+		t.Fatalf("warnings = %+v", decoded.Warnings)
+	}
+}
+
 func TestFetchOutputJSONShape(t *testing.T) {
 	f := fetchOutput{Source: "jina", URL: "https://x", Content: "md"}
 	b, err := json.Marshal(f)
@@ -760,6 +794,34 @@ func TestFetchOutputJSONShape(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %s", want, got)
 		}
+	}
+}
+
+func TestRunFetchAgentOutputOmitsFullContent(t *testing.T) {
+	jina := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("SourceMux agent output fixture. ", 40)))
+	}))
+	defer jina.Close()
+
+	path := writeCLIConfig(t, `{"jina": {"apiURL": "`+jina.URL+`"}}`)
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "fetch", "https://example.com/page", "--agent", "--json"}); got != 0 {
+			t.Fatalf("Run(fetch --agent) = %d, want 0", got)
+		}
+	})
+	var decoded tools.AgentOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Mode != "fetch" || decoded.AnswerReadiness != "ready" || len(decoded.SelectedSources) != 1 {
+		t.Fatalf("agent fetch output = %+v", decoded)
+	}
+	source := decoded.SelectedSources[0]
+	if source.ID != "S1" || source.Provider != "Jina Reader" || source.ContentLen == 0 || source.Excerpt == "" {
+		t.Fatalf("source = %+v", source)
+	}
+	if strings.Contains(out, `"content":`) || strings.Contains(out, strings.Repeat("SourceMux agent output fixture. ", 40)) {
+		t.Fatalf("agent fetch output should not include full content: %s", out)
 	}
 }
 
@@ -905,6 +967,34 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	}
 	if decoded.SourceSummary.SelectedForFetch != 3 {
 		t.Fatalf("source summary = %+v", decoded.SourceSummary)
+	}
+}
+
+func TestRunResearchAgentOutputUsesCompressedPack(t *testing.T) {
+	runner := &fakeCLIResearchRunner{}
+	out := captureStdout(t, func() {
+		if got := runResearchWithRunner([]string{
+			"SourceMux MCP",
+			"--depth", "standard",
+			"--max-fetches", "2",
+			"--agent",
+			"--json",
+		}, runner); got != 0 {
+			t.Fatalf("runResearchWithRunner --agent = %d, want 0", got)
+		}
+	})
+	var decoded tools.AgentOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Mode != "research" || decoded.AnswerReadiness != "ready_with_gaps" || len(decoded.SelectedSources) != 1 {
+		t.Fatalf("agent research output = %+v", decoded)
+	}
+	if decoded.SelectedSources[0].ID != "S1" || len(decoded.Facts) != 1 || len(decoded.Gaps) != 1 {
+		t.Fatalf("agent research details = %+v", decoded)
+	}
+	if strings.Contains(out, `"confirmed_facts"`) || strings.Contains(out, `"fetched_pages_summary"`) {
+		t.Fatalf("agent research output should not include full research pack: %s", out)
 	}
 }
 

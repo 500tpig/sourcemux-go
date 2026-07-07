@@ -41,6 +41,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	maxFetches := fs.Int("max-fetches", 0, "Maximum number of ranked URLs to fetch")
 	timeout := fs.Duration("timeout", 300*time.Second, "End-to-end research timeout")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
+	agentOut := fs.Bool("agent", false, "Emit compact agent-friendly JSON")
 	var domains repeatedStringFlag
 	fs.Var(&domains, "domain", "Domain/site allow-list entry; may be repeated")
 
@@ -67,7 +68,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	if runner == nil {
 		cfg, err := loadConfig()
 		if err != nil {
-			return reportResearchErr(*jsonOut, query, *depth, fmt.Sprintf("config: %v", err))
+			return reportResearchErr(*jsonOut, *agentOut, query, *depth, fmt.Sprintf("config: %v", err))
 		}
 		if !timeoutProvided && cfg.SearchPolicy.Timeout > 0 {
 			*timeout = cfg.SearchPolicy.Timeout
@@ -87,6 +88,9 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 			pack.EffectiveDepth = *depth
 		}
 		pack.Error = err.Error()
+		if *agentOut {
+			return emitAgent(tools.BuildResearchAgentOutput(pack))
+		}
 		if *jsonOut {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -97,6 +101,9 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 		return 1
 	}
 
+	if *agentOut {
+		return emitAgent(tools.BuildResearchAgentOutput(pack))
+	}
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -121,7 +128,10 @@ func buildResearchRunner(cfg *config.Config) researchRunner {
 	})
 }
 
-func reportResearchErr(asJSON bool, query, depth, msg string) int {
+func reportResearchErr(asJSON, asAgent bool, query, depth, msg string) int {
+	if asAgent {
+		return emitAgentError("research", msg, 1)
+	}
 	if asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(tools.ResearchPack{
 			Query:          query,

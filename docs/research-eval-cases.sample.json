@@ -95,6 +95,170 @@
         "min_fetched_pages": 1,
         "min_confirmed_facts": 1
       }
+    },
+    {
+      "name": "linux_do_topic_url",
+      "query": "linux.do topic 123 Cherry Studio MCP",
+      "depth": "quick",
+      "max_fetches": 1,
+      "search_results": [
+        {
+          "urls": [
+            "https://linux.do/t/cherry-studio-mcp/123",
+            "https://apps.apple.com/us/app/cherry-studio/id123456"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://linux.do/t/cherry-studio-mcp/123",
+          "source": "Fixture Forum",
+          "content": "linux.do topic 123 discusses Cherry Studio MCP setup details, including user reports and source links for verifying the integration."
+        },
+        {
+          "url": "https://apps.apple.com/us/app/cherry-studio/id123456",
+          "source": "Fixture App Store",
+          "content": "Cherry Studio is listed as a mobile app with unrelated screenshots and store metadata."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://linux.do/t/cherry-studio-mcp/123"
+        ],
+        "forbid_selected_source_urls": [
+          "https://apps.apple.com/us/app/cherry-studio/id123456"
+        ],
+        "min_fetched_pages": 1,
+        "min_confirmed_facts": 1
+      }
+    },
+    {
+      "name": "trellis_docs_url",
+      "query": "Trellis task PRD docs",
+      "depth": "quick",
+      "max_fetches": 1,
+      "search_results": [
+        {
+          "urls": [
+            "https://docs.trellis.dev/tasks/prd",
+            "https://blog.example.com/trellis-gardening"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://docs.trellis.dev/tasks/prd",
+          "source": "Fixture Docs",
+          "content": "Trellis task PRD docs explain how requirements, info files, and implementation context guide agent work."
+        },
+        {
+          "url": "https://blog.example.com/trellis-gardening",
+          "source": "Fixture Blog",
+          "content": "A gardening article discusses trellis structures and plant support."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://docs.trellis.dev/tasks/prd"
+        ],
+        "forbid_selected_source_urls": [
+          "https://blog.example.com/trellis-gardening"
+        ],
+        "min_fetched_pages": 1,
+        "min_confirmed_facts": 1
+      }
+    },
+    {
+      "name": "trellis_docs_search",
+      "query": "Trellis docs search implement.jsonl agent context",
+      "depth": "standard",
+      "max_fetches": 2,
+      "search_results": [
+        {
+          "query_contains": "official documentation",
+          "urls": [
+            "https://docs.trellis.dev/agents/implement-jsonl",
+            "https://github.com/trellis-ai/trellis-docs"
+          ]
+        },
+        {
+          "query_contains": "latest updates",
+          "urls": [
+            "https://docs.trellis.dev/changelog"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://docs.trellis.dev/agents/implement-jsonl",
+          "source": "Fixture Docs",
+          "content": "Trellis docs describe implement.jsonl as curated context for implementation agents, including spec files and task requirements."
+        },
+        {
+          "url": "https://docs.trellis.dev/changelog",
+          "source": "Fixture Docs",
+          "content": "Trellis changelog notes documentation updates for agent implementation workflows and task context loading."
+        },
+        {
+          "url": "https://github.com/trellis-ai/trellis-docs",
+          "source": "Fixture GitHub",
+          "content": "The Trellis docs repository contains source files for agent workflow documentation."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://docs.trellis.dev/agents/implement-jsonl",
+          "https://docs.trellis.dev/changelog"
+        ],
+        "high_signal_source_urls_include": [
+          "https://docs.trellis.dev/agents/implement-jsonl"
+        ],
+        "min_fetched_pages": 2,
+        "min_confirmed_facts": 1
+      }
+    },
+    {
+      "name": "linux_do_cherry_studio_generic_search_drift",
+      "query": "Cherry Studio linux.do MCP 设置",
+      "depth": "standard",
+      "max_fetches": 1,
+      "search_results": [
+        {
+          "urls": [
+            "https://apps.apple.com/us/app/cherry-studio/id123456",
+            "https://www.instagram.com/cherrystudio",
+            "https://linux.do/t/cherry-studio-mcp-settings/456"
+          ]
+        }
+      ],
+      "fetch_pages": [
+        {
+          "url": "https://linux.do/t/cherry-studio-mcp-settings/456",
+          "source": "Fixture Forum",
+          "content": "linux.do users discuss Cherry Studio MCP settings, including screenshots, config paths, and troubleshooting notes."
+        },
+        {
+          "url": "https://apps.apple.com/us/app/cherry-studio/id123456",
+          "source": "Fixture App Store",
+          "content": "Cherry Studio app listing with unrelated store metadata."
+        },
+        {
+          "url": "https://www.instagram.com/cherrystudio",
+          "source": "Fixture Social",
+          "content": "Sign in to continue. Accept cookies. Navigation."
+        }
+      ],
+      "expect": {
+        "selected_source_urls_include": [
+          "https://linux.do/t/cherry-studio-mcp-settings/456"
+        ],
+        "forbid_selected_source_urls": [
+          "https://apps.apple.com/us/app/cherry-studio/id123456",
+          "https://www.instagram.com/cherrystudio"
+        ],
+        "min_fetched_pages": 1,
+        "min_confirmed_facts": 1
+      }
     }
   ]
 }
