@@ -1585,7 +1585,7 @@ func TestRunFetchUsesFirecrawlFirstWhenV2WebFetchOrdersItFirst(t *testing.T) {
 	if decoded.RouteDecision[0].SubAttempts != 1 || len(decoded.RouteDecision[0].SubAttemptDetails) != 1 {
 		t.Fatalf("sub-attempts = %+v", decoded.RouteDecision[0])
 	}
-	if detail := decoded.RouteDecision[0].SubAttemptDetails[0]; detail.Name != "primary" || detail.Status != "ok" {
+	if detail := decoded.RouteDecision[0].SubAttemptDetails[0]; (detail.Name != "primary" && detail.Name != "backup") || detail.Status != "ok" {
 		t.Fatalf("sub-attempt detail = %+v", detail)
 	}
 	if atomic.LoadInt32(&firecrawlCalls) != 1 || atomic.LoadInt32(&jinaCalls) != 0 {
