@@ -35,6 +35,8 @@ const {
   verifyRootPackage
 } = require('../../scripts/verify-pack-dry-run');
 
+const expectedRepositoryURL = 'https://github.com/500tpig/sourcemux-go';
+
 test('maps Node platform and architecture to platform packages', () => {
   assert.deepEqual(getPlatformInfo('darwin', 'x64'), SUPPORTED_PLATFORMS['darwin-x64']);
   assert.deepEqual(getPlatformInfo('darwin', 'arm64'), SUPPORTED_PLATFORMS['darwin-arm64']);
@@ -64,6 +66,7 @@ test('root package exposes sourcemux bin and all optional platform packages', ()
   assert.equal(manifest.name, 'sourcemux');
   assert.equal(manifest.private, undefined);
   assert.deepEqual(manifest.bin, { sourcemux: 'bin/sourcemux.js' });
+  assert.equal(manifest.repository.url, expectedRepositoryURL);
   assert.deepEqual(Object.keys(manifest.optionalDependencies).sort(), expectedOptionalPackages);
 
   for (const packageVersion of Object.values(manifest.optionalDependencies)) {
@@ -86,6 +89,8 @@ test('platform package manifests match the launcher matrix', () => {
     assert.deepEqual(manifest.os, [info.platform]);
     assert.deepEqual(manifest.cpu, [info.arch]);
     assert.equal(manifest.private, undefined);
+    assert.equal(manifest.repository.url, expectedRepositoryURL);
+    assert.equal(manifest.repository.directory, `npm/platforms/${info.key}`);
     assert.deepEqual(manifest.publishConfig, { access: 'public' });
   }
 });

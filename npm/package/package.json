@@ -6,7 +6,7 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/500tpig/sourcemux-go.git",
+    "url": "https://github.com/500tpig/sourcemux-go",
     "directory": "npm/package"
   },
   "homepage": "https://github.com/500tpig/sourcemux-go#readme",

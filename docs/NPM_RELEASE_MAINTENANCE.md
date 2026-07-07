@@ -31,6 +31,11 @@ The root package exposes the `sourcemux` bin and depends on platform packages
 through `optionalDependencies`. The matching platform package supplies the
 native `sourcemux` or `sourcemux.exe` binary.
 
+Every root/platform package must keep `repository.url` set to
+`https://github.com/500tpig/sourcemux-go`. npm Trusted Publishing validates
+that package metadata against the GitHub Actions provenance bundle; empty
+platform package repository metadata causes publish to fail.
+
 Do not expose the legacy `grok-search` command through npm unless a separate
 task explicitly decides to extend npm migration support.
 
