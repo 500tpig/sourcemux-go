@@ -15,22 +15,25 @@ import (
 // searchOutput is the JSON envelope for `cli search`. Keep the fields stable
 // so external scripts can rely on the shape.
 type searchOutput struct {
-	Engine           string                 `json:"engine"`
-	EndpointName     string                 `json:"endpoint_name,omitempty"`
-	Model            string                 `json:"model,omitempty"`
-	RequestedProfile string                 `json:"requested_profile"`
-	EffectiveProfile string                 `json:"effective_profile"`
-	ProfileReason    string                 `json:"profile_reason,omitempty"`
-	Query            string                 `json:"query"`
-	Content          string                 `json:"content"`
-	SourceURLs       []string               `json:"source_urls"`
-	SourcesCount     int                    `json:"sources_count"`
-	Fallback         string                 `json:"fallback,omitempty"`
-	GrokError        string                 `json:"grok_error,omitempty"`
-	CallerTimeout    string                 `json:"caller_timeout,omitempty"`
-	GrokPoolTimeout  string                 `json:"grok_pool_timeout,omitempty"`
-	NoFallback       bool                   `json:"no_fallback,omitempty"`
-	RouteDecision    []router.RouteDecision `json:"route_decision,omitempty"`
+	Engine                 string                 `json:"engine"`
+	EndpointName           string                 `json:"endpoint_name,omitempty"`
+	Model                  string                 `json:"model,omitempty"`
+	RequestedProfile       string                 `json:"requested_profile"`
+	EffectiveProfile       string                 `json:"effective_profile"`
+	ProfileReason          string                 `json:"profile_reason,omitempty"`
+	Query                  string                 `json:"query"`
+	Content                string                 `json:"content"`
+	SourceURLs             []string               `json:"source_urls"`
+	SourcesCount           int                    `json:"sources_count"`
+	SourceOrigin           string                 `json:"source_origin"`
+	ValidSourcesCount      int                    `json:"valid_sources_count"`
+	StructuredSourcesCount int                    `json:"structured_sources_count"`
+	Fallback               string                 `json:"fallback,omitempty"`
+	GrokError              string                 `json:"grok_error,omitempty"`
+	CallerTimeout          string                 `json:"caller_timeout,omitempty"`
+	GrokPoolTimeout        string                 `json:"grok_pool_timeout,omitempty"`
+	NoFallback             bool                   `json:"no_fallback,omitempty"`
+	RouteDecision          []router.RouteDecision `json:"route_decision,omitempty"`
 }
 
 func runSearch(args []string) int {
@@ -110,22 +113,25 @@ func runSearch(args []string) int {
 		return emitAgent(tools.BuildSearchAgentOutput(query, res))
 	}
 	return emitSearch(*jsonOut, searchOutput{
-		Engine:           res.Engine,
-		EndpointName:     res.EndpointName,
-		Model:            res.Model,
-		RequestedProfile: res.RequestedProfile,
-		EffectiveProfile: res.EffectiveProfile,
-		ProfileReason:    res.ProfileReason,
-		Query:            res.Query,
-		Content:          res.Content,
-		SourceURLs:       res.SourceURLs,
-		SourcesCount:     res.SourcesCount,
-		Fallback:         res.Fallback,
-		GrokError:        res.GrokError,
-		CallerTimeout:    effectiveTimeout.String(),
-		GrokPoolTimeout:  effectiveGrokPoolTimeout.String(),
-		NoFallback:       *noFallback,
-		RouteDecision:    res.RouteTrace.Decisions,
+		Engine:                 res.Engine,
+		EndpointName:           res.EndpointName,
+		Model:                  res.Model,
+		RequestedProfile:       res.RequestedProfile,
+		EffectiveProfile:       res.EffectiveProfile,
+		ProfileReason:          res.ProfileReason,
+		Query:                  res.Query,
+		Content:                res.Content,
+		SourceURLs:             res.SourceURLs,
+		SourcesCount:           res.SourcesCount,
+		SourceOrigin:           res.SourceOrigin,
+		ValidSourcesCount:      res.ValidSourcesCount,
+		StructuredSourcesCount: res.StructuredSourcesCount,
+		Fallback:               res.Fallback,
+		GrokError:              res.GrokError,
+		CallerTimeout:          effectiveTimeout.String(),
+		GrokPoolTimeout:        effectiveGrokPoolTimeout.String(),
+		NoFallback:             *noFallback,
+		RouteDecision:          res.RouteTrace.Decisions,
 	})
 }
 
@@ -145,6 +151,8 @@ func emitSearch(asJSON bool, out searchOutput) int {
 		fmt.Printf("profile: requested=%s effective=%s\n", out.RequestedProfile, out.EffectiveProfile)
 	}
 	fmt.Printf("sources_count: %d\n\n", out.SourcesCount)
+	fmt.Printf("source_origin: %s; valid_sources_count: %d; structured_sources_count: %d\n\n",
+		out.SourceOrigin, out.ValidSourcesCount, out.StructuredSourcesCount)
 	if len(out.RouteDecision) > 0 {
 		fmt.Printf("route_attempts: %d\n\n", len(out.RouteDecision))
 	}

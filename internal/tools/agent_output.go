@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/500tpig/sourcemux-go/internal/engine"
 )
 
 const agentExcerptRunes = 700
@@ -88,6 +90,9 @@ func BuildSearchAgentOutput(query string, result *WebSearchResult) AgentOutput {
 		return out
 	}
 	out.AnswerReadiness = "needs_fetch"
+	if result.SourceOrigin == engine.SourceOriginRegex {
+		out.Warnings = append(out.Warnings, "source URLs were extracted from generated answer text, not structured upstream search evidence")
+	}
 	out.Warnings = append(out.Warnings, searchWarnings(query, sources)...)
 	out.NextActions = append(out.NextActions, `fetch S1 with fetch --agent before citing`)
 	if queryLooksDocsLike(query) {

@@ -8,18 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 )
-
-// urlRegex captures http(s):// URLs in plain text. Conservative stop set so we
-// don't gobble closing brackets, quotes, or whitespace from surrounding prose.
-var urlRegex = regexp.MustCompile(`https?://[^\s)\]<>"']+`)
-
-// urlTrailingPunct is stripped from URLs extracted via regex (sentences often
-// end with these right after the URL).
-const urlTrailingPunct = ".,;:!?"
 
 const (
 	// ResponseToolWebSearch enables xAI's built-in real-time web search tool on
@@ -84,9 +75,29 @@ func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 
 // SearchResult holds the AI answer plus extracted source URLs.
 type SearchResult struct {
-	Content      string   `json:"content"`
-	SourceURLs   []string `json:"source_urls"`
-	SourcesCount int      `json:"sources_count"`
+	Content                string   `json:"content"`
+	SourceURLs             []string `json:"source_urls"`
+	SourcesCount           int      `json:"sources_count"`
+	SourceOrigin           string   `json:"source_origin"`
+	ValidSourcesCount      int      `json:"valid_sources_count"`
+	StructuredSourcesCount int      `json:"structured_sources_count"`
+}
+
+type sourceEvidence struct {
+	URLs            []string
+	Origin          string
+	StructuredCount int
+}
+
+func newSearchResult(content string, evidence sourceEvidence) *SearchResult {
+	return &SearchResult{
+		Content:                content,
+		SourceURLs:             evidence.URLs,
+		SourcesCount:           len(evidence.URLs),
+		SourceOrigin:           evidence.Origin,
+		ValidSourcesCount:      len(evidence.URLs),
+		StructuredSourcesCount: evidence.StructuredCount,
+	}
 }
 
 // grokRawResponse mirrors the OpenAI-compatible Grok response, including all the
@@ -166,7 +177,7 @@ func (c *GrokClient) searchViaChatCompletions(ctx context.Context, query string)
 
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("grok API %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("grok API %d: %s", resp.StatusCode, c.redactedBody(data))
 	}
 
 	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
@@ -183,13 +194,7 @@ func (c *GrokClient) searchViaChatCompletions(ctx context.Context, query string)
 		content = raw.Choices[0].Message.Content
 	}
 
-	urls := extractSourceURLs(&raw, content)
-
-	return &SearchResult{
-		Content:      content,
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-	}, nil
+	return newSearchResult(content, extractSourceEvidence(&raw, content)), nil
 }
 
 // responsesAPIResponse mirrors the xAI Responses API response schema.
@@ -257,7 +262,7 @@ func (c *GrokClient) searchViaResponses(ctx context.Context, query string) (*Sea
 
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("grok responses API %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("grok responses API %d: %s", resp.StatusCode, c.redactedBody(data))
 	}
 
 	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
@@ -269,13 +274,9 @@ func (c *GrokClient) searchViaResponses(ctx context.Context, query string) (*Sea
 		return nil, fmt.Errorf("decode responses API response: %w", err)
 	}
 
-	content, urls := extractResponsesAPIResult(&raw)
+	content, evidence := extractResponsesAPIResult(&raw)
 
-	return &SearchResult{
-		Content:      content,
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-	}, nil
+	return newSearchResult(content, evidence), nil
 }
 
 // NormalizeResponseTools trims, validates, and deduplicates Responses API tool
@@ -328,7 +329,7 @@ func responseToolPayload(tools []string) []map[string]any {
 //  1. annotations on output_text content blocks
 //  2. top-level citations[]
 //  3. http(s) URLs scraped from the combined text (regex fallback)
-func extractResponsesAPIResult(raw *responsesAPIResponse) (string, []string) {
+func extractResponsesAPIResult(raw *responsesAPIResponse) (string, sourceEvidence) {
 	var textParts []string
 	var annotationURLs []string
 
@@ -354,25 +355,21 @@ func extractResponsesAPIResult(raw *responsesAPIResponse) (string, []string) {
 	content := strings.Join(textParts, "\n")
 
 	if len(annotationURLs) > 0 {
-		return content, dedupURLs(annotationURLs)
+		if evidence := structuredSourceEvidence(annotationURLs, SourceOriginAnnotations); len(evidence.URLs) > 0 {
+			return content, evidence
+		}
 	}
 	if len(raw.Citations) > 0 {
-		return content, dedupURLs(raw.Citations)
+		if evidence := structuredSourceEvidence(raw.Citations, SourceOriginCitations); len(evidence.URLs) > 0 {
+			return content, evidence
+		}
 	}
 	if content != "" {
-		matches := urlRegex.FindAllString(content, -1)
-		cleaned := make([]string, 0, len(matches))
-		for _, m := range matches {
-			m = strings.TrimRight(m, urlTrailingPunct)
-			if m != "" {
-				cleaned = append(cleaned, m)
-			}
-		}
-		if len(cleaned) > 0 {
-			return content, dedupURLs(cleaned)
+		if evidence := regexSourceEvidence(content); len(evidence.URLs) > 0 {
+			return content, evidence
 		}
 	}
-	return content, nil
+	return content, sourceEvidence{Origin: SourceOriginNone}
 }
 
 type grokStreamChunk struct {
@@ -435,12 +432,7 @@ func decodeEventStreamSearchResult(r io.Reader) (*SearchResult, error) {
 	if text == "" && len(raw.Choices) > 0 {
 		text = raw.Choices[0].Message.Content
 	}
-	urls := extractSourceURLs(&raw, text)
-	return &SearchResult{
-		Content:      text,
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-	}, nil
+	return newSearchResult(text, extractSourceEvidence(&raw, text)), nil
 }
 
 func mergeStreamChunk(raw *grokRawResponse, content *strings.Builder, chunk *grokStreamChunk) {
@@ -482,7 +474,7 @@ func mergeStreamChunk(raw *grokRawResponse, content *strings.Builder, chunk *gro
 	}
 }
 
-// extractSourceURLs picks the best available source list from a Grok response.
+// extractSourceEvidence picks the best valid source list from a Grok response.
 //
 // Priority order (most-structured first):
 //  1. choices[0].message.annotations[].url_citation.url  (OpenAI tools-spec; many grok2api flavors).
@@ -490,7 +482,7 @@ func mergeStreamChunk(raw *grokRawResponse, content *strings.Builder, chunk *gro
 //  3. top-level citations[]                              (native xAI Grok).
 //  4. top-level search_results[].url                     (older grok2api flavor).
 //  5. http(s) URLs scraped from the answer text          (last-resort regex).
-func extractSourceURLs(raw *grokRawResponse, content string) []string {
+func extractSourceEvidence(raw *grokRawResponse, content string) sourceEvidence {
 	if len(raw.Choices) > 0 {
 		anns := raw.Choices[0].Message.Annotations
 		if len(anns) > 0 {
@@ -500,8 +492,8 @@ func extractSourceURLs(raw *grokRawResponse, content string) []string {
 					urls = append(urls, a.URLCitation.URL)
 				}
 			}
-			if len(urls) > 0 {
-				return dedupURLs(urls)
+			if evidence := structuredSourceEvidence(urls, SourceOriginAnnotations); len(evidence.URLs) > 0 {
+				return evidence
 			}
 		}
 	}
@@ -512,12 +504,14 @@ func extractSourceURLs(raw *grokRawResponse, content string) []string {
 				urls = append(urls, s.URL)
 			}
 		}
-		if len(urls) > 0 {
-			return dedupURLs(urls)
+		if evidence := structuredSourceEvidence(urls, SourceOriginSearchSources); len(evidence.URLs) > 0 {
+			return evidence
 		}
 	}
 	if len(raw.Citations) > 0 {
-		return dedupURLs(raw.Citations)
+		if evidence := structuredSourceEvidence(raw.Citations, SourceOriginCitations); len(evidence.URLs) > 0 {
+			return evidence
+		}
 	}
 	if len(raw.SearchResults) > 0 {
 		urls := make([]string, 0, len(raw.SearchResults))
@@ -526,41 +520,26 @@ func extractSourceURLs(raw *grokRawResponse, content string) []string {
 				urls = append(urls, r.URL)
 			}
 		}
-		if len(urls) > 0 {
-			return dedupURLs(urls)
+		if evidence := structuredSourceEvidence(urls, SourceOriginSearchResults); len(evidence.URLs) > 0 {
+			return evidence
 		}
 	}
 	if content != "" {
-		matches := urlRegex.FindAllString(content, -1)
-		cleaned := make([]string, 0, len(matches))
-		for _, m := range matches {
-			m = strings.TrimRight(m, urlTrailingPunct)
-			if m != "" {
-				cleaned = append(cleaned, m)
-			}
-		}
-		if len(cleaned) > 0 {
-			return dedupURLs(cleaned)
+		if evidence := regexSourceEvidence(content); len(evidence.URLs) > 0 {
+			return evidence
 		}
 	}
-	return nil
+	return sourceEvidence{Origin: SourceOriginNone}
 }
 
-// dedupURLs preserves first-seen order while dropping empties and duplicates.
-func dedupURLs(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, u := range in {
-		if u == "" {
-			continue
-		}
-		if _, ok := seen[u]; ok {
-			continue
-		}
-		seen[u] = struct{}{}
-		out = append(out, u)
-	}
-	return out
+func structuredSourceEvidence(urls []string, origin string) sourceEvidence {
+	normalized := NormalizeSourceURLs(urls)
+	return sourceEvidence{URLs: normalized, Origin: origin, StructuredCount: len(normalized)}
+}
+
+func regexSourceEvidence(content string) sourceEvidence {
+	urls := NormalizeSourceURLs(urlRegex.FindAllString(content, -1))
+	return sourceEvidence{URLs: urls, Origin: SourceOriginRegex}
 }
 
 // ListModels returns available models from the Grok-compatible endpoint.
@@ -582,6 +561,10 @@ func (c *GrokClient) ListModels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("grok list models failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("grok models API %d: %s", resp.StatusCode, c.redactedBody(data))
+	}
 
 	var result struct {
 		Data []struct {
@@ -597,4 +580,16 @@ func (c *GrokClient) ListModels(ctx context.Context) ([]string, error) {
 		models[i] = m.ID
 	}
 	return models, nil
+}
+
+func (c *GrokClient) redactedBody(data []byte) string {
+	if key := strings.TrimSpace(c.APIKey); key != "" {
+		data = bytes.ReplaceAll(data, []byte(key), []byte("<redacted>"))
+	}
+	const limit = 500
+	body := strings.TrimSpace(string(data))
+	if len(body) <= limit {
+		return body
+	}
+	return body[:limit] + "..."
 }

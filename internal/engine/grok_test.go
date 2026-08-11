@@ -41,6 +41,9 @@ func TestSearch_CitationsField(t *testing.T) {
 	if res.SourcesCount != 2 {
 		t.Fatalf("count = %d, want 2", res.SourcesCount)
 	}
+	if res.SourceOrigin != SourceOriginCitations || res.ValidSourcesCount != 2 || res.StructuredSourcesCount != 2 {
+		t.Fatalf("source evidence = origin:%s valid:%d structured:%d", res.SourceOrigin, res.ValidSourcesCount, res.StructuredSourcesCount)
+	}
 	if res.Content != "Grok answer." {
 		t.Fatalf("content = %q", res.Content)
 	}
@@ -63,6 +66,9 @@ func TestSearch_SearchResultsField(t *testing.T) {
 	if res.SourcesCount != 2 {
 		t.Fatalf("count = %d, want 2", res.SourcesCount)
 	}
+	if res.SourceOrigin != SourceOriginSearchResults || res.ValidSourcesCount != 2 || res.StructuredSourcesCount != 2 {
+		t.Fatalf("source evidence = origin:%s valid:%d structured:%d", res.SourceOrigin, res.ValidSourcesCount, res.StructuredSourcesCount)
+	}
 }
 
 func TestSearch_AnnotationsField(t *testing.T) {
@@ -83,6 +89,9 @@ func TestSearch_AnnotationsField(t *testing.T) {
 	want := []string{"https://ann1.example.com", "https://ann2.example.com"}
 	if !reflect.DeepEqual(res.SourceURLs, want) {
 		t.Fatalf("urls = %v, want %v", res.SourceURLs, want)
+	}
+	if res.SourceOrigin != SourceOriginAnnotations || res.StructuredSourcesCount != 2 {
+		t.Fatalf("source evidence = %+v", res)
 	}
 }
 
@@ -157,6 +166,9 @@ func TestSearch_FallbackContentURLs(t *testing.T) {
 	if res.SourcesCount != 2 {
 		t.Fatalf("count = %d, want 2", res.SourcesCount)
 	}
+	if res.SourceOrigin != SourceOriginRegex || res.ValidSourcesCount != 2 || res.StructuredSourcesCount != 0 {
+		t.Fatalf("source evidence = origin:%s valid:%d structured:%d", res.SourceOrigin, res.ValidSourcesCount, res.StructuredSourcesCount)
+	}
 }
 
 func TestSearch_NoSources(t *testing.T) {
@@ -172,16 +184,84 @@ func TestSearch_NoSources(t *testing.T) {
 	if res.SourcesCount != 0 {
 		t.Fatalf("expected 0 count, got %d", res.SourcesCount)
 	}
+	if res.SourceOrigin != SourceOriginNone || res.ValidSourcesCount != 0 || res.StructuredSourcesCount != 0 {
+		t.Fatalf("source evidence = %+v", res)
+	}
+}
+
+func TestSearch_NormalizesAndValidatesSourceURLs(t *testing.T) {
+	body := `{
+		"choices":[{"message":{
+			"content":"fallback https://fallback.example.com/path，详情",
+			"annotations":[
+				{"type":"url_citation","url_citation":{"url":"[Docs](https://docs.example.com/a)。"}},
+				{"type":"url_citation","url_citation":{"url":"javascript:alert(1)"}},
+				{"type":"url_citation","url_citation":{"url":"https://docs.example.com/wiki/Foo_(bar)"}}
+			]
+		}}]
+	}`
+	c := newMockGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://docs.example.com/a", "https://docs.example.com/wiki/Foo_(bar)"}
+	if !reflect.DeepEqual(res.SourceURLs, want) {
+		t.Fatalf("SourceURLs = %v, want %v", res.SourceURLs, want)
+	}
+	if res.SourceOrigin != SourceOriginAnnotations || res.ValidSourcesCount != 2 || res.StructuredSourcesCount != 2 {
+		t.Fatalf("source evidence = %+v", res)
+	}
+}
+
+func TestSearch_InvalidStructuredSourcesFallThroughToRegex(t *testing.T) {
+	body := `{
+		"choices":[{"message":{"content":"See https://fallback.example.com/page）更多"}}],
+		"citations":["not-a-url","ftp://example.com/file"]
+	}`
+	c := newMockGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res.SourceURLs, []string{"https://fallback.example.com/page"}) || res.SourceOrigin != SourceOriginRegex {
+		t.Fatalf("source evidence = %+v", res)
+	}
+}
+
+func TestSearch_RegexPreservesBalancedParenthesesAndDropsMarkdownSuffix(t *testing.T) {
+	body := `{
+		"choices":[{"message":{"content":"See **https://docs.example.com/wiki/Foo_(bar)**.[[2]](https://docs.example.com/source)"}}]
+	}`
+	c := newMockGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://docs.example.com/wiki/Foo_(bar)", "https://docs.example.com/source"}
+	if !reflect.DeepEqual(res.SourceURLs, want) {
+		t.Fatalf("SourceURLs = %v, want %v", res.SourceURLs, want)
+	}
+}
+
+func TestNormalizeSourceURLDropsTrailingProse(t *testing.T) {
+	got, ok := NormalizeSourceURL("https://example.com/path trailing prose")
+	if !ok || got != "https://example.com/path" {
+		t.Fatalf("NormalizeSourceURL = %q, %v", got, ok)
+	}
 }
 
 func TestSearch_HTTPErrorIncludesStatus(t *testing.T) {
-	c := newMockGrok(t, http.StatusUnauthorized, `{"error":"bad key"}`)
+	c := newMockGrok(t, http.StatusUnauthorized, `{"error":"echo test-key"}`)
 	_, err := c.Search(context.Background(), "q")
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
 	if !strings.Contains(err.Error(), "401") {
 		t.Fatalf("error should include status 401, got %v", err)
+	}
+	if strings.Contains(err.Error(), "test-key") || !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("error should redact the API key, got %v", err)
 	}
 }
 
@@ -312,6 +392,17 @@ func TestListModels_RetriesOn429ThenSucceeds(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("calls = %d, want 2 (initial 429 + retry)", got)
+	}
+}
+
+func TestListModelsRejectsAndRedactsNonSuccessResponse(t *testing.T) {
+	c := newMockGrok(t, http.StatusUnauthorized, `{"error":"echo test-key"}`)
+	_, err := c.ListModels(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("ListModels error = %v, want status 401", err)
+	}
+	if strings.Contains(err.Error(), "test-key") || !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("ListModels error should redact the API key, got %v", err)
 	}
 }
 

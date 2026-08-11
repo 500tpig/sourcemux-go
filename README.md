@@ -331,6 +331,7 @@ sourcemux --config ./grok-search.json config list --json
 | `sourcemux research <query>` | 生成 bounded research pack；Agent 默认用 `--agent` 看短 JSON |
 | `sourcemux smart-answer <query>` | research 后交给 reasoning endpoint 综合 |
 | `sourcemux eval-research` | 用离线 fixture cases 验证 research 排序、fetch 和 facts 抽取质量 |
+| `sourcemux eval-search` | 显式运行 live 搜索端点评测，记录来源类型、有效来源数量、延迟和断言结果 |
 | `sourcemux config path/files/list` | 查看当前配置路径和遮蔽后的有效配置 |
 | `sourcemux setup` | 生成本地配置，不必手写 JSON |
 | `sourcemux doctor` / `probe` | 本地配置检查 / 显式 live probe |
@@ -739,6 +740,7 @@ Main subcommands:
 | `research <query>` | Bounded multi-step research pack (defaults to `--profile auto`). |
 | `smart-answer <query>` | Research pack plus reasoning endpoint synthesis (passes `--profile` into research; default `auto`). |
 | `eval-research` | Offline fixture-based research quality checks for ranking, fetch, and fact extraction. |
+| `eval-search` | Opt-in live benchmark for per-endpoint freshness, latency, and structured-source evidence. |
 | `config path/files/list` | Inspect the active single config file. |
 | `setup` | Create a config without hand-writing JSON. |
 | `doctor` / `probe` | Local config overview; opt-in live provider probes. |
@@ -752,6 +754,35 @@ Search-specific controls:
 - `--grok-pool-timeout <dur>` overrides `grokPoolTimeoutSec` for that call; `0` disables the Grok pool cap and leaves cancellation to `--timeout` or the caller.
 - `--fallback-after <dur>` is an alias for `--grok-pool-timeout` when you want the selected Grok pool to give way to fallback providers after a bounded wait.
 - `--no-fallback` disables TinyFish/Exa/Tavily fallback so failures from the selected Grok pool are visible; use it for diagnostics only, not user-facing research/search.
+
+Live search evaluation is separate from unit tests and requires an explicit
+`--live` acknowledgement because it can consume paid provider quota. It calls
+each selected Grok endpoint directly without provider fallback, repeats every
+case, and reports `source_origin`, `valid_sources_count`,
+`structured_sources_count`, normalized URLs, latency, clipped content, and
+expectation failures:
+
+```bash
+sourcemux --config /absolute/path/to/sourcemux.json eval-search \
+  --live \
+  --cases docs/search-eval-cases.sample.json \
+  --endpoints endpoint-fast,endpoint-heavy \
+  --repeats 3 \
+  --timeout 180s \
+  --json
+```
+
+Disabled endpoints are excluded unless they are explicitly selected together
+with `--include-disabled`. For GitHub cases, the optional `truth_command` is
+reported with each measurement; run that `gh api` command separately and treat
+its response as the final truth rather than the search model's answer.
+Case queries may use `{{CURRENT_DATE}}` and `{{CURRENT_TIME}}`; the evaluator
+expands them at runtime before sending the request.
+
+`tinyfish-bench` reads TinyFish keys and Search/Fetch URLs from the active
+`--config` file by default. `--keys-file`, `--search-url`, and `--fetch-url`
+remain explicit isolation overrides for provider diagnostics; environment
+variables are not consulted.
 
 ## MCP usage
 

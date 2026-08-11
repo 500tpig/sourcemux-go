@@ -124,8 +124,8 @@ func runTinyFishBench(args []string) int {
 	keysFile := fs.String("keys-file", "", "Local JSON file containing TinyFish API keys")
 	timeout := fs.Duration("timeout", 150*time.Second, "Per-request timeout")
 	jsonOut := fs.Bool("json", false, "Emit machine-readable JSON")
-	searchURL := fs.String("search-url", engine.DefaultTinyFishSearchURL, "TinyFish Search endpoint")
-	fetchURL := fs.String("fetch-url", engine.DefaultTinyFishFetchURL, "TinyFish Fetch endpoint")
+	searchURL := fs.String("search-url", "", "TinyFish Search endpoint override")
+	fetchURL := fs.String("fetch-url", "", "TinyFish Fetch endpoint override")
 	agentURL := fs.String("agent-url", engine.DefaultTinyFishAgentURL, "TinyFish sync Agent endpoint")
 	surfaces := fs.String("surfaces", "search,fetch,agent", "Comma-separated surfaces to run: search,fetch,agent")
 	if err := fs.Parse(args); err != nil {
@@ -144,6 +144,7 @@ func runTinyFishBench(args []string) int {
 	if err != nil {
 		return reportTinyFishBenchErr(*jsonOut, err.Error())
 	}
+	effectiveSearchURL, effectiveFetchURL := tinyFishBenchmarkURLs(*keysFile, *searchURL, *fetchURL)
 
 	start := time.Now()
 	out := tinyfishBenchmarkOutput{
@@ -154,8 +155,8 @@ func runTinyFishBench(args []string) int {
 
 	for _, key := range keys {
 		client := engine.NewTinyFishClient(key.APIKey)
-		client.SearchURL = *searchURL
-		client.FetchURL = *fetchURL
+		client.SearchURL = effectiveSearchURL
+		client.FetchURL = effectiveFetchURL
 		client.AgentURL = *agentURL
 
 		run := tinyfishKeyBenchmarkRun{Name: key.Name, KeyStatus: keyStatus(key.APIKey)}
@@ -280,30 +281,40 @@ func benchmarkTinyFishAgent(client *engine.TinyFishClient, c tinyfishAgentCase, 
 }
 
 func loadTinyFishKeys(path string) ([]tinyfishKeyConfig, error) {
-	if path == "" {
-		path = os.Getenv("TINYFISH_KEYS_FILE")
-	}
 	if path != "" {
 		return loadTinyFishKeysFile(path)
 	}
-	raw := os.Getenv("TINYFISH_API_KEYS")
-	if raw == "" {
-		raw = os.Getenv("TINYFISH_API_KEY")
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
 	}
-	if raw == "" {
-		return nil, errors.New("set TINYFISH_API_KEYS, TINYFISH_API_KEY, TINYFISH_KEYS_FILE, or --keys-file")
-	}
-	keyParts := splitTinyFishList(raw)
-	nameParts := splitTinyFishList(os.Getenv("TINYFISH_KEY_NAMES"))
-	keys := make([]tinyfishKeyConfig, 0, len(keyParts))
-	for i, key := range keyParts {
-		name := fmt.Sprintf("key-%d", i+1)
-		if i < len(nameParts) && nameParts[i] != "" {
-			name = nameParts[i]
-		}
-		keys = append(keys, tinyfishKeyConfig{Name: name, APIKey: key})
+	keys := make([]tinyfishKeyConfig, 0, len(cfg.TinyFishKeys))
+	for _, key := range cfg.TinyFishKeys {
+		keys = append(keys, tinyfishKeyConfig{Name: key.Name, APIKey: key.APIKey})
 	}
 	return normalizeTinyFishKeys(keys)
+}
+
+func tinyFishBenchmarkURLs(keysFile, searchOverride, fetchOverride string) (string, string) {
+	searchURL := strings.TrimSpace(searchOverride)
+	fetchURL := strings.TrimSpace(fetchOverride)
+	if strings.TrimSpace(keysFile) == "" {
+		if cfg, err := loadConfig(); err == nil {
+			if searchURL == "" {
+				searchURL = cfg.TinyFishSearchURL
+			}
+			if fetchURL == "" {
+				fetchURL = cfg.TinyFishFetchURL
+			}
+		}
+	}
+	if searchURL == "" {
+		searchURL = engine.DefaultTinyFishSearchURL
+	}
+	if fetchURL == "" {
+		fetchURL = engine.DefaultTinyFishFetchURL
+	}
+	return searchURL, fetchURL
 }
 
 func loadTinyFishKeysFile(path string) ([]tinyfishKeyConfig, error) {
@@ -393,19 +404,6 @@ func parseTinyFishSurfaces(raw string) (map[string]bool, error) {
 		return nil, errors.New("at least one TinyFish surface is required")
 	}
 	return out, nil
-}
-
-func splitTinyFishList(raw string) []string {
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == '\n' || r == '\r'
-	})
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if s := strings.TrimSpace(part); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 func emitTinyFishBench(asJSON bool, out tinyfishBenchmarkOutput) int {

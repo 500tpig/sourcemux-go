@@ -33,6 +33,7 @@ Commands:
   docs-search <query> Search documentation/source pages.
   research <query>    Run a bounded research workflow.
   eval-research       Run offline research quality fixture cases.
+  eval-search         Run live per-endpoint search quality cases.
   config <command>    Inspect the active config path or masked config.
   bootstrap <target>  Install or update generated agent skills/MCP config.
   cli <command>       Compatibility path for one-shot CLI commands.
@@ -119,6 +120,7 @@ func isTopLevelCLICommand(cmd string) bool {
 		"research",
 		"smart-answer",
 		"eval-research",
+		"eval-search",
 		"tinyfish-bench":
 		return true
 	default:

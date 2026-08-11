@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "name": "github-grok2api-latest-release",
+      "query": "[Current date: {{CURRENT_DATE}}] What is the latest release tag of github.com/chenyme/grok2api? Cite the official GitHub release URL.",
+      "truth_command": "gh api repos/chenyme/grok2api/releases/latest --jq '{tag_name,html_url,published_at}'",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["github.com"]
+      }
+    },
+    {
+      "name": "github-grok2api-main-commit",
+      "query": "[Current date: {{CURRENT_DATE}}] What is the latest commit on the main branch of github.com/chenyme/grok2api? Return the commit SHA, date, and official GitHub URL.",
+      "truth_command": "gh api repos/chenyme/grok2api/commits/main --jq '{sha:.sha,url:.html_url,date:.commit.committer.date}'",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["github.com"]
+      }
+    },
+    {
+      "name": "github-cli-latest-release",
+      "query": "What is the latest GitHub CLI release tag? Cite the official cli/cli GitHub release URL.",
+      "truth_command": "gh api repos/cli/cli/releases/latest --jq '{tag_name,html_url,published_at}'",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["github.com"]
+      }
+    },
+    {
+      "name": "vite-latest-release",
+      "query": "What is the latest stable Vite release tag? Cite the official vitejs/vite GitHub release URL.",
+      "truth_command": "gh api repos/vitejs/vite/releases --jq '[.[] | select(.prerelease == false and (.tag_name | test(\"^v[0-9]\")))] | sort_by(.published_at) | last | {tag_name,html_url,published_at}'",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["github.com"]
+      }
+    },
+    {
+      "name": "vue-latest-release",
+      "query": "What is the latest stable Vue core release tag? Cite the official vuejs/core GitHub release URL.",
+      "truth_command": "gh api repos/vuejs/core/releases/latest --jq '{tag_name,html_url,published_at}'",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["github.com"]
+      }
+    },
+    {
+      "name": "go-latest-release",
+      "query": "What is the latest stable Go release available today? Cite an official go.dev source.",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["go.dev"]
+      }
+    },
+    {
+      "name": "node-current-lts",
+      "query": "What is the current Node.js LTS release line and latest patch version? Cite nodejs.org.",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["nodejs.org"]
+      }
+    },
+    {
+      "name": "python-latest-stable",
+      "query": "What is the latest stable Python release available today? Cite python.org.",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["python.org"]
+      }
+    },
+    {
+      "name": "openai-api-pricing",
+      "query": "What are the current OpenAI API text model input and output token prices? Cite the official OpenAI pricing page.",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["openai.com"]
+      }
+    },
+    {
+      "name": "apple-current-macos",
+      "query": "What is the latest macOS release and build published by Apple? Cite an official Apple support page.",
+      "expect": {
+        "min_valid_sources": 1,
+        "min_structured_sources": 1,
+        "source_domains_include": ["apple.com"]
+      }
+    }
+  ]
+}

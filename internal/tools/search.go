@@ -38,20 +38,23 @@ type WebSearchClients struct {
 // WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
 // and the higher-level research workflow.
 type WebSearchResult struct {
-	Query            string            `json:"query"`
-	Engine           string            `json:"engine"`
-	EndpointName     string            `json:"endpoint_name,omitempty"`
-	Model            string            `json:"model,omitempty"`
-	RequestedProfile string            `json:"requested_profile"`
-	EffectiveProfile string            `json:"effective_profile"`
-	ProfileReason    string            `json:"profile_reason,omitempty"`
-	SessionID        string            `json:"session_id,omitempty"`
-	Content          string            `json:"content"`
-	SourceURLs       []string          `json:"source_urls"`
-	SourcesCount     int               `json:"sources_count"`
-	Fallback         string            `json:"fallback,omitempty"`
-	GrokError        string            `json:"grok_error,omitempty"`
-	RouteTrace       router.RouteTrace `json:"route_trace,omitempty"`
+	Query                  string            `json:"query"`
+	Engine                 string            `json:"engine"`
+	EndpointName           string            `json:"endpoint_name,omitempty"`
+	Model                  string            `json:"model,omitempty"`
+	RequestedProfile       string            `json:"requested_profile"`
+	EffectiveProfile       string            `json:"effective_profile"`
+	ProfileReason          string            `json:"profile_reason,omitempty"`
+	SessionID              string            `json:"session_id,omitempty"`
+	Content                string            `json:"content"`
+	SourceURLs             []string          `json:"source_urls"`
+	SourcesCount           int               `json:"sources_count"`
+	SourceOrigin           string            `json:"source_origin"`
+	ValidSourcesCount      int               `json:"valid_sources_count"`
+	StructuredSourcesCount int               `json:"structured_sources_count"`
+	Fallback               string            `json:"fallback,omitempty"`
+	GrokError              string            `json:"grok_error,omitempty"`
+	RouteTrace             router.RouteTrace `json:"route_trace,omitempty"`
 }
 
 // WebSearchOptions is the shared input contract for direct search and
@@ -200,20 +203,23 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 	urls := sourceURLsFromCapability(res.Sources)
 	cacheSources(clients.Cache, sessionID, urls)
 	return &WebSearchResult{
-		Query:            query,
-		Engine:           metadataString(res.Metadata, "engine", trace.FinalProvider),
-		EndpointName:     metadataString(res.Metadata, "endpoint_name", ""),
-		Model:            metadataString(res.Metadata, "model", ""),
-		RequestedProfile: profileResolution.RequestedProfile,
-		EffectiveProfile: profileResolution.EffectiveProfile,
-		ProfileReason:    profileResolution.ProfileReason,
-		SessionID:        sessionID,
-		Content:          res.Content,
-		SourceURLs:       urls,
-		SourcesCount:     len(urls),
-		Fallback:         metadataString(res.Metadata, "fallback", ""),
-		GrokError:        grokFailureDetail(trace),
-		RouteTrace:       trace,
+		Query:                  query,
+		Engine:                 metadataString(res.Metadata, "engine", trace.FinalProvider),
+		EndpointName:           metadataString(res.Metadata, "endpoint_name", ""),
+		Model:                  metadataString(res.Metadata, "model", ""),
+		RequestedProfile:       profileResolution.RequestedProfile,
+		EffectiveProfile:       profileResolution.EffectiveProfile,
+		ProfileReason:          profileResolution.ProfileReason,
+		SessionID:              sessionID,
+		Content:                res.Content,
+		SourceURLs:             urls,
+		SourcesCount:           len(urls),
+		SourceOrigin:           metadataString(res.Metadata, "source_origin", engine.SourceOriginNone),
+		ValidSourcesCount:      metadataInt(res.Metadata, "valid_sources_count", len(urls)),
+		StructuredSourcesCount: metadataInt(res.Metadata, "structured_sources_count", 0),
+		Fallback:               metadataString(res.Metadata, "fallback", ""),
+		GrokError:              grokFailureDetail(trace),
+		RouteTrace:             trace,
 	}, nil
 }
 
@@ -239,18 +245,21 @@ func effectiveFallbackAfter(policy config.SearchPolicy) time.Duration {
 
 func webSearchTinyFishResult(query string, res *engine.TinyFishPoolSearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
 	sessionID := uuid.New().String()
-	urls := engine.TinyFishSearchSourceURLs(res.TinyFishSearchResponse)
+	urls := engine.NormalizeSourceURLs(engine.TinyFishSearchSourceURLs(res.TinyFishSearchResponse))
 	cacheSources(cache, sessionID, urls)
 
 	out := &WebSearchResult{
-		Query:        query,
-		Engine:       "TinyFish Search",
-		EndpointName: res.KeyName,
-		SessionID:    sessionID,
-		Content:      engine.FormatTinyFishSearchContent(res.TinyFishSearchResponse),
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-		Fallback:     "tinyfish",
+		Query:                  query,
+		Engine:                 "TinyFish Search",
+		EndpointName:           res.KeyName,
+		SessionID:              sessionID,
+		Content:                engine.FormatTinyFishSearchContent(res.TinyFishSearchResponse),
+		SourceURLs:             urls,
+		SourcesCount:           len(urls),
+		SourceOrigin:           engine.SourceOriginSearchResults,
+		ValidSourcesCount:      len(urls),
+		StructuredSourcesCount: len(urls),
+		Fallback:               "tinyfish",
 	}
 	if grokErr != nil {
 		out.GrokError = grokErr.Error()
@@ -260,17 +269,20 @@ func webSearchTinyFishResult(query string, res *engine.TinyFishPoolSearchResult,
 
 func webSearchExaResult(query string, res *engine.ExaSearchResult, grokErr error, cache SourceCacher) *WebSearchResult {
 	sessionID := uuid.New().String()
-	urls := engine.ExaSearchSourceURLs(res)
+	urls := engine.NormalizeSourceURLs(engine.ExaSearchSourceURLs(res))
 	cacheSources(cache, sessionID, urls)
 
 	out := &WebSearchResult{
-		Query:        query,
-		Engine:       "Exa Search",
-		SessionID:    sessionID,
-		Content:      engine.FormatExaSearchContent(res),
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-		Fallback:     "exa",
+		Query:                  query,
+		Engine:                 "Exa Search",
+		SessionID:              sessionID,
+		Content:                engine.FormatExaSearchContent(res),
+		SourceURLs:             urls,
+		SourcesCount:           len(urls),
+		SourceOrigin:           engine.SourceOriginSearchResults,
+		ValidSourcesCount:      len(urls),
+		StructuredSourcesCount: len(urls),
+		Fallback:               "exa",
 	}
 	if grokErr != nil {
 		out.GrokError = grokErr.Error()
@@ -286,6 +298,7 @@ func webSearchTavilyResult(query string, res *engine.TavilySearchResult, grokErr
 			urls = append(urls, r.URL)
 		}
 	}
+	urls = engine.NormalizeSourceURLs(urls)
 	cacheSources(cache, sessionID, urls)
 
 	var sb strings.Builder
@@ -305,13 +318,16 @@ func webSearchTavilyResult(query string, res *engine.TavilySearchResult, grokErr
 	}
 
 	out := &WebSearchResult{
-		Query:        query,
-		Engine:       "Tavily Search",
-		SessionID:    sessionID,
-		Content:      strings.TrimSpace(sb.String()),
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-		Fallback:     "tavily",
+		Query:                  query,
+		Engine:                 "Tavily Search",
+		SessionID:              sessionID,
+		Content:                strings.TrimSpace(sb.String()),
+		SourceURLs:             urls,
+		SourcesCount:           len(urls),
+		SourceOrigin:           engine.SourceOriginSearchResults,
+		ValidSourcesCount:      len(urls),
+		StructuredSourcesCount: len(urls),
+		Fallback:               "tavily",
 	}
 	if grokErr != nil {
 		out.GrokError = grokErr.Error()
@@ -341,6 +357,8 @@ func FormatWebSearchResult(res *WebSearchResult) string {
 		fmt.Fprintf(&sb, "session_id: %s\n", res.SessionID)
 	}
 	fmt.Fprintf(&sb, "sources_count: %d\n", res.SourcesCount)
+	fmt.Fprintf(&sb, "source_origin: %s; valid_sources_count: %d; structured_sources_count: %d\n",
+		res.SourceOrigin, res.ValidSourcesCount, res.StructuredSourcesCount)
 	if res.RouteTrace.AttemptsCount > 0 {
 		fmt.Fprintf(&sb, "route: final_provider=%s fallback_triggered=%v attempts_count=%d\n",
 			res.RouteTrace.FinalProvider, res.RouteTrace.FallbackTriggered, res.RouteTrace.AttemptsCount)
@@ -386,7 +404,7 @@ func sourceURLsFromCapability(sources []capability.Source) []string {
 			urls = append(urls, s.URL)
 		}
 	}
-	return urls
+	return engine.NormalizeSourceURLs(urls)
 }
 
 func metadataString(metadata map[string]any, key, fallback string) string {
@@ -397,6 +415,24 @@ func metadataString(metadata map[string]any, key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func metadataInt(metadata map[string]any, key string, fallback int) int {
+	if metadata == nil {
+		return fallback
+	}
+	switch value := metadata[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return fallback
+	}
 }
 
 func nonNegativeIntArg(args map[string]any, key string) (int, bool) {
@@ -467,6 +503,10 @@ func injectTimeContext(query string) string {
 		"recent", "today", "yesterday", "this week", "latest", "current",
 	}
 	q := strings.ToLower(query)
+	trimmed := strings.TrimSpace(q)
+	if strings.HasPrefix(trimmed, "[current time:") || strings.HasPrefix(trimmed, "[current date:") {
+		return query
+	}
 	for _, kw := range temporalKeywords {
 		if strings.Contains(q, kw) {
 			now := time.Now().Format("2006-01-02 15:04 MST")

@@ -66,3 +66,25 @@ func TestFormatWebSearchResultIsCompactForMCP(t *testing.T) {
 		t.Fatalf("expected clipped MCP output, got tail in:\n%s", body)
 	}
 }
+
+func TestInjectTimeContextDoesNotDuplicateExplicitPrefix(t *testing.T) {
+	query := "[Current date: 2026-08-10] What is the latest release?"
+	if got := injectTimeContext(query); got != query {
+		t.Fatalf("injectTimeContext = %q, want unchanged query", got)
+	}
+
+	got := injectTimeContext("What is the latest release?")
+	if !strings.HasPrefix(got, "[Current time:") {
+		t.Fatalf("injectTimeContext = %q, want generated time prefix", got)
+	}
+}
+
+func TestBuildSearchAgentOutputWarnsForRegexOnlySources(t *testing.T) {
+	out := BuildSearchAgentOutput("latest release", &WebSearchResult{
+		SourceURLs:   []string{"https://example.com/release"},
+		SourceOrigin: engine.SourceOriginRegex,
+	})
+	if len(out.Warnings) == 0 || !strings.Contains(out.Warnings[0], "generated answer text") {
+		t.Fatalf("warnings = %v", out.Warnings)
+	}
+}

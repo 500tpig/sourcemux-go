@@ -22,15 +22,18 @@ type DocsSearchClients struct {
 }
 
 type DocsSearchResult struct {
-	Query        string            `json:"query"`
-	Engine       string            `json:"engine"`
-	EndpointName string            `json:"endpoint_name,omitempty"`
-	SessionID    string            `json:"session_id,omitempty"`
-	Content      string            `json:"content"`
-	SourceURLs   []string          `json:"source_urls"`
-	SourcesCount int               `json:"sources_count"`
-	Fallback     string            `json:"fallback,omitempty"`
-	RouteTrace   router.RouteTrace `json:"route_trace,omitempty"`
+	Query                  string            `json:"query"`
+	Engine                 string            `json:"engine"`
+	EndpointName           string            `json:"endpoint_name,omitempty"`
+	SessionID              string            `json:"session_id,omitempty"`
+	Content                string            `json:"content"`
+	SourceURLs             []string          `json:"source_urls"`
+	SourcesCount           int               `json:"sources_count"`
+	SourceOrigin           string            `json:"source_origin"`
+	ValidSourcesCount      int               `json:"valid_sources_count"`
+	StructuredSourcesCount int               `json:"structured_sources_count"`
+	Fallback               string            `json:"fallback,omitempty"`
+	RouteTrace             router.RouteTrace `json:"route_trace,omitempty"`
 }
 
 func RegisterDocsSearch(s *mcpserver.MCPServer, exa *engine.ExaClient, cache SourceCacher) {
@@ -85,15 +88,18 @@ func RunDocsSearch(ctx context.Context, clients DocsSearchClients, opts DocsSear
 	urls := sourceURLsFromCapability(res.Sources)
 	cacheSources(clients.Cache, sessionID, urls)
 	return &DocsSearchResult{
-		Query:        query,
-		Engine:       metadataString(res.Metadata, "engine", trace.FinalProvider),
-		EndpointName: metadataString(res.Metadata, "endpoint_name", ""),
-		SessionID:    sessionID,
-		Content:      res.Content,
-		SourceURLs:   urls,
-		SourcesCount: len(urls),
-		Fallback:     metadataString(res.Metadata, "fallback", ""),
-		RouteTrace:   trace,
+		Query:                  query,
+		Engine:                 metadataString(res.Metadata, "engine", trace.FinalProvider),
+		EndpointName:           metadataString(res.Metadata, "endpoint_name", ""),
+		SessionID:              sessionID,
+		Content:                res.Content,
+		SourceURLs:             urls,
+		SourcesCount:           len(urls),
+		SourceOrigin:           metadataString(res.Metadata, "source_origin", engine.SourceOriginNone),
+		ValidSourcesCount:      metadataInt(res.Metadata, "valid_sources_count", len(urls)),
+		StructuredSourcesCount: metadataInt(res.Metadata, "structured_sources_count", 0),
+		Fallback:               metadataString(res.Metadata, "fallback", ""),
+		RouteTrace:             trace,
 	}, nil
 }
 
@@ -111,6 +117,8 @@ func FormatDocsSearchResult(res *DocsSearchResult) string {
 		fmt.Fprintf(&sb, "session_id: %s\n", res.SessionID)
 	}
 	fmt.Fprintf(&sb, "sources_count: %d\n", res.SourcesCount)
+	fmt.Fprintf(&sb, "source_origin: %s; valid_sources_count: %d; structured_sources_count: %d\n",
+		res.SourceOrigin, res.ValidSourcesCount, res.StructuredSourcesCount)
 	if res.RouteTrace.AttemptsCount > 0 {
 		fmt.Fprintf(&sb, "route: final_provider=%s fallback_triggered=%v attempts_count=%d\n",
 			res.RouteTrace.FinalProvider, res.RouteTrace.FallbackTriggered, res.RouteTrace.AttemptsCount)

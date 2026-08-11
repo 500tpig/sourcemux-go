@@ -32,7 +32,9 @@ type FallbackReason string
 const (
 	ReasonNone          FallbackReason = ""
 	ReasonNoContent     FallbackReason = "no_content"
+	ReasonNoValidSource FallbackReason = "no_valid_sources"
 	ReasonUpstreamError FallbackReason = "upstream_error"
+	ReasonConfiguration FallbackReason = "configuration_error"
 	ReasonTimeout       FallbackReason = "timeout"
 	ReasonRateLimited   FallbackReason = "rate_limited"
 	ReasonUnconfigured  FallbackReason = "unconfigured"

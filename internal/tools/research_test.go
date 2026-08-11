@@ -358,7 +358,7 @@ func TestWebSearchResearchProviderAutoResolvedDefaultKeepsDefaultResearchFallbac
 		atomic.AddInt32(&grokCalls, 1)
 		time.Sleep(200 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"grok default ok"}}]}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"grok default ok"}}],"citations":["https://example.com/grok"]}`)
 	}))
 	defer grok.Close()
 

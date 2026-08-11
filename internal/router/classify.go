@@ -11,10 +11,18 @@ import (
 )
 
 func classify(p capability.Provider, res capability.Result, err error) (capability.Outcome, capability.FallbackReason, string) {
+	var outcome capability.Outcome
+	var reason capability.FallbackReason
+	var detail string
 	if c, ok := p.(capability.Classifier); ok {
-		return c.Classify(res, err)
+		outcome, reason, detail = c.Classify(res, err)
+	} else {
+		outcome, reason, detail = DefaultClassify(res, err)
 	}
-	return DefaultClassify(res, err)
+	if outcome == capability.OK && searchKindRequiresSources(p.Kind()) && validSourceCount(res) == 0 {
+		return capability.Empty, capability.ReasonNoValidSource, "search response contained no valid HTTP(S) sources"
+	}
+	return outcome, reason, detail
 }
 
 func DefaultClassify(res capability.Result, err error) (capability.Outcome, capability.FallbackReason, string) {
@@ -30,6 +38,8 @@ func DefaultClassify(res capability.Result, err error) (capability.Outcome, capa
 			switch {
 			case statusErr.StatusCode == http.StatusTooManyRequests:
 				return capability.Transient, capability.ReasonRateLimited, statusErr.Error()
+			case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
+				return capability.Transient, capability.ReasonConfiguration, statusErr.Error()
 			case statusErr.StatusCode >= 500:
 				return capability.Transient, capability.ReasonUpstreamError, statusErr.Error()
 			case statusErr.StatusCode >= 400:
@@ -43,7 +53,10 @@ func DefaultClassify(res capability.Result, err error) (capability.Outcome, capa
 		if strings.Contains(msg, "deadline") || strings.Contains(msg, "timeout") || strings.Contains(msg, "timed out") {
 			return capability.Transient, capability.ReasonTimeout, err.Error()
 		}
-		if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "400") {
+		if strings.Contains(msg, "401") || strings.Contains(msg, "403") {
+			return capability.Transient, capability.ReasonConfiguration, err.Error()
+		}
+		if strings.Contains(msg, "400") {
 			return capability.Permanent, capability.ReasonUpstreamError, err.Error()
 		}
 		return capability.Transient, capability.ReasonUpstreamError, err.Error()
@@ -52,4 +65,18 @@ func DefaultClassify(res capability.Result, err error) (capability.Outcome, capa
 		return capability.Empty, capability.ReasonNoContent, "empty content"
 	}
 	return capability.OK, capability.ReasonNone, ""
+}
+
+func searchKindRequiresSources(kind capability.Kind) bool {
+	return kind == capability.MainSearch || kind == capability.DocsSearch
+}
+
+func validSourceCount(res capability.Result) int {
+	count := 0
+	for _, source := range res.Sources {
+		if _, ok := engine.NormalizeSourceURL(source.URL); ok {
+			count++
+		}
+	}
+	return count
 }

@@ -136,6 +136,8 @@ func routeStatus(outcome capability.Outcome, reason capability.FallbackReason) s
 		switch reason {
 		case capability.ReasonRateLimited:
 			return "rate_limited"
+		case capability.ReasonConfiguration:
+			return "configuration_error"
 		case capability.ReasonTimeout:
 			return "timeout"
 		default:

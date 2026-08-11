@@ -9,10 +9,11 @@ import (
 )
 
 type fakeProvider struct {
-	name    string
-	kind    capability.Kind
-	content string
-	err     error
+	name           string
+	kind           capability.Kind
+	content        string
+	err            error
+	withoutSources bool
 }
 
 func (p fakeProvider) Name() string          { return p.name }
@@ -21,7 +22,11 @@ func (p fakeProvider) Try(context.Context, capability.Request) (capability.Resul
 	if p.err != nil {
 		return capability.Result{}, p.err
 	}
-	return capability.Result{Content: p.content}, nil
+	res := capability.Result{Content: p.content}
+	if p.content != "" && !p.withoutSources {
+		res.Sources = []capability.Source{{URL: "https://example.com/source"}}
+	}
+	return res, nil
 }
 
 type matchingProvider struct {
@@ -55,16 +60,43 @@ func TestRouterFallbackStopsOnFirstOK(t *testing.T) {
 	}
 }
 
-func TestRouterPermanentErrorStopsFallback(t *testing.T) {
+func TestRouterAuthErrorContinuesFallback(t *testing.T) {
 	r := New(
 		fakeProvider{name: "bad-auth", kind: capability.MainSearch, err: errors.New("401 unauthorized")},
-		fakeProvider{name: "unused", kind: capability.MainSearch, content: "answer"},
+		fakeProvider{name: "fallback", kind: capability.MainSearch, content: "answer"},
 	)
 
 	res, trace := r.Run(context.Background(), capability.MainSearch, capability.Request{Query: "q"})
-	if res.Content != "" {
-		t.Fatalf("content = %q, want empty", res.Content)
+	if res.Content != "answer" {
+		t.Fatalf("content = %q, want fallback answer", res.Content)
 	}
+	if trace.AttemptsCount != 2 || trace.Decisions[0].Status != "configuration_error" || trace.FinalProvider != "fallback" {
+		t.Fatalf("trace = %+v", trace)
+	}
+}
+
+func TestRouterSearchWithoutValidSourcesContinuesFallback(t *testing.T) {
+	r := New(
+		fakeProvider{name: "answer-only", kind: capability.MainSearch, content: "generated answer", withoutSources: true},
+		fakeProvider{name: "source-backed", kind: capability.MainSearch, content: "source-backed answer"},
+	)
+
+	res, trace := r.Run(context.Background(), capability.MainSearch, capability.Request{Query: "q"})
+	if res.Content != "source-backed answer" {
+		t.Fatalf("content = %q, want source-backed fallback", res.Content)
+	}
+	if trace.AttemptsCount != 2 || trace.Decisions[0].FallbackReason != capability.ReasonNoValidSource {
+		t.Fatalf("trace = %+v", trace)
+	}
+}
+
+func TestRouterOtherClientErrorStopsFallback(t *testing.T) {
+	r := New(
+		fakeProvider{name: "bad-request", kind: capability.MainSearch, err: errors.New("400 bad request")},
+		fakeProvider{name: "unused", kind: capability.MainSearch, content: "answer"},
+	)
+
+	_, trace := r.Run(context.Background(), capability.MainSearch, capability.Request{Query: "q"})
 	if trace.AttemptsCount != 1 || trace.Decisions[0].Status != "error" {
 		t.Fatalf("trace = %+v", trace)
 	}

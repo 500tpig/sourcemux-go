@@ -612,11 +612,155 @@ func TestRunSearchNoFallbackDisablesProviderFallback(t *testing.T) {
 	}
 }
 
+func TestRunSearchFallsBackAfterUntrustedGrokResults(t *testing.T) {
+	cases := []struct {
+		name       string
+		grokStatus int
+		grokBody   string
+		wantStatus string
+		wantError  string
+	}{
+		{
+			name:       "unauthorized configuration",
+			grokStatus: http.StatusUnauthorized,
+			grokBody:   `{"error":{"code":"invalid_api_key"}}`,
+			wantStatus: "configuration_error",
+			wantError:  "401",
+		},
+		{
+			name:       "answer without valid sources",
+			grokStatus: http.StatusOK,
+			grokBody:   `{"choices":[{"message":{"content":"generated answer without evidence"}}]}`,
+			wantStatus: "empty",
+			wantError:  "no valid HTTP(S) sources",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.grokStatus)
+				_, _ = io.WriteString(w, tc.grokBody)
+			}))
+			defer grok.Close()
+
+			tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"results":[{"title":"fallback","url":"https://example.com/fallback","snippet":"verified source"}]}`)
+			}))
+			defer tinyfish.Close()
+
+			path := writeCLIConfig(t, `{
+			  "grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			  "tinyfish": {"enabled": true, "searchURL": "`+tinyfish.URL+`", "keys": [{"name":"tf","apiKey":"tf-secret"}]}
+			}`)
+
+			out := captureStdout(t, func() {
+				if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+					t.Fatalf("Run(search) = %d, want 0", got)
+				}
+			})
+			var decoded searchOutput
+			if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+				t.Fatalf("decode output: %v\n%s", err, out)
+			}
+			if decoded.Engine != "TinyFish Search" || decoded.Fallback != "tinyfish" || decoded.SourceOrigin != engine.SourceOriginSearchResults {
+				t.Fatalf("decoded output = %+v", decoded)
+			}
+			if decoded.ValidSourcesCount != 1 || decoded.StructuredSourcesCount != 1 || !strings.Contains(decoded.GrokError, tc.wantError) {
+				t.Fatalf("source/error metadata = %+v", decoded)
+			}
+			if len(decoded.RouteDecision) != 2 || decoded.RouteDecision[0].Status != tc.wantStatus {
+				t.Fatalf("route decision = %+v", decoded.RouteDecision)
+			}
+		})
+	}
+}
+
+func TestRunSearchFallsBackFromEmptyTinyFishToExa(t *testing.T) {
+	var tinyfishCalls int32
+	tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tinyfishCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"query":"q","results":[],"total_results":0}`)
+	}))
+	defer tinyfish.Close()
+
+	var exaCalls int32
+	exa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&exaCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"results":[{"title":"official","url":"https://example.com/official","highlights":["verified"]}]}`)
+	}))
+	defer exa.Close()
+
+	path := writeCLIConfig(t, `{
+	  "tinyfish": {"enabled": true, "searchURL": "`+tinyfish.URL+`", "keys": [{"name":"tf","apiKey":"tf-secret"}]},
+	  "exa": {"enabled": true, "apiURL": "`+exa.URL+`", "apiKey": "exa-secret"}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+			t.Fatalf("Run(search) = %d, want 0", got)
+		}
+	})
+	var decoded searchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Engine != "Exa Search" || decoded.Fallback != "exa" || decoded.SourceOrigin != engine.SourceOriginSearchResults {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+	if decoded.ValidSourcesCount != 1 || decoded.StructuredSourcesCount != 1 {
+		t.Fatalf("source metadata = %+v", decoded)
+	}
+	if atomic.LoadInt32(&tinyfishCalls) != 1 || atomic.LoadInt32(&exaCalls) != 1 {
+		t.Fatalf("calls: tinyfish=%d exa=%d", tinyfishCalls, exaCalls)
+	}
+}
+
+func TestRunSearchFallsBackFromEmptyTinyFishToTavily(t *testing.T) {
+	tinyfish := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"query":"q","results":[],"total_results":0}`)
+	}))
+	defer tinyfish.Close()
+
+	var tavilyCalls int32
+	tavily := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tavilyCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"answer":"verified","results":[{"title":"official","url":"https://example.com/official","content":"verified","score":0.9}]}`)
+	}))
+	defer tavily.Close()
+
+	path := writeCLIConfig(t, `{
+	  "tinyfish": {"enabled": true, "searchURL": "`+tinyfish.URL+`", "keys": [{"name":"tf","apiKey":"tf-secret"}]},
+	  "tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+	}`)
+
+	out := captureStdout(t, func() {
+		if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+			t.Fatalf("Run(search) = %d, want 0", got)
+		}
+	})
+	var decoded searchOutput
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if decoded.Engine != "Tavily Search" || decoded.Fallback != "tavily" || decoded.SourceOrigin != engine.SourceOriginSearchResults {
+		t.Fatalf("decoded output = %+v", decoded)
+	}
+	if decoded.ValidSourcesCount != 1 || decoded.StructuredSourcesCount != 1 || atomic.LoadInt32(&tavilyCalls) != 1 {
+		t.Fatalf("source metadata/calls = %+v, tavily=%d", decoded, tavilyCalls)
+	}
+}
+
 func TestRunSearchGrokPoolTimeoutZeroOverrideDisablesConfiguredCap(t *testing.T) {
 	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(1100 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"slow ok"}}]}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"slow ok"}}],"citations":["https://example.com/slow"]}`)
 	}))
 	defer grok.Close()
 
@@ -655,13 +799,13 @@ func TestRunSearchUsesPublicSafeDefaultAndPolicyOptInHeavyFirst(t *testing.T) {
 	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&defaultCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"default ok"}}]}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"default ok"}}],"citations":["https://example.com/default"]}`)
 	}))
 	defer defaultSrv.Close()
 	heavySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&heavyCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"heavy ok"}}]}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"heavy ok"}}],"citations":["https://example.com/heavy"]}`)
 	}))
 	defer heavySrv.Close()
 
@@ -1885,11 +2029,21 @@ func TestParsePositionalUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestTinyFishLoadKeysFromEnv(t *testing.T) {
-	t.Setenv("TINYFISH_API_KEY", "")
-	t.Setenv("TINYFISH_KEYS_FILE", "")
-	t.Setenv("TINYFISH_API_KEYS", "tf_key_one, tf_key_two\n")
-	t.Setenv("TINYFISH_KEY_NAMES", "first,second")
+func TestTinyFishLoadKeysFromActiveConfig(t *testing.T) {
+	path := writeCLIConfig(t, `{
+	  "tinyfish": {
+	    "enabled": true,
+	    "searchURL": "https://search.example",
+	    "fetchURL": "https://fetch.example",
+	    "keys": [
+	      {"name":"first","apiKey":"tf_key_one"},
+	      {"name":"second","apiKey":"tf_key_two"}
+	    ]
+	  }
+	}`)
+	previous := activeConfigPath
+	activeConfigPath = path
+	defer func() { activeConfigPath = previous }()
 
 	keys, err := loadTinyFishKeys("")
 	if err != nil {
@@ -1904,12 +2058,13 @@ func TestTinyFishLoadKeysFromEnv(t *testing.T) {
 	if got := keyStatus(keys[0].APIKey); got != "tf_k..._one" {
 		t.Fatalf("masked key = %q", got)
 	}
+	searchURL, fetchURL := tinyFishBenchmarkURLs("", "", "")
+	if searchURL != "https://search.example" || fetchURL != "https://fetch.example" {
+		t.Fatalf("benchmark URLs = %q %q", searchURL, fetchURL)
+	}
 }
 
 func TestTinyFishLoadKeysFromFile(t *testing.T) {
-	t.Setenv("TINYFISH_API_KEYS", "")
-	t.Setenv("TINYFISH_API_KEY", "")
-	t.Setenv("TINYFISH_KEYS_FILE", "")
 	path := filepath.Join(t.TempDir(), "tinyfish-keys.json")
 	if err := os.WriteFile(path, []byte(`{"keys":[{"name":"acct-a","apiKey":"tf_secret_a"}]}`), 0o600); err != nil {
 		t.Fatal(err)

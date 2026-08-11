@@ -15,6 +15,9 @@ const (
 	metaModel        = "model"
 	metaFallback     = "fallback"
 	metaURL          = "url"
+	metaSourceOrigin = "source_origin"
+	metaValidSources = "valid_sources_count"
+	metaStructured   = "structured_sources_count"
 )
 
 type GrokSearchProvider struct {
@@ -51,6 +54,9 @@ func (p *GrokSearchProvider) Try(ctx context.Context, req capability.Request) (c
 			metaEngine:       res.EndpointName,
 			metaEndpointName: res.EndpointName,
 			metaModel:        res.EndpointModel,
+			metaSourceOrigin: res.SourceOrigin,
+			metaValidSources: res.ValidSourcesCount,
+			metaStructured:   res.StructuredSourcesCount,
 		},
 	}, nil
 }
@@ -82,13 +88,17 @@ func (p *TinyFishSearchProvider) Try(ctx context.Context, req capability.Request
 	if err != nil {
 		return capability.Result{}, err
 	}
+	urls := engine.NormalizeSourceURLs(engine.TinyFishSearchSourceURLs(res.TinyFishSearchResponse))
 	return capability.Result{
 		Content: engine.FormatTinyFishSearchContent(res.TinyFishSearchResponse),
-		Sources: sourcesFromURLs(engine.TinyFishSearchSourceURLs(res.TinyFishSearchResponse)),
+		Sources: sourcesFromURLs(urls),
 		Metadata: map[string]any{
 			metaEngine:       "TinyFish Search",
 			metaEndpointName: res.KeyName,
 			metaFallback:     "tinyfish",
+			metaSourceOrigin: engine.SourceOriginSearchResults,
+			metaValidSources: len(urls),
+			metaStructured:   len(urls),
 		},
 	}, nil
 }
@@ -128,12 +138,16 @@ func (p *ExaSearchProvider) Try(ctx context.Context, req capability.Request) (ca
 	if err != nil {
 		return capability.Result{}, err
 	}
+	urls := engine.NormalizeSourceURLs(engine.ExaSearchSourceURLs(res))
 	return capability.Result{
 		Content: engine.FormatExaSearchContent(res),
-		Sources: sourcesFromURLs(engine.ExaSearchSourceURLs(res)),
+		Sources: sourcesFromURLs(urls),
 		Metadata: map[string]any{
-			metaEngine:   "Exa Search",
-			metaFallback: "exa",
+			metaEngine:       "Exa Search",
+			metaFallback:     "exa",
+			metaSourceOrigin: engine.SourceOriginSearchResults,
+			metaValidSources: len(urls),
+			metaStructured:   len(urls),
 		},
 	}, nil
 }
@@ -159,17 +173,22 @@ func (p *TavilySearchProvider) Try(ctx context.Context, req capability.Request) 
 	if err != nil {
 		return capability.Result{}, err
 	}
+	urls := engine.NormalizeSourceURLs(tavilySearchSourceURLs(res))
 	return capability.Result{
 		Content: formatTavilySearchContent(res),
-		Sources: sourcesFromURLs(tavilySearchSourceURLs(res)),
+		Sources: sourcesFromURLs(urls),
 		Metadata: map[string]any{
-			metaEngine:   "Tavily Search",
-			metaFallback: "tavily",
+			metaEngine:       "Tavily Search",
+			metaFallback:     "tavily",
+			metaSourceOrigin: engine.SourceOriginSearchResults,
+			metaValidSources: len(urls),
+			metaStructured:   len(urls),
 		},
 	}, nil
 }
 
 func sourcesFromURLs(urls []string) []capability.Source {
+	urls = engine.NormalizeSourceURLs(urls)
 	out := make([]capability.Source, 0, len(urls))
 	for _, u := range urls {
 		if u != "" {

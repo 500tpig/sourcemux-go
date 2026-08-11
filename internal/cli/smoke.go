@@ -68,5 +68,9 @@ type smokeProvider struct {
 func (p smokeProvider) Name() string          { return p.name }
 func (p smokeProvider) Kind() capability.Kind { return p.kind }
 func (p smokeProvider) Try(context.Context, capability.Request) (capability.Result, error) {
-	return capability.Result{Content: p.content}, nil
+	res := capability.Result{Content: p.content}
+	if p.content != "" {
+		res.Sources = []capability.Source{{URL: "https://example.com/smoke"}}
+	}
+	return res, nil
 }
