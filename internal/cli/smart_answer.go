@@ -25,6 +25,7 @@ func runSmartAnswer(args []string) int {
 func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	fs := flag.NewFlagSet("smart-answer", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	mode := fs.String("mode", "fixed", "Research mode: fixed or jev")
 	depth := fs.String("depth", "standard", "Research depth: quick, standard, or deep")
 	profile := fs.String("profile", tools.SearchProfileAuto, "Research search profile: auto, default, heavy, or another configured profile")
 	platform := fs.String("platform", "", "Optional platform focus, e.g. 'GitHub, Reddit'")
@@ -40,6 +41,10 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	if err != nil {
 		return 2
 	}
+	if *mode != "fixed" && *mode != "jev" {
+		fmt.Fprintln(os.Stderr, "mode must be fixed or jev")
+		return 2
+	}
 	timeoutProvided := flagWasProvided(fs, "timeout")
 	if len(positional) == 0 {
 		fmt.Fprintln(os.Stderr, "smart-answer: query is required")
@@ -48,6 +53,7 @@ func runSmartAnswerWithRunner(args []string, runner smartAnswerRunner) int {
 	}
 	query := strings.Join(positional, " ")
 	opts := tools.SmartAnswerOptions{
+		Mode:              *mode,
 		Query:             query,
 		Depth:             *depth,
 		Profile:           *profile,

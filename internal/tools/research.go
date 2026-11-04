@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	researchFetchExcerptRunes    = 1200
-	researchHumanExcerptRunes    = 700
+	researchFetchExcerptRunes    = 6000
+	researchHumanExcerptRunes    = researchFetchExcerptRunes
 	researchMaxFetches           = 12
 	researchPerCallTimeout       = 25 * time.Second
 	researchDefaultSearchTimeout = 60 * time.Second
@@ -63,6 +63,7 @@ var dateInURLPattern = regexp.MustCompile(`20(2[4-9]|3[0-9])`)
 
 // ResearchOptions controls one in-memory research run.
 type ResearchOptions struct {
+	Mode       string   `json:"mode,omitempty"`
 	Query      string   `json:"query"`
 	Depth      string   `json:"depth,omitempty"`
 	Profile    string   `json:"profile,omitempty"`
@@ -73,6 +74,7 @@ type ResearchOptions struct {
 
 // ResearchPack is the stable JSON output for research_run / cli research.
 type ResearchPack struct {
+	JEV                 *JEVResearchTrace       `json:"jev,omitempty"`
 	Query               string                  `json:"query"`
 	EffectiveDepth      string                  `json:"effective_depth"`
 	RequestedProfile    string                  `json:"requested_profile"`
@@ -132,12 +134,13 @@ type ResearchSource struct {
 
 // ResearchFetchedPage summarizes a fetched or crawled page with clipped text.
 type ResearchFetchedPage struct {
-	URL          string `json:"url"`
-	Source       string `json:"source,omitempty"`
-	Success      bool   `json:"success"`
-	Error        string `json:"error,omitempty"`
-	ContentChars int    `json:"content_chars,omitempty"`
-	Excerpt      string `json:"excerpt,omitempty"`
+	Reading      *JEVReading `json:"reading,omitempty"`
+	URL          string      `json:"url"`
+	Source       string      `json:"source,omitempty"`
+	Success      bool        `json:"success"`
+	Error        string      `json:"error,omitempty"`
+	ContentChars int         `json:"content_chars,omitempty"`
+	Excerpt      string      `json:"excerpt,omitempty"`
 }
 
 // ResearchSiteSummary records optional map/crawl expansion for target domains.
@@ -178,6 +181,7 @@ type ResearchCrawler interface {
 // ResearchExecutor composes planning, search, get_sources, fetch, map, and
 // crawl into one bounded in-memory research run.
 type ResearchExecutor struct {
+	JEV      *engine.JEVClient
 	Searcher ResearchSearchProvider
 	Sources  SourceGetter
 	Fetcher  ResearchFetchProvider
@@ -187,6 +191,7 @@ type ResearchExecutor struct {
 
 // ResearchExecutorDeps wires production clients into the executor.
 type ResearchExecutorDeps struct {
+	JEV     *engine.JEVClient
 	Search  WebSearchClients
 	Fetch   WebFetchClients
 	Sources SourceGetter
@@ -198,6 +203,7 @@ type ResearchExecutorDeps struct {
 // helpers. Tests can instantiate ResearchExecutor directly with fakes.
 func NewResearchExecutor(deps ResearchExecutorDeps) *ResearchExecutor {
 	return &ResearchExecutor{
+		JEV:      deps.JEV,
 		Searcher: webSearchResearchProvider{clients: deps.Search},
 		Sources:  deps.Sources,
 		Fetcher:  webFetchResearchProvider{clients: deps.Fetch},
@@ -312,6 +318,7 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 	tool := mcp.NewTool("research_run",
 		mcp.WithDescription("Run a bounded in-memory research workflow: plan queries, execute web_search rounds, optionally select a Grok search profile, read sources, rank/dedup URLs, fetch top pages, optionally map/crawl target domains, and return a compact research pack."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Research question or topic")),
+		mcp.WithString("mode", mcp.Description("Research mode: fixed (default) or jev"), mcp.Enum("fixed", "jev")),
 		mcp.WithString("depth", mcp.Description("Research depth: quick, standard, or deep (default standard)"), mcp.Enum("quick", "standard", "deep")),
 		mcp.WithString("profile", mcp.Description("Grok endpoint profile for web_search: auto (default), default, heavy, or another configured profile")),
 		mcp.WithString("platform", mcp.Description("Optional platform focus, e.g. 'GitHub, Reddit'")),
@@ -331,10 +338,12 @@ func RegisterResearchRun(s *mcpserver.MCPServer, executor *ResearchExecutor) {
 			return mcp.NewToolResultError("query is required"), nil
 		}
 		depth, _ := req.Params.Arguments["depth"].(string)
+		mode, _ := req.Params.Arguments["mode"].(string)
 		profile, _ := req.Params.Arguments["profile"].(string)
 		profile = defaultResearchProfile(profile)
 		platform, _ := req.Params.Arguments["platform"].(string)
 		pack, err := executor.Run(ctx, ResearchOptions{
+			Mode:       mode,
 			Query:      query,
 			Depth:      depth,
 			Profile:    profile,
@@ -389,6 +398,12 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 		pack.Error = "research searcher is not configured"
 		return pack, fmt.Errorf("research searcher is not configured")
 	}
+	if opts.Mode != "" && opts.Mode != "fixed" && opts.Mode != "jev" {
+		return pack, fmt.Errorf("invalid research mode %q: expected fixed or jev", opts.Mode)
+	}
+	if opts.Mode == "jev" && !e.JEV.Configured() {
+		return pack, fmt.Errorf("jev.apiKey is required for research mode jev")
+	}
 	if resolver, ok := e.Searcher.(ResearchSearchProfileResolver); ok {
 		resolved, err := resolver.ResolveSearchProfile(requestedProfile, ResearchOptions{
 			Query:      query,
@@ -417,6 +432,9 @@ func (e *ResearchExecutor) Run(ctx context.Context, opts ResearchOptions) (Resea
 	pack.PlanQueries = uniqueStrings(ExtractPlanQueries(plan))
 	if len(pack.PlanQueries) == 0 {
 		pack.PlanQueries = []string{query}
+	}
+	if opts.Mode == "jev" {
+		return e.runJEV(ctx, pack)
 	}
 
 	sourceInputs := make([]researchSourceInput, 0)
@@ -527,6 +545,23 @@ func (e *ResearchExecutor) mapTargetDomains(ctx context.Context, query, depth st
 	return inputs
 }
 
+// fetchResearchSource 共用抓取超时与空正文检查，分页模式可保留原始正文。
+func (e *ResearchExecutor) fetchResearchSource(ctx context.Context, rawURL string) (*WebFetchResult, error) {
+	if e == nil || e.Fetcher == nil {
+		return nil, fmt.Errorf("research fetcher is not configured")
+	}
+	subCtx, cancel := context.WithTimeout(ctx, researchPerCallTimeout)
+	defer cancel()
+	result, err := e.Fetcher.Fetch(subCtx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || strings.TrimSpace(result.Content) == "" {
+		return nil, fmt.Errorf("empty fetch result")
+	}
+	return result, nil
+}
+
 func (e *ResearchExecutor) fetchSelectedSources(ctx context.Context, urls []string, concurrency int) []ResearchFetchedPage {
 	pages := make([]ResearchFetchedPage, len(urls))
 	if len(urls) == 0 {
@@ -548,21 +583,9 @@ func (e *ResearchExecutor) fetchSelectedSources(ctx context.Context, urls []stri
 			defer func() { <-sem }()
 
 			page := ResearchFetchedPage{URL: u}
-			if e == nil || e.Fetcher == nil {
-				page.Error = "research fetcher is not configured"
-				pages[idx] = page
-				return
-			}
-			subCtx, cancel := context.WithTimeout(ctx, researchPerCallTimeout)
-			defer cancel()
-			result, err := e.Fetcher.Fetch(subCtx, u)
+			result, err := e.fetchResearchSource(ctx, u)
 			if err != nil {
 				page.Error = err.Error()
-				pages[idx] = page
-				return
-			}
-			if result == nil || strings.TrimSpace(result.Content) == "" {
-				page.Error = "empty fetch result"
 				pages[idx] = page
 				return
 			}
@@ -1288,6 +1311,7 @@ func buildOpenQuestions(pack ResearchPack, maxFetches int) []string {
 // FormatResearchPack renders a compact LLM-readable text pack.
 func FormatResearchPack(pack ResearchPack) string {
 	var sb strings.Builder
+	writeJEVResearchSummary(&sb, pack.JEV)
 	fmt.Fprintf(&sb, "research_pack\nquery: %s\ndepth: %s\n", pack.Query, pack.EffectiveDepth)
 	if pack.RequestedProfile != "" || pack.EffectiveProfile != "" {
 		fmt.Fprintf(&sb, "profile: requested=%s effective=%s\n", pack.RequestedProfile, pack.EffectiveProfile)
@@ -1369,6 +1393,7 @@ func FormatResearchPack(pack ResearchPack) string {
 // formatting available via FormatResearchPack and JSON output.
 func FormatResearchPackMCP(pack ResearchPack) string {
 	var sb strings.Builder
+	writeJEVResearchSummary(&sb, pack.JEV)
 	fmt.Fprintf(&sb, "research_pack\nquery: %s\ndepth: %s\n", pack.Query, pack.EffectiveDepth)
 	if pack.RequestedProfile != "" || pack.EffectiveProfile != "" {
 		fmt.Fprintf(&sb, "profile: requested=%s effective=%s\n", pack.RequestedProfile, pack.EffectiveProfile)

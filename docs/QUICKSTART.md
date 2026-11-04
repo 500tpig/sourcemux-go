@@ -127,6 +127,28 @@ prefer Firecrawl when configured, then fall back through Jina, Exa, Tavily, and
 TinyFish. Use `fetch --profile cheap` only when the user explicitly wants a
 low-cost or zero-key Jina-first sanity check.
 
+### 可选的 JEV 研究模式
+
+在当前配置文件增加顶层 `jev` 对象，v1、v2 格式均支持：
+
+```json
+"jev": {
+  "apiURL": "https://api.typesafe.ai/v1",
+  "apiKey": "YOUR_TYPESAFE_API_KEY",
+  "model": "jev-latest",
+  "timeoutSec": 15
+}
+```
+
+```bash
+sourcemux --config ./sourcemux.json research "比较两个库的维护现状" --mode jev --depth standard --json
+sourcemux --config ./sourcemux.json smart-answer "比较两个库的维护现状" --mode jev --depth standard --json
+```
+
+省略 `--mode` 时仍使用固定研究流程。JEV 从已配置渠道和已发现 URL 中选择动作，读取正文后判断是否需要补搜。`smart-answer` 仍需独立的 reasoning 配置。
+
+此模式会向 JEV 服务发送问题、候选查询、URL 和正文片段。仅抓取成功的正文进入已读引用；判断基于截断预览，概率不代表答案正确率。预算、错误行为及输出字段见 [JEV 使用说明](JEV.md)。
+
 ## 4. Install agent routing skill
 
 User-scope bootstrap defaults the generated skill's config path to

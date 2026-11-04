@@ -77,6 +77,10 @@ type configListOutput struct {
 
 	GrokEndpoints      []configEndpointOutput `json:"grok_endpoints"`
 	ReasoningEndpoints []configEndpointOutput `json:"reasoning_endpoints"`
+	JEVAPIURL          string                 `json:"jev_api_url"`
+	JEVModel           string                 `json:"jev_model"`
+	JEVTimeoutSec      int                    `json:"jev_timeout_sec"`
+	JEVKey             string                 `json:"jev_key_status"`
 
 	TavilyEnabled bool   `json:"tavily_enabled"`
 	TavilyAPIURL  string `json:"tavily_api_url"`
@@ -252,6 +256,7 @@ func buildV2ConfigMap(cfg *cfgpkg.Config) map[string]any {
 			"web_enhance": map[string]any{"providers": enhanceProviders},
 		},
 		"reasoning_endpoints": cfg.ReasoningEndpoints,
+		"jev":                 cfg.JEV,
 		"grokPoolTimeoutSec":  int64(cfg.GrokPoolTimeout.Seconds()),
 		"searchPolicy":        searchPolicyMap(cfg.SearchPolicy),
 		"logLevel":            cfg.LogLevel,
@@ -458,6 +463,7 @@ func runConfigList(args []string) int {
 		fmt.Printf("      Model: %s\n", ep.Model)
 		fmt.Printf("      API key: %s\n", ep.KeyStatus)
 	}
+	fmt.Printf("\nJEV: url=%s model=%s timeout=%ds key=%s\n", out.JEVAPIURL, out.JEVModel, out.JEVTimeoutSec, out.JEVKey)
 	fmt.Printf("\nTavily: enabled=%v url=%s key=%s\n", out.TavilyEnabled, out.TavilyAPIURL, out.TavilyKey)
 	fmt.Printf("Firecrawl: enabled=%v url=%s key=%s keys=%s\n", out.FirecrawlEnabled, out.FirecrawlAPIURL, out.FirecrawlKey, formatNamedKeyStatuses(out.FirecrawlKeys))
 	if len(out.WebFetchOrder) > 0 {
@@ -523,6 +529,10 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		Paths:              buildConfigPathOutput(),
 		Version:            cfg.Version,
 		MinimumProfile:     cfg.MinimumProfile,
+		JEVAPIURL:          cfg.JEV.APIURL,
+		JEVModel:           cfg.JEV.Model,
+		JEVTimeoutSec:      cfg.JEV.TimeoutSec,
+		JEVKey:             "not set",
 		TavilyEnabled:      cfg.TavilyEnabled,
 		TavilyAPIURL:       cfg.TavilyAPIURL,
 		TavilyKey:          keyStatus(cfg.TavilyAPIKey),
@@ -544,6 +554,9 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		LogLevel:           cfg.LogLevel,
 		GrokPoolTimeoutSec: int64(cfg.GrokPoolTimeout.Seconds()),
 		SearchPolicy:       cfg.SearchPolicy,
+	}
+	if cfg.JEV.APIKey != "" {
+		out.JEVKey = "configured"
 	}
 
 	for _, ep := range cfg.GrokEndpoints {

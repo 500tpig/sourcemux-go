@@ -117,10 +117,34 @@ func BuildResearchAgentOutput(pack ResearchPack) AgentOutput {
 			pageByURL[normalized] = page
 		}
 	}
-	limit := minInt(5, len(pack.HighSignalSources))
+	sources := pack.HighSignalSources
+	if pack.JEV != nil {
+		// 已读引用可能发生重定向或不在排名列表内，以引用列表为准保留正文。
+		sourceByURL := make(map[string]ResearchSource, len(pack.HighSignalSources))
+		for _, source := range pack.HighSignalSources {
+			if normalized, ok := normalizeResearchURL(source.URL); ok {
+				sourceByURL[normalized] = source
+			}
+		}
+		sources = make([]ResearchSource, 0, len(pack.JEV.Citations))
+		for _, rawURL := range pack.JEV.Citations {
+			normalized, ok := normalizeResearchURL(rawURL)
+			if !ok {
+				continue
+			}
+			source, found := sourceByURL[normalized]
+			if !found {
+				source = ResearchSource{Domain: domainFromURL(normalized), Reasons: []string{"successfully fetched body excerpt"}}
+			}
+			source.URL = normalized
+			sources = append(sources, source)
+		}
+	}
+	limit := minInt(5, len(sources))
 	out.SelectedSources = make([]AgentSource, 0, limit)
-	for i, source := range pack.HighSignalSources[:limit] {
-		page := pageByURL[source.URL]
+	for i, source := range sources[:limit] {
+		normalized, _ := normalizeResearchURL(source.URL)
+		page := pageByURL[normalized]
 		score := int(source.Score * 10)
 		if page.Success {
 			score += 20
@@ -150,7 +174,22 @@ func BuildResearchAgentOutput(pack ResearchPack) AgentOutput {
 	}
 	out.Facts = firstNonEmptyStrings(pack.ConfirmedFacts, 6)
 	out.Gaps = firstNonEmptyStrings(pack.OpenQuestions, 6)
+	if pack.JEV != nil {
+		out.Warnings = append(out.Warnings, pack.JEV.Warnings...)
+		out.Warnings = append(out.Warnings, fmt.Sprintf("JEV assessment=%s; stop_reason=%s; judgment is based on body excerpts, not independent fact verification", pack.JEV.Assessment.Status, pack.JEV.StopReason))
+		out.Gaps = uniqueStrings(append(out.Gaps, pack.JEV.Assessment.Gaps...))
+	}
 	switch {
+	case pack.Error != "":
+		out.AnswerReadiness = "partial"
+	case pack.JEV != nil && pack.JEV.Assessment.Status == "unknown":
+		out.Status = "partial"
+		out.AnswerReadiness = "unknown"
+	case pack.JEV != nil && !pack.JEV.Assessment.Sufficient:
+		out.Status = "partial"
+		out.AnswerReadiness = "needs_more_evidence"
+	case pack.JEV != nil:
+		out.AnswerReadiness = "ready"
 	case len(out.Facts) > 0 && !strings.HasPrefix(out.Facts[0], "No source-backed facts"):
 		out.AnswerReadiness = "ready_with_gaps"
 	case len(out.SelectedSources) > 0:
@@ -160,7 +199,11 @@ func BuildResearchAgentOutput(pack ResearchPack) AgentOutput {
 		out.AnswerReadiness = "needs_sources"
 		out.Warnings = append(out.Warnings, "research found no usable sources")
 	}
-	out.NextActions = append(out.NextActions, `cite source ids from selected_sources`, `fetch any source id that needs full-page verification`)
+	if pack.JEV == nil || len(out.SelectedSources) > 0 {
+		out.NextActions = append(out.NextActions, `cite source ids from selected_sources`, `fetch any source id that needs full-page verification`)
+	} else {
+		out.NextActions = append(out.NextActions, `fetch discovered URLs before making source-backed claims`)
+	}
 	if len(out.Gaps) > 0 {
 		out.NextActions = append(out.NextActions, `answer gaps with a narrower search or deeper research run`)
 	}

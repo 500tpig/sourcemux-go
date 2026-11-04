@@ -131,6 +131,7 @@ Inputs:
 | --- | :---: | --- |
 | `query` | Yes | The question to answer. |
 | `depth` | No | `quick`, `standard`, or `deep`. |
+| `mode` | No | `fixed`（默认）或 `jev`；JEV 需要顶层 `jev` 连接配置。 |
 | `profile` | No | Research search profile: `auto` (default), `default`, `heavy`, or another configured profile. |
 | `platform` | No | Optional search focus, such as `GitHub, Reddit`. |
 | `domains` | No | Domain allow-list for research. |
@@ -139,6 +140,10 @@ Inputs:
 | `reasoning_model` | No | One-shot model override. |
 
 Output includes the final answer, endpoint/model metadata, research depth, source count, high-signal URLs, and the underlying research pack in JSON mode.
+
+JEV 模式下，研究和综合共享总截止时间；综合只允许引用 `research.jev.citations` 中已读过的来源。`unknown` 或 `insufficient` 状态会进入综合提示。综合失败时，CLI JSON 和 MCP 错误结果仍保留研究证据。详细配置见 [JEV 使用说明](JEV.md)。
+
+JEV 研究按约 5,000 字符分页扫描正文，证据不足时继续读取后文；每来源累计保留最多 2,000 字符相关原文。最终综合使用与 JEV 相同的摘录和位置记录，不混入发现链接、搜索摘要及启发式事实。原文未读完或片段被省略时会说明限制。
 
 ## Error: no `reasoningEndpoints` configured
 

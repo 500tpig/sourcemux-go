@@ -78,6 +78,7 @@ func Run(cfg *config.Config) error {
 	tools.RegisterConfig(s, cfg, app.GrokPool)
 	tools.RegisterSearchPlanning(s)
 	researchExecutor := tools.NewResearchExecutor(tools.ResearchExecutorDeps{
+		JEV: engine.NewJEVClient(cfg.JEV),
 		Search: tools.WebSearchClients{
 			Pool:         app.GrokPool,
 			TinyFish:     app.TinyFish,

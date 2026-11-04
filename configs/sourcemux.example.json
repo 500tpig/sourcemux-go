@@ -1,4 +1,10 @@
 {
+  "jev": {
+    "apiURL": "https://api.typesafe.ai/v1",
+    "apiKey": "",
+    "model": "jev-latest",
+    "timeoutSec": 15
+  },
   "grokEndpoints": [
     {
       "name": "primary",
