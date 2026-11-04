@@ -155,9 +155,9 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 		"Do not call Jina directly unless the user explicitly asks for cheap, zero-key, or diagnostic mode",
 		"Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls",
 		"Use firecrawl-map only for site structure discovery",
-		"For final synthesis and smart-answer style responses, cite only URLs present in the research pack",
-		"disclose clipped packs as incomplete evidence",
-		"answer conservatively when confirmed_facts is empty or heuristic-only",
+		"cite only actually read sources supporting the claim",
+		"Disclose clipped packs as incomplete evidence",
+		"treat confirmed_facts as heuristic excerpts",
 		"Do not install, configure, or call Firecrawl MCP",
 		"plan \"research question\" --depth standard",
 		"plan \"deep research question\" --json --depth deep",
@@ -189,6 +189,37 @@ func TestInstallCodexProjectWritesPortableSkill(t *testing.T) {
 	} {
 		if strings.Contains(text, bad) {
 			t.Fatalf("generated skill contains non-portable %q:\n%s", bad, text)
+		}
+	}
+}
+
+func TestRoutingSkillJEVCommandsPreserveConfiguredPaths(t *testing.T) {
+	binary := "/opt/source mux/sourcemux"
+	configPath := filepath.Join(t.TempDir(), "research config.json")
+	if err := os.WriteFile(configPath, []byte(`{"jev":{"apiKey":"private-jev-test-key"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	prefix := shellQuote(binary) + " --config " + shellQuote(configPath)
+	for _, mcpMode := range []bool{false, true} {
+		text := routingSkill(binary, configPath, "user", mcpMode)
+		for _, command := range []string{
+			prefix + ` research "topic" --mode jev --depth standard --profile auto --json`,
+			prefix + ` smart-answer "question" --mode jev --depth standard --profile auto --json`,
+			prefix + ` research "topic" --mode fixed --depth standard --profile auto --agent`,
+		} {
+			if !strings.Contains(text, command) {
+				t.Fatalf("missing executable command with configured paths: %s", command)
+			}
+		}
+		for _, field := range []string{"jev.assessment", "jev.stop_reason", "jev.read_pages", "fetched_pages_summary[].reading", "answer_readiness"} {
+			if !strings.Contains(text, field) {
+				t.Fatalf("missing result field needed for interpreting research: %s", field)
+			}
+		}
+		for _, stale := range []string{"private-jev-test-key", "Multi-source investigation with synthesis", "Then fetch 1-3", "that verifies URL content", "%!"} {
+			if strings.Contains(text, stale) {
+				t.Fatalf("generated skill contains a secret, stale instruction, or formatting error: %q", stale)
+			}
 		}
 	}
 }

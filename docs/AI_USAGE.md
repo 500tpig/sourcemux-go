@@ -139,15 +139,16 @@ surface, not a place for provider-specific Firecrawl tools:
 | Explicit slow heavy/multi-agent Grok search | `search --profile heavy --fallback-after 180s --timeout 300s --agent` |
 | Grok/profile diagnostics only | `search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json` |
 | Deep search, 深度搜索, deep research, 深度调研, complex comparison, or verification where decomposition helps | `plan --json --depth deep`, then `research --depth deep --profile auto --agent` |
-| Multi-source investigation with synthesis | `research --depth standard --profile auto --agent` or `research --depth deep --profile auto --agent` |
+| Multi-source evidence for the current agent | `research --mode jev --depth standard --profile auto --json` when JEV is configured; otherwise `research --mode fixed --depth standard --profile auto --agent` |
+| Tool-generated final answer | `smart-answer --mode jev --depth standard --profile auto --json` when JEV and reasoning endpoints are configured; this starts its own research |
 | Planning/decomposition without executing provider calls | `plan --json --depth standard` or `plan --json --depth deep`; use plain `plan --depth` for compatible text output |
 
 Evidence policy:
 
 1. Discover candidate URLs with policy-driven `search`, `docs-search`, `exa-search`, or `research`.
-2. Fetch key URLs before high-risk, precise, or source-critical claims.
+2. Read relevant body evidence before source-critical claims. Reuse already-read research excerpts; fetch again only for missing detail, passage verification, or freshness.
 3. Cite fetched or source URL evidence in the final answer.
-4. Treat the fetch provider label, such as `GitHub Provider`, `Firecrawl`, or `Jina Reader`, as URL verification metadata; it does not replace the original search engine/source route.
+4. Treat the fetch provider label, such as `GitHub Provider`, `Firecrawl`, or `Jina Reader`, as retrieval metadata. Fetch success is not factual verification and does not identify the original search engine.
 5. For known URLs, use `fetch --profile auto --agent` first. This is policy-first / quality-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured, then fallback through Jina / Exa / Tavily / TinyFish. Auto keeps Firecrawl clean-content off for reliability; `--profile quality` enables it with a longer timeout budget.
 6. Use `firecrawl-map` only for site structure discovery, URL inventory, or relevance-filtered URL discovery.
 7. Use `fetch --profile cheap --agent` only when the user asks for cheap, zero-key, or quick sanity-check extraction. Do not call Jina directly for default research.

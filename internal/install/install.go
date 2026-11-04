@@ -1367,6 +1367,24 @@ func routingSkill(binary, configPath, scope string, mcpMode bool) string {
 	twitterSearch := fmt.Sprintf(`%s search "query" --platform Twitter --profile %s --fallback-after %s --timeout %s --agent`, commandPrefix, agentProfile, fallbackAfter, callerTimeout)
 	heavySearch := fmt.Sprintf(`%s search "query" --profile heavy --fallback-after %s --timeout %s --agent`, commandPrefix, fallbackAfter, callerTimeout)
 	complexHeavySearch := fmt.Sprintf(`%s search "complex query" --profile heavy --fallback-after %s --timeout %s --agent`, commandPrefix, fallbackAfter, callerTimeout)
+	jevGuide := fmt.Sprintf(`## Research and synthesis selection
+
+Research returns an evidence pack for the current agent to answer from. smart-answer starts its own research and then calls a separate reasoning model; it does not consume a previous research result.
+
+| Task | Command | Requirements |
+| --- | --- | --- |
+| Multi-source evidence with JEV | %s research "topic" --mode jev --depth standard --profile auto --json | JEV configured; current agent writes the answer |
+| Tool-generated final answer with JEV | %s smart-answer "question" --mode jev --depth standard --profile auto --json | JEV and reasoning endpoints configured; user wants the tool to synthesize |
+| Research without JEV | %s research "topic" --mode fixed --depth standard --profile auto --agent | No JEV judgment; current agent writes the answer |
+
+- Use JEV for multi-source research when configured; keep simple queries on search and known URLs on fetch. Inspect only JEV key status if configuration is uncertain, never print the key. Research examples elsewhere without --mode use fixed mode.
+- Do not run research followed by smart-answer for the same task just to obtain prose: that repeats research. Answer from an existing evidence pack unless fresh research is needed.
+- If JEV is not configured, use fixed and disclose that no JEV assessment ran. If a JEV run returns unknown, inspect its warnings and existing evidence; do not silently restart the workflow or bypass it with fixed mode.
+- Use --agent for compact everyday search/fetch/fixed research output. Use --json when full excerpts, JEV judgment, pagination positions, or debugging metadata are needed. Do not rerun merely to change output format; retain the first result.
+- For JEV JSON inspect jev.assessment, jev.stop_reason, jev.read_pages, and fetched_pages_summary[].reading (complete, read_chars, passages). In smart-answer these are under research. For --agent inspect answer_readiness and warnings instead; it omits full pagination metadata.
+- SourceMux handles approximately 5000-character reading pages and up to 2000 characters of retained excerpts per source. Do not implement another pagination loop around it. reading.complete means the local reader scanned the body, not that the model saw every character; omitted or unread text cannot support claims.
+- Treat insufficient, unknown, reading_limit, and deadline as evidence limits, not a fully verified answer. Even sufficient is a model judgment, not a correctness guarantee.
+`, commandPrefix, commandPrefix, commandPrefix)
 	policySummary := fmt.Sprintf(`- Effective searchPolicy: defaultProfile=%s, agentProfile=%s, autoPreference=%s, fallbackAfterSec=%d, timeoutSec=%d.
 - %s
 - Generated quick search examples use --profile %s --fallback-after %s --timeout %s --agent. Explicit --profile, --fallback-after, --grok-pool-timeout, and --timeout always override this policy.`,
@@ -1437,7 +1455,7 @@ Use SourceMux as the default web research capability.
 | --- | --- |
 | Fresh/current search | %s |
 | Known URL fetch | %s fetch "https://example.com" --profile auto --agent |
-| Multi-source research | %s research "topic" --depth standard --profile auto --agent |
+| Fixed research (see JEV selection below) | %s research "topic" --depth standard --profile auto --agent |
 | Official docs lookup | %s docs-search "library or API question" --json |
 | Diagnostics only | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
 
@@ -1446,6 +1464,8 @@ Use SourceMux as the default web research capability.
 %s
 
 ## Effective searchPolicy
+
+%s
 
 %s
 
@@ -1460,7 +1480,7 @@ Choose one mode before running commands:
 | Deep planning | %s where decomposition is useful before execution | %s plan "topic" --json --depth deep |
 | Deep evidence | Same as broad research, but user asks for deeper/stronger coverage | %s research "topic" --depth deep --profile auto --agent |
 | Explicit heavy search | User asks to use heavy/multi-agent search directly | %s |
-| Final synthesis | Evidence is collected and the user wants an answer/plan | %s smart-answer "question" --profile auto --json |
+| Tool-generated answer | User wants SourceMux to research and synthesize, with reasoning endpoints configured | %s smart-answer "question" --profile auto --json |
 | Diagnostics | User asks whether Grok/heavy/profile/endpoint itself works | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json |
 
 If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, treat that as a valid source-discovery result. Fetch key URLs next; do not rerun with --no-fallback unless the user is debugging the Grok profile itself.
@@ -1488,7 +1508,7 @@ If a normal search returns a fallback engine such as Exa, TinyFish, or Tavily, t
 | Explicit slow heavy or multi-agent Grok search | %s | Lets Grok try first, then preserves fallback results for the user's actual task. |
 | Grok/profile diagnostics | %s search "ping" --profile heavy --grok-pool-timeout 0 --no-fallback --timeout 120s --json | Diagnostics-only path to verify whether the selected Grok profile itself can return. |
 | %s where decomposition helps | %s plan "topic" --json --depth deep, then %s research "topic" --depth deep --profile auto --agent | The offline structured planner decides SourceMux-capability steps first; research executes with profile=auto and preserved fallback. |
-| Multi-source investigation with synthesis | %s research "topic" --depth standard --profile auto --agent or %s research "topic" --depth deep --profile auto --agent | Runs the composable SourceMux research workflow. Auto uses heavy/multi-agent search when configured and appropriate, while preserving fallback. |
+| Multi-source evidence for the current agent | %s research "topic" --depth standard --profile auto --agent or %s research "topic" --depth deep --profile auto --agent | Fixed-mode evidence gathering; use the JEV commands above when configured. The current agent writes the final answer. |
 | Planning/decomposition without executing the research | %s plan "topic" --json --depth standard or %s plan "topic" --json --depth deep | Produces a deterministic structured plan before running provider calls. Text output remains available with plan --depth. |
 
 ## Diagnostics workflow
@@ -1508,14 +1528,15 @@ Use this only when the user is asking why endpoints/profile/model behavior faile
 
 - For source-critical claims, do not rely on a search summary alone.
 - First discover candidate URLs with search, docs-search, exa-search, or research.
-- Then fetch 1-3 key URLs with fetch --profile auto --agent before making high-risk or precise claims.
+- Read relevant body evidence before making source-critical claims. Reuse research's already-read excerpts when sufficient; fetch again only for missing details, passage verification, or freshness, not a mandatory number of pages.
 - For known URLs, use fetch --profile auto --agent first. This is SourceMux policy-first: GitHub URLs route through repository-aware enrichment first, ordinary pages prefer Firecrawl when configured with clean-content off, --profile quality enables extra cleaning with a longer timeout budget, and cheap/zero-key requests must explicitly use --profile cheap.
 - Do not call Jina directly unless the user asks for cheap, zero-key, or diagnostic mode.
 - Use firecrawl-scrape only when the user needs explicit Firecrawl scrape controls.
 - For site URL inventory or section discovery, use firecrawl-map explicitly.
 - In final answers, cite fetched or source URL evidence and mention the engine/provider when it matters.
-- For final synthesis and smart-answer style responses, cite only URLs present in the research pack, disclose clipped packs as incomplete evidence, and answer conservatively when confirmed_facts is empty or heuristic-only.
-- A fetch result may show a provider such as Firecrawl, GitHub Provider, Jina Reader, Exa, or Tavily; that verifies URL content and does not mean that provider performed the original search.
+- For final synthesis and smart-answer style responses, cite only actually read sources supporting the claim. In JEV mode use visible passages from read sources, not high_signal_sources or discovery snippets. Disclose clipped packs as incomplete evidence and treat confirmed_facts as heuristic excerpts, not verified facts.
+- smart-answer currently relies on prompting for citation limits, without programmatic output URL validation. Check its links and supporting excerpts before reusing the answer.
+- A fetch result may show a provider such as Firecrawl, GitHub Provider, Jina Reader, Exa, or Tavily; this identifies content retrieval, not factual verification or the original search engine.
 
 ## Public user mode vs project development mode
 
@@ -1561,6 +1582,7 @@ Diagnostics only; do not use for user-facing research answers:
 `, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
 		cliPolicy,
 		policySummary,
+		jevGuide,
 		quickSearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, heavySearch, commandPrefix, commandPrefix,
 		twitterSearch, quickSearch, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, heavySearch, commandPrefix, deepIntentLabels, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix, commandPrefix,
 		shellQuote(configPath), commandPrefix,
