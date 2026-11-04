@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 const (
@@ -58,7 +57,8 @@ func (c *GrokClient) EffectiveProfile() string {
 	return normalizeGrokEndpointProfile(c.Profile)
 }
 
-// NewGrokClient creates a Grok client with default 60s timeout and search flag enabled.
+// NewGrokClient creates a Grok client whose requests are bounded by the caller
+// context and Grok pool budget, with search enabled by default.
 func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 	return &GrokClient{
 		Name:           "grok",
@@ -66,10 +66,8 @@ func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 		APIKey:         apiKey,
 		Model:          model,
 		SendSearchFlag: true,
-		HTTPClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-		RetryConfig: DefaultRetryConfig(),
+		HTTPClient:     &http.Client{},
+		RetryConfig:    DefaultRetryConfig(),
 	}
 }
 

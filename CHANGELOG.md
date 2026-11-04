@@ -8,4 +8,5 @@
 - Improved the missing `reasoningEndpoints` error for `smart_answer`.
 - Clarified heavy/multi-agent search routing: `--no-fallback` is diagnostics-only; user-facing heavy search should preserve TinyFish/Exa/Tavily fallback.
 - Updated `grokPoolTimeoutSec` recommendation to 300 s for multi-agent models.
+- Removed the hidden 60 s Grok HTTP client cap so caller and pool timeouts can accommodate long-running multi-agent Responses API requests.
 - Extended generated routing skill with mode-selection table, profile policy, and diagnostics workflow.

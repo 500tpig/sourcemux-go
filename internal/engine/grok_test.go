@@ -24,6 +24,13 @@ func newMockGrok(t *testing.T, status int, body string) *GrokClient {
 	return NewGrokClient(srv.URL, "test-key", "grok-3-mini")
 }
 
+func TestNewGrokClientUsesCallerTimeout(t *testing.T) {
+	c := NewGrokClient("https://grok.example/v1", "test-key", "grok-test")
+	if c.HTTPClient.Timeout != 0 {
+		t.Fatalf("HTTP client timeout = %s, want caller-controlled timeout", c.HTTPClient.Timeout)
+	}
+}
+
 func TestSearch_CitationsField(t *testing.T) {
 	body := `{
 		"choices":[{"message":{"content":"Grok answer."}}],

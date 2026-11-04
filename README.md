@@ -669,7 +669,7 @@ Config fields:
 | `exa` | No | Exa Search / Contents fallback and advanced Exa tools. |
 | `jina` | No | Jina Reader fetch; works without a key. |
 | `tinyfish` | No | TinyFish Search / Fetch fallback with multi-key rotation. |
-| `grokPoolTimeoutSec` | No | Default overall Grok pool wall-clock budget in seconds. Override per search with `--grok-pool-timeout`; `0` disables the pool cap. |
+| `grokPoolTimeoutSec` | No | Default overall Grok pool wall-clock budget in seconds. Override per search with `--grok-pool-timeout`; `0` disables the pool cap. Grok HTTP requests follow the caller/pool context instead of imposing a separate fixed timeout. |
 | `searchPolicy.defaultProfile` | No | Raw `sourcemux search` default profile. Public default: `default`; set `auto` to opt into policy-driven auto search. |
 | `searchPolicy.agentProfile` | No | Profile generated `sourcemux-routing` skills use for one-shot search examples. Public default: `auto`. |
 | `searchPolicy.autoPreference` | No | How `--profile auto` resolves: `intent-based`, `heavy-first`, or `default-first`. Public default: `intent-based`. |
