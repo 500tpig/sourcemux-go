@@ -25,6 +25,7 @@ type Config struct {
 
 	GrokEndpoints      []engine.GrokEndpoint
 	ReasoningEndpoints []engine.ReasoningEndpoint
+	JEV                engine.JEVConfig
 
 	TavilyAPIURL  string
 	TavilyAPIKey  string
@@ -88,6 +89,7 @@ type fileConfig struct {
 	GrokEndpoints        []engine.GrokEndpoint      `json:"grokEndpoints"`
 	ReasoningEndpoints   []engine.ReasoningEndpoint `json:"reasoningEndpoints"`
 	ReasoningEndpointsV2 []engine.ReasoningEndpoint `json:"reasoning_endpoints"`
+	JEV                  engine.JEVConfig           `json:"jev"`
 
 	Tavily    serviceFileConfig `json:"tavily"`
 	Firecrawl serviceFileConfig `json:"firecrawl"`
@@ -184,10 +186,21 @@ func LoadFile(path string) (*Config, error) {
 }
 
 func buildConfig(fileCfg fileConfig, raw map[string]json.RawMessage, path string) (*Config, error) {
-	if fileCfg.Capabilities != nil {
-		return buildConfigV2(fileCfg, raw, path)
+	jev, err := engine.NormalizeJEVConfig(fileCfg.JEV)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s jev: %w", path, err)
 	}
-	return buildConfigV1(fileCfg, path)
+	var cfg *Config
+	if fileCfg.Capabilities != nil {
+		cfg, err = buildConfigV2(fileCfg, raw, path)
+	} else {
+		cfg, err = buildConfigV1(fileCfg, path)
+	}
+	if err != nil {
+		return nil, err
+	}
+	cfg.JEV = jev
+	return cfg, nil
 }
 
 func buildConfigV1(fileCfg fileConfig, path string) (*Config, error) {

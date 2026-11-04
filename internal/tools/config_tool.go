@@ -23,6 +23,11 @@ func RegisterConfig(s *mcpserver.MCPServer, cfg *config.Config, pool *engine.Gro
 		var sb strings.Builder
 
 		sb.WriteString("=== SourceMux Config ===")
+		jevKeyStatus := "not set"
+		if cfg.JEV.APIKey != "" {
+			jevKeyStatus = "configured"
+		}
+		fmt.Fprintf(&sb, "\nJEV API URL: %s\nJEV Model: %s\nJEV Timeout: %ds\nJEV API Key: %s (not probed)", cfg.JEV.APIURL, cfg.JEV.Model, cfg.JEV.TimeoutSec, jevKeyStatus)
 		sb.WriteString(fmt.Sprintf("\nTavily Enabled: %v", cfg.TavilyEnabled))
 		sb.WriteString(fmt.Sprintf("\nTavily API URL: %s", cfg.TavilyAPIURL))
 		sb.WriteString(fmt.Sprintf("\nTavily API Key: %s", optionalKeyStatus(cfg.TavilyAPIKey)))

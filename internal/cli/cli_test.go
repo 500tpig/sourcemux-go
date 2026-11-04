@@ -936,6 +936,7 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	out := captureStdout(t, func() {
 		if got := runResearchWithRunner([]string{
 			"SourceMux MCP",
+			"--mode", "jev",
 			"--depth", "deep",
 			"--profile", "heavy",
 			"--platform", "GitHub",
@@ -956,6 +957,10 @@ func TestRunResearchJSONParsesParameters(t *testing.T) {
 	}
 	if runner.opts.MaxFetches != 3 {
 		t.Fatalf("max_fetches = %d", runner.opts.MaxFetches)
+	}
+
+	if runner.opts.Mode != "jev" {
+		t.Fatalf("mode = %q, want jev", runner.opts.Mode)
 	}
 
 	var decoded tools.ResearchPack
@@ -1008,6 +1013,9 @@ func TestRunResearchDefaultsProfileAuto(t *testing.T) {
 			t.Fatalf("runResearchWithRunner = %d, want 0", got)
 		}
 	})
+	if runner.opts.Mode != "fixed" {
+		t.Fatalf("default mode = %q, want fixed", runner.opts.Mode)
+	}
 	if runner.opts.Profile != "auto" {
 		t.Fatalf("default research profile = %q, want auto", runner.opts.Profile)
 	}
@@ -1021,6 +1029,7 @@ func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
 	out := captureStdout(t, func() {
 		if got := runSmartAnswerWithRunner([]string{
 			"Should I use DeepSeek?",
+			"--mode", "jev",
 			"--depth", "quick",
 			"--profile", "heavy",
 			"--platform", "GitHub",
@@ -1047,6 +1056,10 @@ func TestRunSmartAnswerJSONParsesParameters(t *testing.T) {
 		t.Fatalf("reasoning opts = %+v", runner.opts)
 	}
 
+	if runner.opts.Mode != "jev" {
+		t.Fatalf("mode = %q, want jev", runner.opts.Mode)
+	}
+
 	var decoded tools.SmartAnswerResult
 	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
 		t.Fatalf("decode output: %v\n%s", err, out)
@@ -1066,6 +1079,9 @@ func TestRunSmartAnswerDefaultsProfileAuto(t *testing.T) {
 			t.Fatalf("runSmartAnswerWithRunner = %d, want 0", got)
 		}
 	})
+	if runner.opts.Mode != "fixed" {
+		t.Fatalf("default mode = %q, want fixed", runner.opts.Mode)
+	}
 	if runner.opts.Profile != "auto" {
 		t.Fatalf("default smart-answer profile = %q, want auto", runner.opts.Profile)
 	}
@@ -1990,5 +2006,19 @@ func TestTinyFishBenchmarkOutputJSONShapeMasksKey(t *testing.T) {
 	}
 	if strings.Contains(got, "tf_1234567890") {
 		t.Fatalf("full key leaked in JSON: %s", got)
+	}
+}
+
+func TestResearchCommandsRejectInvalidMode(t *testing.T) {
+	research := &fakeCLIResearchRunner{}
+	if got := runResearchWithRunner([]string{"query", "--mode", "invalid"}, research); got != 2 {
+		t.Fatalf("research exit = %d, want 2", got)
+	}
+	answer := &fakeCLISmartAnswerRunner{}
+	if got := runSmartAnswerWithRunner([]string{"query", "--mode", "invalid"}, answer); got != 2 {
+		t.Fatalf("smart-answer exit = %d, want 2", got)
+	}
+	if research.opts.Query != "" || answer.opts.Query != "" {
+		t.Fatal("invalid mode reached runner")
 	}
 }

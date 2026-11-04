@@ -57,6 +57,8 @@ type WebSearchResult struct {
 // WebSearchOptions is the shared input contract for direct search and
 // higher-level research callers.
 type WebSearchOptions struct {
+	// Provider 仅允许现有已配置渠道；为空时保持原有兜底顺序。
+	Provider       string
 	Query          string
 	Platform       string
 	Model          string
@@ -181,7 +183,20 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 		return nil, err
 	}
 
-	r := router.New(searchProviders(clients)...)
+	providers := searchProviders(clients)
+	if opts.Provider != "" {
+		var selected []capability.Provider
+		for _, provider := range providers {
+			if provider.Name() == opts.Provider {
+				selected = append(selected, provider)
+			}
+		}
+		if len(selected) == 0 {
+			return nil, fmt.Errorf("search provider is not configured: %s", opts.Provider)
+		}
+		providers = selected
+	}
+	r := router.New(providers...)
 	res, trace := r.Run(ctx, capability.MainSearch, capability.Request{
 		Query: query,
 		Options: map[string]any{

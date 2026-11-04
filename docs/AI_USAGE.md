@@ -113,6 +113,12 @@ from `searchPolicy.agentProfile`, `searchPolicy.fallbackAfterSec`, and
 `defaultProfile=auto` with `autoPreference=heavy-first` to make raw search
 heavy-first.
 
+### 可选 JEV 模式（CLI / MCP）
+
+配置顶层 `jev` 后，CLI `research`、`smart-answer` 使用 `--mode jev`；MCP `research_run`、`smart_answer` 使用 `"mode":"jev"`。省略时保持 `fixed`。协议示例和限制见 [JEV 使用说明](JEV.md)。
+
+JEV 模式须读取正文后才能报告证据充分。JSON 中检查 `jev.assessment`、`jev.stop_reason` 和 `jev.citations`；smart-answer 中位于 `research.jev`。精简输出的 `unknown`、`needs_more_evidence` 不能解释为证据已核验。此模式会将问题和证据片段发送给独立判断服务。
+
 ### Capability selection for generated skills
 
 Generated `sourcemux-routing` skills should route user intent to capabilities,

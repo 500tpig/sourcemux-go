@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/config"
+	"github.com/500tpig/sourcemux-go/internal/engine"
 	"github.com/500tpig/sourcemux-go/internal/tools"
 )
 
@@ -35,6 +36,7 @@ func runResearch(args []string) int {
 func runResearchWithRunner(args []string, runner researchRunner) int {
 	fs := flag.NewFlagSet("research", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	mode := fs.String("mode", "fixed", "Research mode: fixed or jev")
 	depth := fs.String("depth", "standard", "Research depth: quick, standard, or deep")
 	profile := fs.String("profile", tools.SearchProfileAuto, "Grok endpoint profile to use: auto, default, heavy, or another configured profile")
 	platform := fs.String("platform", "", "Optional platform focus, e.g. 'GitHub, Reddit'")
@@ -49,6 +51,10 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	if err != nil {
 		return 2
 	}
+	if *mode != "fixed" && *mode != "jev" {
+		fmt.Fprintln(os.Stderr, "mode must be fixed or jev")
+		return 2
+	}
 	timeoutProvided := flagWasProvided(fs, "timeout")
 	if len(positional) == 0 {
 		fmt.Fprintln(os.Stderr, "research: query is required")
@@ -57,6 +63,7 @@ func runResearchWithRunner(args []string, runner researchRunner) int {
 	}
 	query := strings.Join(positional, " ")
 	opts := tools.ResearchOptions{
+		Mode:       *mode,
 		Query:      query,
 		Depth:      *depth,
 		Profile:    *profile,
@@ -120,6 +127,7 @@ func buildResearchRunner(cfg *config.Config) researchRunner {
 	fetch := buildWebFetchClients(cfg)
 
 	return tools.NewResearchExecutor(tools.ResearchExecutorDeps{
+		JEV:     engine.NewJEVClient(cfg.JEV),
 		Search:  search,
 		Fetch:   fetch,
 		Sources: cache,
