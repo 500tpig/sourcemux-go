@@ -28,7 +28,7 @@ This repository is a Go MCP server and CLI for search, fetch, research, and reas
 - Tests must not call live external APIs; use local test servers or fakes.
 - When adding provider behavior, update both CLI and MCP documentation when the surface is user-visible.
 - Keep synthesis-only models in `reasoningEndpoints[]`; do not put them in `grokEndpoints[]`.
-- Keep local AI workflow state (`.trellis/`, `.agents/`, `.codex/`, `.claude/`)
+- Keep local AI workflow state (`.agents/`, `.codex/`, `.claude/`)
   and OS metadata such as `.DS_Store` out of public commits.
 - Keep public docs and examples free of personal absolute paths, private
   endpoint hostnames, and real-looking secrets.

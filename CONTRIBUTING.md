@@ -38,8 +38,8 @@ setup and docs should use `sourcemux.json`.
 
 ## Repository hygiene
 
-- Keep local AI workflow state out of public commits: `.trellis/`, `.agents/`,
-  `.codex/`, and `.claude/` should stay developer-local.
+- Keep local AI workflow state out of public commits: `.agents/`, `.codex/`,
+  and `.claude/` should stay developer-local.
 - Do not commit local task archives, journals, OS metadata such as `.DS_Store`,
   or generated release artifacts.
 - Keep docs and example configs free of personal absolute paths, private

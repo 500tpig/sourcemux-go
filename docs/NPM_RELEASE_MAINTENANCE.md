@@ -168,7 +168,6 @@ npm/package/test/launcher.test.js
 npm/README.md
 docs/RELEASE.md
 docs/NPM_RELEASE_MAINTENANCE.md
-.trellis/spec/backend/quality-guidelines.md
 ```
 
 Then run:
