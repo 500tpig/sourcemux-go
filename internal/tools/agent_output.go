@@ -93,6 +93,13 @@ func BuildSearchAgentOutput(query string, result *WebSearchResult) AgentOutput {
 	if result.SourceOrigin == engine.SourceOriginRegex {
 		out.Warnings = append(out.Warnings, "source URLs were extracted from generated answer text, not structured upstream search evidence")
 	}
+	if result.AnswerCheck != nil && result.AnswerCheck.Status == "unverified" {
+		if result.AnswerCheck.Reason == "jev_unconfigured" {
+			out.Warnings = append(out.Warnings, "grok answer check was enabled without a configured JEV key; returned answer is unverified")
+		} else {
+			out.Warnings = append(out.Warnings, "grok answer check failed; returned answer is unverified")
+		}
+	}
 	out.Warnings = append(out.Warnings, searchWarnings(query, sources)...)
 	out.NextActions = append(out.NextActions, `fetch S1 with fetch --agent before citing`)
 	if queryLooksDocsLike(query) {

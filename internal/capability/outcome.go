@@ -30,15 +30,16 @@ func (o Outcome) ShouldFallback() bool {
 type FallbackReason string
 
 const (
-	ReasonNone          FallbackReason = ""
-	ReasonNoContent     FallbackReason = "no_content"
-	ReasonNoValidSource FallbackReason = "no_valid_sources"
-	ReasonUpstreamError FallbackReason = "upstream_error"
-	ReasonConfiguration FallbackReason = "configuration_error"
-	ReasonTimeout       FallbackReason = "timeout"
-	ReasonRateLimited   FallbackReason = "rate_limited"
-	ReasonUnconfigured  FallbackReason = "unconfigured"
-	ReasonDisabled      FallbackReason = "disabled"
-	ReasonUserDisabled  FallbackReason = "user_disabled"
-	ReasonNotApplicable FallbackReason = "not_applicable"
+	ReasonNone           FallbackReason = ""
+	ReasonNoContent      FallbackReason = "no_content"
+	ReasonNoValidSource  FallbackReason = "no_valid_sources"
+	ReasonAnswerRejected FallbackReason = "answer_rejected"
+	ReasonUpstreamError  FallbackReason = "upstream_error"
+	ReasonConfiguration  FallbackReason = "configuration_error"
+	ReasonTimeout        FallbackReason = "timeout"
+	ReasonRateLimited    FallbackReason = "rate_limited"
+	ReasonUnconfigured   FallbackReason = "unconfigured"
+	ReasonDisabled       FallbackReason = "disabled"
+	ReasonUserDisabled   FallbackReason = "user_disabled"
+	ReasonNotApplicable  FallbackReason = "not_applicable"
 )

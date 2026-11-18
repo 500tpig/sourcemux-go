@@ -43,8 +43,16 @@ func (r *Router) Run(ctx context.Context, kind capability.Kind, req capability.R
 	if r == nil {
 		return capability.Result{}, trace
 	}
+	if err := ctx.Err(); err != nil {
+		trace.Error = err.Error()
+		return capability.Result{}, trace
+	}
 	providers := r.providers[kind]
 	for i, p := range providers {
+		if err := ctx.Err(); err != nil {
+			trace.Error = err.Error()
+			break
+		}
 		if m, ok := p.(capability.Matcher); ok {
 			allowed, reason := m.CanHandle(req)
 			if !allowed {

@@ -80,6 +80,7 @@ type configListOutput struct {
 	JEVAPIURL          string                 `json:"jev_api_url"`
 	JEVModel           string                 `json:"jev_model"`
 	JEVTimeoutSec      int                    `json:"jev_timeout_sec"`
+	JEVAnswerCheck     bool                   `json:"jev_answer_check"`
 	JEVKey             string                 `json:"jev_key_status"`
 
 	TavilyEnabled bool   `json:"tavily_enabled"`
@@ -463,7 +464,7 @@ func runConfigList(args []string) int {
 		fmt.Printf("      Model: %s\n", ep.Model)
 		fmt.Printf("      API key: %s\n", ep.KeyStatus)
 	}
-	fmt.Printf("\nJEV: url=%s model=%s timeout=%ds key=%s\n", out.JEVAPIURL, out.JEVModel, out.JEVTimeoutSec, out.JEVKey)
+	fmt.Printf("\nJEV: url=%s model=%s timeout=%ds key=%s answer_check=%t\n", out.JEVAPIURL, out.JEVModel, out.JEVTimeoutSec, out.JEVKey, out.JEVAnswerCheck)
 	fmt.Printf("\nTavily: enabled=%v url=%s key=%s\n", out.TavilyEnabled, out.TavilyAPIURL, out.TavilyKey)
 	fmt.Printf("Firecrawl: enabled=%v url=%s key=%s keys=%s\n", out.FirecrawlEnabled, out.FirecrawlAPIURL, out.FirecrawlKey, formatNamedKeyStatuses(out.FirecrawlKeys))
 	if len(out.WebFetchOrder) > 0 {
@@ -532,6 +533,7 @@ func buildConfigListOutput(cfg *cfgpkg.Config) configListOutput {
 		JEVAPIURL:          cfg.JEV.APIURL,
 		JEVModel:           cfg.JEV.Model,
 		JEVTimeoutSec:      cfg.JEV.TimeoutSec,
+		JEVAnswerCheck:     cfg.JEV.AnswerCheck,
 		JEVKey:             "not set",
 		TavilyEnabled:      cfg.TavilyEnabled,
 		TavilyAPIURL:       cfg.TavilyAPIURL,

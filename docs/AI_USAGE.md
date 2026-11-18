@@ -117,6 +117,8 @@ heavy-first.
 
 配置顶层 `jev` 后，CLI `research`、`smart-answer` 使用 `--mode jev`；MCP `research_run`、`smart_answer` 使用 `"mode":"jev"`。省略时保持 `fixed`。协议示例和限制见 [JEV 使用说明](JEV.md)。
 
+普通 `search` / `web_search` 默认不触发 JEV 语义检查（`jev.answerCheck=false`）。如需在单次搜索检查 Grok 原回答是否实质回应且未被可见来源标题/摘要直接反驳，可显式传 CLI `--answer-check`（可用 `--answer-check=false` 临时关闭）或 MCP `answer_check: true|false`。若通过 fallback 返回结果，`answer_check.status="rejected"` 描述的是 Grok 原回答被拒而非最终 fallback 结果；`unverified` 表示保留原结果但未经校验。该检查只看标题/摘要元数据，不是全文事实核验，关键结论仍须用 `fetch` 核读原文。
+
 JEV 模式须读取正文后才能报告证据充分。JSON 中检查 `jev.assessment`、`jev.stop_reason` 和 `jev.citations`；smart-answer 中位于 `research.jev`。精简输出的 `unknown`、`needs_more_evidence` 不能解释为证据已核验。此模式会将问题和证据片段发送给独立判断服务。
 
 ### Capability selection for generated skills

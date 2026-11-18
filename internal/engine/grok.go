@@ -71,18 +71,27 @@ func NewGrokClient(baseURL, apiKey, model string) *GrokClient {
 	}
 }
 
+// SearchSource holds normalized metadata extracted from an upstream Grok source.
+type SearchSource struct {
+	URL     string `json:"url"`
+	Title   string `json:"title,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
 // SearchResult holds the AI answer plus extracted source URLs.
 type SearchResult struct {
-	Content                string   `json:"content"`
-	SourceURLs             []string `json:"source_urls"`
-	SourcesCount           int      `json:"sources_count"`
-	SourceOrigin           string   `json:"source_origin"`
-	ValidSourcesCount      int      `json:"valid_sources_count"`
-	StructuredSourcesCount int      `json:"structured_sources_count"`
+	Content                string         `json:"content"`
+	SourceURLs             []string       `json:"source_urls"`
+	SourcesCount           int            `json:"sources_count"`
+	SourceOrigin           string         `json:"source_origin"`
+	ValidSourcesCount      int            `json:"valid_sources_count"`
+	StructuredSourcesCount int            `json:"structured_sources_count"`
+	Sources                []SearchSource `json:"-"`
 }
 
 type sourceEvidence struct {
 	URLs            []string
+	Sources         []SearchSource
 	Origin          string
 	StructuredCount int
 }
@@ -95,6 +104,7 @@ func newSearchResult(content string, evidence sourceEvidence) *SearchResult {
 		SourceOrigin:           evidence.Origin,
 		ValidSourcesCount:      len(evidence.URLs),
 		StructuredSourcesCount: evidence.StructuredCount,
+		Sources:                evidence.Sources,
 	}
 }
 
@@ -329,7 +339,7 @@ func responseToolPayload(tools []string) []map[string]any {
 //  3. http(s) URLs scraped from the combined text (regex fallback)
 func extractResponsesAPIResult(raw *responsesAPIResponse) (string, sourceEvidence) {
 	var textParts []string
-	var annotationURLs []string
+	var annotationSources []SearchSource
 
 	for _, item := range raw.Output {
 		if item.Type != "message" {
@@ -344,7 +354,10 @@ func extractResponsesAPIResult(raw *responsesAPIResponse) (string, sourceEvidenc
 			}
 			for _, ann := range block.Annotations {
 				if ann.Type == "url_citation" && ann.URL != "" {
-					annotationURLs = append(annotationURLs, ann.URL)
+					annotationSources = append(annotationSources, SearchSource{
+						URL:   ann.URL,
+						Title: strings.TrimSpace(ann.Title),
+					})
 				}
 			}
 		}
@@ -352,13 +365,13 @@ func extractResponsesAPIResult(raw *responsesAPIResponse) (string, sourceEvidenc
 
 	content := strings.Join(textParts, "\n")
 
-	if len(annotationURLs) > 0 {
-		if evidence := structuredSourceEvidence(annotationURLs, SourceOriginAnnotations); len(evidence.URLs) > 0 {
+	if len(annotationSources) > 0 {
+		if evidence := structuredSourceEvidence(annotationSources, SourceOriginAnnotations); len(evidence.URLs) > 0 {
 			return content, evidence
 		}
 	}
 	if len(raw.Citations) > 0 {
-		if evidence := structuredSourceEvidence(raw.Citations, SourceOriginCitations); len(evidence.URLs) > 0 {
+		if evidence := structuredSourceEvidence(searchSourcesFromURLs(raw.Citations), SourceOriginCitations); len(evidence.URLs) > 0 {
 			return content, evidence
 		}
 	}
@@ -484,41 +497,47 @@ func extractSourceEvidence(raw *grokRawResponse, content string) sourceEvidence 
 	if len(raw.Choices) > 0 {
 		anns := raw.Choices[0].Message.Annotations
 		if len(anns) > 0 {
-			urls := make([]string, 0, len(anns))
+			sources := make([]SearchSource, 0, len(anns))
 			for _, a := range anns {
 				if a.URLCitation.URL != "" {
-					urls = append(urls, a.URLCitation.URL)
+					sources = append(sources, SearchSource{
+						URL:   a.URLCitation.URL,
+						Title: strings.TrimSpace(a.URLCitation.Title),
+					})
 				}
 			}
-			if evidence := structuredSourceEvidence(urls, SourceOriginAnnotations); len(evidence.URLs) > 0 {
+			if evidence := structuredSourceEvidence(sources, SourceOriginAnnotations); len(evidence.URLs) > 0 {
 				return evidence
 			}
 		}
 	}
 	if len(raw.SearchSources) > 0 {
-		urls := make([]string, 0, len(raw.SearchSources))
+		sources := make([]SearchSource, 0, len(raw.SearchSources))
 		for _, s := range raw.SearchSources {
 			if s.URL != "" {
-				urls = append(urls, s.URL)
+				sources = append(sources, SearchSource{
+					URL:   s.URL,
+					Title: strings.TrimSpace(s.Title),
+				})
 			}
 		}
-		if evidence := structuredSourceEvidence(urls, SourceOriginSearchSources); len(evidence.URLs) > 0 {
+		if evidence := structuredSourceEvidence(sources, SourceOriginSearchSources); len(evidence.URLs) > 0 {
 			return evidence
 		}
 	}
 	if len(raw.Citations) > 0 {
-		if evidence := structuredSourceEvidence(raw.Citations, SourceOriginCitations); len(evidence.URLs) > 0 {
+		if evidence := structuredSourceEvidence(searchSourcesFromURLs(raw.Citations), SourceOriginCitations); len(evidence.URLs) > 0 {
 			return evidence
 		}
 	}
 	if len(raw.SearchResults) > 0 {
-		urls := make([]string, 0, len(raw.SearchResults))
+		sources := make([]SearchSource, 0, len(raw.SearchResults))
 		for _, r := range raw.SearchResults {
 			if r.URL != "" {
-				urls = append(urls, r.URL)
+				sources = append(sources, SearchSource{URL: r.URL})
 			}
 		}
-		if evidence := structuredSourceEvidence(urls, SourceOriginSearchResults); len(evidence.URLs) > 0 {
+		if evidence := structuredSourceEvidence(sources, SourceOriginSearchResults); len(evidence.URLs) > 0 {
 			return evidence
 		}
 	}
@@ -530,14 +549,55 @@ func extractSourceEvidence(raw *grokRawResponse, content string) sourceEvidence 
 	return sourceEvidence{Origin: SourceOriginNone}
 }
 
-func structuredSourceEvidence(urls []string, origin string) sourceEvidence {
-	normalized := NormalizeSourceURLs(urls)
-	return sourceEvidence{URLs: normalized, Origin: origin, StructuredCount: len(normalized)}
+func structuredSourceEvidence(items []SearchSource, origin string) sourceEvidence {
+	urls, sources := normalizeSearchSources(items)
+	return sourceEvidence{URLs: urls, Sources: sources, Origin: origin, StructuredCount: len(urls)}
 }
 
 func regexSourceEvidence(content string) sourceEvidence {
 	urls := NormalizeSourceURLs(urlRegex.FindAllString(content, -1))
-	return sourceEvidence{URLs: urls, Origin: SourceOriginRegex}
+	return sourceEvidence{URLs: urls, Sources: searchSourcesFromURLs(urls), Origin: SourceOriginRegex}
+}
+
+func searchSourcesFromURLs(urls []string) []SearchSource {
+	sources := make([]SearchSource, 0, len(urls))
+	for _, u := range urls {
+		if u != "" {
+			sources = append(sources, SearchSource{URL: u})
+		}
+	}
+	return sources
+}
+
+func normalizeSearchSources(items []SearchSource) ([]string, []SearchSource) {
+	indexByURL := make(map[string]int, len(items))
+	urls := make([]string, 0, len(items))
+	sources := make([]SearchSource, 0, len(items))
+	for _, item := range items {
+		normalized, ok := NormalizeSourceURL(item.URL)
+		if !ok {
+			continue
+		}
+		title := strings.TrimSpace(item.Title)
+		snippet := strings.TrimSpace(item.Snippet)
+		if idx, exists := indexByURL[normalized]; exists {
+			if sources[idx].Title == "" && title != "" {
+				sources[idx].Title = title
+			}
+			if sources[idx].Snippet == "" && snippet != "" {
+				sources[idx].Snippet = snippet
+			}
+			continue
+		}
+		indexByURL[normalized] = len(sources)
+		urls = append(urls, normalized)
+		sources = append(sources, SearchSource{
+			URL:     normalized,
+			Title:   title,
+			Snippet: snippet,
+		})
+	}
+	return urls, sources
 }
 
 // ListModels returns available models from the Grok-compatible endpoint.

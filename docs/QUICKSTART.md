@@ -136,18 +136,20 @@ low-cost or zero-key Jina-first sanity check.
   "apiURL": "https://api.typesafe.ai/v1",
   "apiKey": "YOUR_TYPESAFE_API_KEY",
   "model": "jev-latest",
-  "timeoutSec": 15
+  "timeoutSec": 15,
+  "answerCheck": false
 }
 ```
 
 ```bash
 sourcemux --config ./sourcemux.json research "比较两个库的维护现状" --mode jev --depth standard --json
 sourcemux --config ./sourcemux.json smart-answer "比较两个库的维护现状" --mode jev --depth standard --json
+sourcemux --config ./sourcemux.json search "最新规范变更" --answer-check --json
 ```
 
-省略 `--mode` 时仍使用固定研究流程。JEV 从已配置渠道和已发现 URL 中选择动作，读取正文后判断是否需要补搜。`smart-answer` 仍需独立的 reasoning 配置。
+省略 `--mode` 时仍使用固定研究流程；普通 `search` 默认关闭语义质量检查（`answerCheck=false`），可用 `--answer-check` / `--answer-check=false` 单次覆盖。JEV 从已配置渠道和已发现 URL 中选择动作，读取正文后判断是否需要补搜。`smart-answer` 仍需独立的 reasoning 配置。
 
-此模式会向 JEV 服务发送问题、候选查询、URL 和正文片段。仅抓取成功的正文进入已读引用；判断基于截断预览，概率不代表答案正确率。预算、错误行为及输出字段见 [JEV 使用说明](JEV.md)。
+此模式会向 JEV 服务发送问题、候选查询、URL 和正文片段。仅抓取成功的正文进入已读引用；判断基于截断预览，概率不代表答案正确率；普通搜索的标题/摘要检查也不是全文事实核验。预算、错误行为及输出字段见 [JEV 使用说明](JEV.md)。
 
 ## 4. Install agent routing skill
 

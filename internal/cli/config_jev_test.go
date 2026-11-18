@@ -9,10 +9,13 @@ import (
 )
 
 func TestConfigMigratePreservesJEV(t *testing.T) {
-	path := writeCLIConfig(t, `{"jev":{"apiURL":"https://judge.example/v1","apiKey":"jev-private-key","model":"custom-judge","timeoutSec":24}}`)
+	path := writeCLIConfig(t, `{"jev":{"apiURL":"https://judge.example/v1","apiKey":"jev-private-key","model":"custom-judge","timeoutSec":24,"answerCheck":true}}`)
 	before, err := cfgpkg.LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !before.JEV.AnswerCheck {
+		t.Fatal("expected answerCheck=true before migration")
 	}
 	out := captureStdout(t, func() {
 		if code := Run([]string{"--config", path, "config", "migrate", "--json"}); code != 0 {
@@ -23,7 +26,7 @@ func TestConfigMigratePreservesJEV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Version != 2 || after.JEV != before.JEV {
+	if after.Version != 2 || after.JEV != before.JEV || !after.JEV.AnswerCheck {
 		t.Fatal("migration lost JEV settings")
 	}
 	if strings.Contains(out, "jev-private-key") {
@@ -56,10 +59,10 @@ func TestConfigListJEVOnlyShowsKeyPresence(t *testing.T) {
 				if err := json.Unmarshal([]byte(out), &result); err != nil {
 					t.Fatal(err)
 				}
-				if result.JEVAPIURL != "https://judge.example/v1" || result.JEVModel != "custom-judge" || result.JEVTimeoutSec != 24 || result.JEVKey != status {
+				if result.JEVAPIURL != "https://judge.example/v1" || result.JEVModel != "custom-judge" || result.JEVTimeoutSec != 24 || result.JEVKey != status || result.JEVAnswerCheck {
 					t.Fatal("JEV diagnostics missing")
 				}
-			} else if !strings.Contains(out, "JEV: url=https://judge.example/v1 model=custom-judge timeout=24s key="+status) {
+			} else if !strings.Contains(out, "JEV: url=https://judge.example/v1 model=custom-judge timeout=24s key="+status+" answer_check=false") {
 				t.Fatal("text diagnostics missing")
 			}
 		}

@@ -15,25 +15,26 @@ import (
 // searchOutput is the JSON envelope for `cli search`. Keep the fields stable
 // so external scripts can rely on the shape.
 type searchOutput struct {
-	Engine                 string                 `json:"engine"`
-	EndpointName           string                 `json:"endpoint_name,omitempty"`
-	Model                  string                 `json:"model,omitempty"`
-	RequestedProfile       string                 `json:"requested_profile"`
-	EffectiveProfile       string                 `json:"effective_profile"`
-	ProfileReason          string                 `json:"profile_reason,omitempty"`
-	Query                  string                 `json:"query"`
-	Content                string                 `json:"content"`
-	SourceURLs             []string               `json:"source_urls"`
-	SourcesCount           int                    `json:"sources_count"`
-	SourceOrigin           string                 `json:"source_origin"`
-	ValidSourcesCount      int                    `json:"valid_sources_count"`
-	StructuredSourcesCount int                    `json:"structured_sources_count"`
-	Fallback               string                 `json:"fallback,omitempty"`
-	GrokError              string                 `json:"grok_error,omitempty"`
-	CallerTimeout          string                 `json:"caller_timeout,omitempty"`
-	GrokPoolTimeout        string                 `json:"grok_pool_timeout,omitempty"`
-	NoFallback             bool                   `json:"no_fallback,omitempty"`
-	RouteDecision          []router.RouteDecision `json:"route_decision,omitempty"`
+	Engine                 string                   `json:"engine"`
+	EndpointName           string                   `json:"endpoint_name,omitempty"`
+	Model                  string                   `json:"model,omitempty"`
+	RequestedProfile       string                   `json:"requested_profile"`
+	EffectiveProfile       string                   `json:"effective_profile"`
+	ProfileReason          string                   `json:"profile_reason,omitempty"`
+	Query                  string                   `json:"query"`
+	Content                string                   `json:"content"`
+	SourceURLs             []string                 `json:"source_urls"`
+	SourcesCount           int                      `json:"sources_count"`
+	SourceOrigin           string                   `json:"source_origin"`
+	ValidSourcesCount      int                      `json:"valid_sources_count"`
+	StructuredSourcesCount int                      `json:"structured_sources_count"`
+	Fallback               string                   `json:"fallback,omitempty"`
+	GrokError              string                   `json:"grok_error,omitempty"`
+	AnswerCheck            *tools.SearchAnswerCheck `json:"answer_check,omitempty"`
+	CallerTimeout          string                   `json:"caller_timeout,omitempty"`
+	GrokPoolTimeout        string                   `json:"grok_pool_timeout,omitempty"`
+	NoFallback             bool                     `json:"no_fallback,omitempty"`
+	RouteDecision          []router.RouteDecision   `json:"route_decision,omitempty"`
 }
 
 func runSearch(args []string) int {
@@ -46,6 +47,7 @@ func runSearch(args []string) int {
 	grokPoolTimeout := fs.Duration("grok-pool-timeout", 0, "Override configured Grok pool timeout; 0 disables the pool cap")
 	fallbackAfter := fs.Duration("fallback-after", 0, "Alias for --grok-pool-timeout; controls when Grok gives way to fallback providers")
 	noFallback := fs.Bool("no-fallback", false, "Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")
+	answerCheck := fs.Bool("answer-check", false, "Override jev.answerCheck to run JEV semantic quality check on Grok answers (supports --answer-check=false)")
 	jsonOut := fs.Bool("json", false, "Emit JSON")
 	agentOut := fs.Bool("agent", false, "Emit compact agent-friendly JSON")
 	positional, err := parsePositional(fs, args)
@@ -105,9 +107,22 @@ func runSearch(args []string) int {
 	if !profileProvided {
 		effectiveProfile = cfg.SearchPolicy.DefaultProfile
 	}
-	res, err := tools.RunWebSearch(ctx, clients, query, "", *model, effectiveProfile)
+	searchOpts := tools.WebSearchOptions{
+		Query:   query,
+		Model:   *model,
+		Profile: effectiveProfile,
+		ProfileContext: tools.SearchProfileContext{
+			Flow:         "search",
+			Query:        query,
+			SearchPolicy: cfg.SearchPolicy,
+		},
+	}
+	if flagWasProvided(fs, "answer-check") {
+		searchOpts.AnswerCheck = answerCheck
+	}
+	res, err := tools.RunWebSearchWithOptions(ctx, clients, searchOpts)
 	if err != nil {
-		return reportSearchErr(*jsonOut, *agentOut, query, err.Error())
+		return reportSearchResultErr(*jsonOut, *agentOut, query, res, err.Error())
 	}
 	if *agentOut {
 		return emitAgent(tools.BuildSearchAgentOutput(query, res))
@@ -128,6 +143,7 @@ func runSearch(args []string) int {
 		StructuredSourcesCount: res.StructuredSourcesCount,
 		Fallback:               res.Fallback,
 		GrokError:              res.GrokError,
+		AnswerCheck:            res.AnswerCheck,
 		CallerTimeout:          effectiveTimeout.String(),
 		GrokPoolTimeout:        effectiveGrokPoolTimeout.String(),
 		NoFallback:             *noFallback,
@@ -156,6 +172,9 @@ func emitSearch(asJSON bool, out searchOutput) int {
 	if len(out.RouteDecision) > 0 {
 		fmt.Printf("route_attempts: %d\n\n", len(out.RouteDecision))
 	}
+	if out.AnswerCheck != nil {
+		fmt.Printf("grok_answer_check: %s\n\n", tools.FormatAnswerCheckSummary(out.AnswerCheck, out.Fallback))
+	}
 	fmt.Println(out.Content)
 	if len(out.SourceURLs) > 0 {
 		fmt.Println("\nSources:")
@@ -168,6 +187,26 @@ func emitSearch(asJSON bool, out searchOutput) int {
 
 func reportSearchErr(asJSON, asAgent bool, query, msg string) int {
 	return reportSearchErrCode(asJSON, asAgent, query, msg, 1)
+}
+
+func reportSearchResultErr(asJSON, asAgent bool, query string, res *tools.WebSearchResult, msg string) int {
+	if asAgent {
+		return emitAgentError("search", msg, 1)
+	}
+	if asJSON {
+		out := searchOutput{Query: query, GrokError: msg}
+		if res != nil {
+			out.RequestedProfile = res.RequestedProfile
+			out.EffectiveProfile = res.EffectiveProfile
+			out.ProfileReason = res.ProfileReason
+			out.AnswerCheck = res.AnswerCheck
+			out.RouteDecision = res.RouteTrace.Decisions
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(out)
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	return 1
 }
 
 func reportSearchErrCode(asJSON, asAgent bool, query, msg string, code int) int {

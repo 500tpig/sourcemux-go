@@ -322,7 +322,7 @@ sourcemux --config ./grok-search.json config list --json
 
 | 命令 | 用途 |
 | --- | --- |
-| `sourcemux search <query>` | 按 fallback route 做一次网页搜索 |
+| `sourcemux search <query>` | 按 fallback route 做一次网页搜索；支持 `--answer-check` / `--answer-check=false` 单次开关 JEV 回答语义检查 |
 | `sourcemux docs-search <query>` | 文档搜索；使用 Exa docs/web search fallback |
 | `sourcemux fetch <url>` | 抓取一个 URL 的正文 |
 | `sourcemux map <url>` | 用 Tavily 发现站点 URL |
@@ -397,7 +397,7 @@ MCP 侧常用工具：
 
 | 工具 | 用途 |
 | --- | --- |
-| `web_search` | 紧凑搜索摘要，带 provider fallback 和来源提取 |
+| `web_search` | 紧凑搜索摘要，带 provider fallback、来源提取与可选 `answer_check` 语义质量检查 |
 | `docs_search` | 文档搜索；使用 Exa docs/web search fallback |
 | `get_sources` | 返回上一次 `web_search` 的 URL 列表 |
 | `web_fetch` | 抓取网页正文摘要 |
@@ -669,6 +669,7 @@ Config fields:
 | `exa` | No | Exa Search / Contents fallback and advanced Exa tools. |
 | `jina` | No | Jina Reader fetch; works without a key. |
 | `tinyfish` | No | TinyFish Search / Fetch fallback with multi-key rotation. |
+| `jev` | No | Optional JEV judgment service (`apiURL`, `apiKey`, `model`, `timeoutSec`, `answerCheck`). `jev.answerCheck` defaults to `false`; set `true` or pass CLI `--answer-check` / MCP `answer_check` to check Grok answers for substance and title/snippet contradiction (not full-text verification). See [`docs/JEV.md`](docs/JEV.md). |
 | `grokPoolTimeoutSec` | No | Default overall Grok pool wall-clock budget in seconds. Override per search with `--grok-pool-timeout`; `0` disables the pool cap. Grok HTTP requests follow the caller/pool context instead of imposing a separate fixed timeout. |
 | `searchPolicy.defaultProfile` | No | Raw `sourcemux search` default profile. Public default: `default`; set `auto` to opt into policy-driven auto search. |
 | `searchPolicy.agentProfile` | No | Profile generated `sourcemux-routing` skills use for one-shot search examples. Public default: `auto`. |
@@ -754,6 +755,7 @@ Search-specific controls:
 - `--grok-pool-timeout <dur>` overrides `grokPoolTimeoutSec` for that call; `0` disables the Grok pool cap and leaves cancellation to `--timeout` or the caller.
 - `--fallback-after <dur>` is an alias for `--grok-pool-timeout` when you want the selected Grok pool to give way to fallback providers after a bounded wait.
 - `--no-fallback` disables TinyFish/Exa/Tavily fallback so failures from the selected Grok pool are visible; use it for diagnostics only, not user-facing research/search.
+- `--answer-check` overrides `jev.answerCheck` on `search` (supports `--answer-check=false` to disable per call). Only checks Grok answers on direct `search`, not `research` or `smart-answer`. Rejected Grok answers trigger fallback; `answer_check.status="rejected"` describes the original Grok answer even when a fallback provider succeeds. JEV failure or missing key preserves the Grok answer as `unverified`. See [`docs/JEV.md`](docs/JEV.md).
 
 Live search evaluation is separate from unit tests and requires an explicit
 `--live` acknowledgement because it can consume paid provider quota. It calls
@@ -851,7 +853,7 @@ MCP tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `web_search` | Compact MCP search summary with source extraction and provider fallback. |
+| `web_search` | Compact MCP search summary with source extraction, provider fallback, and optional `answer_check` boolean override. |
 | `docs_search` | Documentation search through Exa docs/web search fallback. |
 | `get_sources` | Return URLs from a previous `web_search` session. |
 | `web_fetch` | Compact MCP fetch excerpt with provider fallback. |

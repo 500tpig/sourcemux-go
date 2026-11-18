@@ -67,7 +67,17 @@ func Run(cfg *config.Config) error {
 		Order:       cfg.WebFetchOrder,
 		StrictOrder: cfg.WebFetchStrictOrder,
 	}
-	tools.RegisterSearch(s, app.GrokPool, app.TinyFish, app.Exa, app.Tavily, app, cfg.SearchPolicy)
+	jevClient := engine.NewJEVClient(cfg.JEV)
+	tools.RegisterSearchWithClients(s, tools.WebSearchClients{
+		Pool:         app.GrokPool,
+		TinyFish:     app.TinyFish,
+		Exa:          app.Exa,
+		Tavily:       app.Tavily,
+		JEV:          jevClient,
+		AnswerCheck:  cfg.JEV.AnswerCheck,
+		Cache:        app,
+		SearchPolicy: cfg.SearchPolicy,
+	})
 	tools.RegisterDocsSearch(s, app.Exa, app)
 	tools.RegisterFetch(s, fetchClients)
 	tools.RegisterExaSearchAdvanced(s, app.Exa)
@@ -78,7 +88,7 @@ func Run(cfg *config.Config) error {
 	tools.RegisterConfig(s, cfg, app.GrokPool)
 	tools.RegisterSearchPlanning(s)
 	researchExecutor := tools.NewResearchExecutor(tools.ResearchExecutorDeps{
-		JEV: engine.NewJEVClient(cfg.JEV),
+		JEV: jevClient,
 		Search: tools.WebSearchClients{
 			Pool:         app.GrokPool,
 			TinyFish:     app.TinyFish,

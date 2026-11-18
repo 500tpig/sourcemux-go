@@ -66,6 +66,7 @@ Common flags (subcommand-dependent):
   --fallback-after <dur>
                       Alias for --grok-pool-timeout on search; defaults to 180s when unset.
   --no-fallback       Search only the selected Grok pool; use for diagnostics, not normal research.
+  --answer-check      Override jev.answerCheck on search (supports --answer-check=false).
   --help, -h          Show this usage.
 
 Examples:

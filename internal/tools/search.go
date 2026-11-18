@@ -23,6 +23,10 @@ type SourceCacher interface {
 	CacheSources(sessionID string, urls []string)
 }
 
+// SearchAnswerCheck records optional JEV semantic quality check outcome on the
+// primary Grok search answer.
+type SearchAnswerCheck = adapters.SearchAnswerCheck
+
 // WebSearchClients groups the production search providers in the same order
 // used by the web_search MCP tool and CLI search command.
 type WebSearchClients struct {
@@ -30,6 +34,8 @@ type WebSearchClients struct {
 	TinyFish         *engine.TinyFishPool
 	Exa              *engine.ExaClient
 	Tavily           *engine.TavilyClient
+	JEV              *engine.JEVClient
+	AnswerCheck      bool
 	Cache            SourceCacher
 	DisableFallbacks bool
 	SearchPolicy     config.SearchPolicy
@@ -38,35 +44,38 @@ type WebSearchClients struct {
 // WebSearchResult is the provider-agnostic result envelope shared by MCP, CLI,
 // and the higher-level research workflow.
 type WebSearchResult struct {
-	Query                  string            `json:"query"`
-	Engine                 string            `json:"engine"`
-	EndpointName           string            `json:"endpoint_name,omitempty"`
-	Model                  string            `json:"model,omitempty"`
-	RequestedProfile       string            `json:"requested_profile"`
-	EffectiveProfile       string            `json:"effective_profile"`
-	ProfileReason          string            `json:"profile_reason,omitempty"`
-	SessionID              string            `json:"session_id,omitempty"`
-	Content                string            `json:"content"`
-	SourceURLs             []string          `json:"source_urls"`
-	SourcesCount           int               `json:"sources_count"`
-	SourceOrigin           string            `json:"source_origin"`
-	ValidSourcesCount      int               `json:"valid_sources_count"`
-	StructuredSourcesCount int               `json:"structured_sources_count"`
-	Fallback               string            `json:"fallback,omitempty"`
-	GrokError              string            `json:"grok_error,omitempty"`
-	RouteTrace             router.RouteTrace `json:"route_trace,omitempty"`
+	Query                  string             `json:"query"`
+	Engine                 string             `json:"engine"`
+	EndpointName           string             `json:"endpoint_name,omitempty"`
+	Model                  string             `json:"model,omitempty"`
+	RequestedProfile       string             `json:"requested_profile"`
+	EffectiveProfile       string             `json:"effective_profile"`
+	ProfileReason          string             `json:"profile_reason,omitempty"`
+	SessionID              string             `json:"session_id,omitempty"`
+	Content                string             `json:"content"`
+	SourceURLs             []string           `json:"source_urls"`
+	SourcesCount           int                `json:"sources_count"`
+	SourceOrigin           string             `json:"source_origin"`
+	ValidSourcesCount      int                `json:"valid_sources_count"`
+	StructuredSourcesCount int                `json:"structured_sources_count"`
+	Fallback               string             `json:"fallback,omitempty"`
+	GrokError              string             `json:"grok_error,omitempty"`
+	AnswerCheck            *SearchAnswerCheck `json:"answer_check,omitempty"`
+	RouteTrace             router.RouteTrace  `json:"route_trace,omitempty"`
 }
 
 // WebSearchOptions is the shared input contract for direct search and
 // higher-level research callers.
 type WebSearchOptions struct {
 	// Provider 仅允许现有已配置渠道；为空时保持原有兜底顺序。
-	Provider       string
-	Query          string
-	Platform       string
-	Model          string
-	Profile        string
-	ProfileContext SearchProfileContext
+	Provider        string
+	Query           string
+	Platform        string
+	Model           string
+	Profile         string
+	AnswerCheck     *bool
+	SkipAnswerCheck bool
+	ProfileContext  SearchProfileContext
 }
 
 // RegisterSearch registers the web_search tool.
@@ -79,14 +88,28 @@ type WebSearchOptions struct {
 //     previous engine fails.
 //     endpoint either errors or returns empty content.
 func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *engine.TinyFishPool, exa *engine.ExaClient, tavily *engine.TavilyClient, cache SourceCacher, policy config.SearchPolicy) {
+	RegisterSearchWithClients(s, WebSearchClients{
+		Pool:         pool,
+		TinyFish:     tinyfish,
+		Exa:          exa,
+		Tavily:       tavily,
+		Cache:        cache,
+		SearchPolicy: policy,
+	})
+}
+
+// RegisterSearchWithClients registers the web_search MCP tool using the full
+// WebSearchClients configuration, including optional JEV answer checking.
+func RegisterSearchWithClients(s *mcpserver.MCPServer, clients WebSearchClients) {
 	tool := mcp.NewTool("web_search",
-		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to TinyFish Search, Exa Search, and Tavily Search. Returns answer/source text, an engine label, and a session_id for source retrieval."),
+		mcp.WithDescription("AI-powered web search. Tries each configured Grok endpoint in priority order, then falls back to TinyFish Search, Exa Search, and Tavily Search. Optional answer_check uses JEV to check whether a Grok answer substantively responds and whether visible source titles/snippets directly contradict it (not full-text verification). Returns answer/source text, an engine label, and a session_id for source retrieval."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithString("platform", mcp.Description("Focus platform, e.g. 'Twitter', 'GitHub, Reddit'")),
 		mcp.WithString("model", mcp.Description("Optional one-shot Grok model override, e.g. 'grok-4.20-fast'")),
 		mcp.WithString("profile", mcp.Description("Optional Grok endpoint profile: default, auto, heavy, or another configured profile; omitted uses searchPolicy.defaultProfile")),
 		mcp.WithNumber("grok_pool_timeout_sec", mcp.Description("Optional per-call Grok pool timeout in seconds; 0 disables the pool cap and leaves cancellation to the caller context")),
 		mcp.WithBoolean("no_fallback", mcp.Description("Only try the selected Grok pool; do not fall back to TinyFish, Exa, or Tavily")),
+		mcp.WithBoolean("answer_check", mcp.Description("Optional override for JEV semantic quality check on Grok answers (true/false); omitted uses jev.answerCheck")),
 		mcp.WithBoolean("include_trace", mcp.Description("Return full route trace in _meta.route_trace")),
 	)
 
@@ -96,24 +119,37 @@ func RegisterSearch(s *mcpserver.MCPServer, pool *engine.GrokPool, tinyfish *eng
 		model, _ := req.Params.Arguments["model"].(string)
 		profile, _ := req.Params.Arguments["profile"].(string)
 		includeTrace := boolArgOr(req.Params.Arguments, "include_trace", false)
-		clients := WebSearchClients{
-			Pool:         pool,
-			TinyFish:     tinyfish,
-			Exa:          exa,
-			Tavily:       tavily,
-			Cache:        cache,
-			SearchPolicy: policy,
-		}
-		if boolArgOr(req.Params.Arguments, "no_fallback", false) {
-			clients.DisableFallbacks = true
-		}
-		if seconds, ok := nonNegativeIntArg(req.Params.Arguments, "grok_pool_timeout_sec"); ok {
-			clients = clients.WithGrokPoolTimeout(time.Duration(seconds) * time.Second)
-		} else {
-			clients = clients.WithGrokPoolTimeout(effectiveFallbackAfter(policy))
+		answerCheck, answerCheckSet, err := optionalBoolArg(req.Params.Arguments, "answer_check")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		res, err := RunWebSearch(ctx, clients, query, platform, model, profile)
+		callClients := clients
+		if boolArgOr(req.Params.Arguments, "no_fallback", false) {
+			callClients.DisableFallbacks = true
+		}
+		if seconds, ok := nonNegativeIntArg(req.Params.Arguments, "grok_pool_timeout_sec"); ok {
+			callClients = callClients.WithGrokPoolTimeout(time.Duration(seconds) * time.Second)
+		} else {
+			callClients = callClients.WithGrokPoolTimeout(effectiveFallbackAfter(callClients.SearchPolicy))
+		}
+
+		opts := WebSearchOptions{
+			Query:    query,
+			Platform: platform,
+			Model:    model,
+			Profile:  profile,
+			ProfileContext: SearchProfileContext{
+				Flow:         searchProfileFlowSearch,
+				Query:        query,
+				SearchPolicy: callClients.SearchPolicy,
+			},
+		}
+		if answerCheckSet {
+			opts.AnswerCheck = &answerCheck
+		}
+
+		res, err := RunWebSearchWithOptions(ctx, callClients, opts)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -186,7 +222,7 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 		return nil, err
 	}
 
-	providers := searchProviders(clients)
+	providers, grokProvider := searchProvidersWithGrok(clients)
 	if opts.Provider != "" {
 		var selected []capability.Provider
 		for _, provider := range providers {
@@ -198,20 +234,42 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 			return nil, fmt.Errorf("search provider is not configured: %s", opts.Provider)
 		}
 		providers = selected
+		if opts.Provider != "grok-pool" {
+			grokProvider = nil
+		}
+	}
+	reqOptions := map[string]any{
+		"model":   model,
+		"profile": profileResolution.EffectiveProfile,
+	}
+	if opts.SkipAnswerCheck || profileCtx.Flow == searchProfileFlowResearch {
+		reqOptions["skip_answer_check"] = true
+	} else if opts.AnswerCheck != nil {
+		reqOptions["answer_check"] = *opts.AnswerCheck
 	}
 	r := router.New(providers...)
 	res, trace := r.Run(ctx, capability.MainSearch, capability.Request{
-		Query: query,
-		Options: map[string]any{
-			"model":   model,
-			"profile": profileResolution.EffectiveProfile,
-		},
+		Query:   query,
+		Options: reqOptions,
 	})
+	var answerCheck *SearchAnswerCheck
+	if grokProvider != nil {
+		answerCheck = grokProvider.LastAnswerCheck()
+	}
 	if strings.TrimSpace(res.Content) == "" {
-		if detail := firstFailureDetail(trace); detail != "" {
-			return nil, fmt.Errorf("search failed: %s", detail)
+		failure := &WebSearchResult{
+			Query:            query,
+			RequestedProfile: profileResolution.RequestedProfile,
+			EffectiveProfile: profileResolution.EffectiveProfile,
+			ProfileReason:    profileResolution.ProfileReason,
+			GrokError:        grokFailureDetail(trace),
+			AnswerCheck:      answerCheck,
+			RouteTrace:       trace,
 		}
-		return nil, fmt.Errorf("search returned empty result and no fallback configured")
+		if detail := firstFailureDetail(trace); detail != "" {
+			return failure, fmt.Errorf("search failed: %s", detail)
+		}
+		return failure, fmt.Errorf("search returned empty result and no fallback configured")
 	}
 
 	sessionID := uuid.New().String()
@@ -234,6 +292,7 @@ func RunWebSearchWithOptions(ctx context.Context, clients WebSearchClients, opts
 		StructuredSourcesCount: metadataInt(res.Metadata, "structured_sources_count", 0),
 		Fallback:               metadataString(res.Metadata, "fallback", ""),
 		GrokError:              grokFailureDetail(trace),
+		AnswerCheck:            answerCheck,
 		RouteTrace:             trace,
 	}, nil
 }
@@ -378,6 +437,9 @@ func FormatWebSearchResult(res *WebSearchResult) string {
 		fmt.Fprintf(&sb, "route: final_provider=%s fallback_triggered=%v attempts_count=%d\n",
 			res.RouteTrace.FinalProvider, res.RouteTrace.FallbackTriggered, res.RouteTrace.AttemptsCount)
 	}
+	if res.AnswerCheck != nil {
+		fmt.Fprintf(&sb, "grok_answer_check: %s\n", FormatSearchAnswerCheckSummary(res))
+	}
 	if res.SessionID != "" && res.SourcesCount > 0 {
 		sb.WriteString("sources: call get_sources(session_id) for URLs\n")
 	}
@@ -393,12 +455,23 @@ func FormatWebSearchResult(res *WebSearchResult) string {
 }
 
 func searchProviders(clients WebSearchClients) []capability.Provider {
+	providers, _ := searchProvidersWithGrok(clients)
+	return providers
+}
+
+func searchProvidersWithGrok(clients WebSearchClients) ([]capability.Provider, *adapters.GrokSearchProvider) {
 	var providers []capability.Provider
+	var grokProvider *adapters.GrokSearchProvider
 	if clients.Pool != nil && clients.Pool.Len() > 0 {
-		providers = append(providers, adapters.NewGrokSearch(clients.Pool))
+		var checker adapters.AnswerChecker
+		if clients.JEV != nil {
+			checker = clients.JEV
+		}
+		grokProvider = adapters.NewGrokSearchWithAnswerCheck(clients.Pool, checker, clients.AnswerCheck)
+		providers = append(providers, grokProvider)
 	}
 	if clients.DisableFallbacks {
-		return providers
+		return providers, grokProvider
 	}
 	if clients.TinyFish != nil && clients.TinyFish.Len() > 0 {
 		providers = append(providers, adapters.NewTinyFishSearch(clients.TinyFish))
@@ -409,7 +482,48 @@ func searchProviders(clients WebSearchClients) []capability.Provider {
 	if clients.Tavily != nil {
 		providers = append(providers, adapters.NewTavilySearch(clients.Tavily))
 	}
-	return providers
+	return providers, grokProvider
+}
+
+// FormatSearchAnswerCheckSummary formats the Grok answer check outcome clearly,
+// distinguishing a rejected Grok answer from a successful fallback result.
+func FormatSearchAnswerCheckSummary(res *WebSearchResult) string {
+	if res == nil || res.AnswerCheck == nil {
+		return ""
+	}
+	return FormatAnswerCheckSummary(res.AnswerCheck, res.Fallback)
+}
+
+// FormatAnswerCheckSummary formats a SearchAnswerCheck status line.
+func FormatAnswerCheckSummary(check *SearchAnswerCheck, fallback string) string {
+	if check == nil {
+		return ""
+	}
+	if check.Status == "rejected" && fallback != "" {
+		if check.Reason != "" {
+			return fmt.Sprintf("rejected (%s; switched to fallback %s)", check.Reason, fallback)
+		}
+		return fmt.Sprintf("rejected (switched to fallback %s)", fallback)
+	}
+	if check.Reason != "" {
+		return fmt.Sprintf("%s (%s)", check.Status, check.Reason)
+	}
+	return check.Status
+}
+
+func optionalBoolArg(args map[string]any, key string) (bool, bool, error) {
+	if args == nil {
+		return false, false, nil
+	}
+	v, exists := args[key]
+	if !exists {
+		return false, false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return b, true, nil
 }
 
 func sourceURLsFromCapability(sources []capability.Source) []string {
@@ -481,6 +595,22 @@ func nonNegativeIntArg(args map[string]any, key string) (int, bool) {
 }
 
 func firstFailureDetail(trace router.RouteTrace) string {
+	var detail string
+	for _, d := range trace.Decisions {
+		if d.Status != "skipped" && d.FallbackDetail != "" {
+			detail = d.FallbackDetail
+			break
+		}
+	}
+	if detail != "" {
+		if trace.Error != "" && !strings.Contains(detail, trace.Error) {
+			return detail + "; " + trace.Error
+		}
+		return detail
+	}
+	if trace.Error != "" {
+		return trace.Error
+	}
 	for _, d := range trace.Decisions {
 		if d.FallbackDetail != "" {
 			return d.FallbackDetail

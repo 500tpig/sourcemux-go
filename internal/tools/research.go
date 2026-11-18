@@ -250,10 +250,11 @@ func (p webSearchResearchProvider) Search(ctx context.Context, query, platform, 
 		clients = withResearchGrokPoolTimeout(clients, fallbackAfter)
 	}
 	return RunWebSearchWithOptions(ctx, clients, WebSearchOptions{
-		Query:          query,
-		Platform:       platform,
-		Profile:        profile,
-		ProfileContext: profileCtx,
+		Query:           query,
+		Platform:        platform,
+		Profile:         profile,
+		SkipAnswerCheck: true,
+		ProfileContext:  profileCtx,
 	})
 }
 

@@ -1,6 +1,10 @@
-# JEV 研究模式
+# JEV 模式与质量判断
 
-JEV 负责选择研究动作和判断已读资料是否足够。搜索和抓取继续使用已有渠道，最终答案由独立的 reasoning 模型生成。默认 `mode=fixed`；只有显式指定 `jev` 才会调用判断服务。
+JEV 在 SourceMux 中用于两类可选场景：
+1. 研究模式（`mode=jev`）：选择研究动作和判断已读资料是否足够。搜索和抓取继续使用已有渠道，最终答案由独立的 reasoning 模型生成。默认 `mode=fixed`。
+2. 普通搜索语义质量检查（`answer_check`，默认关闭）：对普通 `search` / `web_search` 返回的 Grok 模型回答检查是否实质回答问题，以及可见引用来源的标题或摘要是否直接反驳主结论。
+
+两者均不默认给每次普通搜索增加模型调用；只有显式启用时才会请求判断服务。
 
 ## 配置与调用
 
@@ -12,12 +16,15 @@ JEV 负责选择研究动作和判断已读资料是否足够。搜索和抓取�
     "apiURL": "https://api.typesafe.ai/v1",
     "apiKey": "YOUR_TYPESAFE_API_KEY",
     "model": "jev-latest",
-    "timeoutSec": 15
+    "timeoutSec": 15,
+    "answerCheck": false
   }
 }
 ```
 
-这是需合入现有文件的配置片段；搜索和抓取仍需已有渠道配置。`apiURL`、`model`、`timeoutSec` 可省略并使用示例中的默认值，超时范围为 1–300 秒。地址可包含 `/systemone`，客户端不会重复追加。`config migrate` 保留 JEV 配置；诊断输出只显示 Key 是否配置。
+这是需合入现有文件的配置片段；搜索和抓取仍需已有渠道配置。`apiURL`、`model`、`timeoutSec`、`answerCheck` 均可省略并使用示例中的默认值，超时范围为 1–300 秒。地址可包含 `/systemone`，客户端不会重复追加。`config migrate` 保留 JEV 配置；诊断输出只显示 Key 是否配置及 `answerCheck` 状态。
+
+### 研究模式调用
 
 ```bash
 sourcemux --config ./sourcemux.json research "比较两个项目的维护现状" --mode jev --depth standard --max-fetches 3 --json
@@ -30,9 +37,37 @@ MCP 的 `research_run` 和 `smart_answer` 均支持以下参数；其他参数�
 {"query":"比较两个项目的维护现状","mode":"jev","depth":"standard","max_fetches":3}
 ```
 
+### 普通搜索回答语义检查（可选）
+
+普通搜索默认不开启检查（`jev.answerCheck=false`）。可通过配置文件开启，也可在单次调用时显式覆盖（包括用 `false` 临时关闭）：
+
+```bash
+sourcemux --config ./sourcemux.json search "最新规范变更" --answer-check --json
+sourcemux --config ./sourcemux.json search "ping" --answer-check=false --json
+```
+
+MCP `web_search` 支持同名可选布尔参数 `answer_check`（省略时继承 `jev.answerCheck`，传入 `true` 或 `false` 覆盖本次调用）：
+
+```json
+{"query":"最新规范变更","answer_check":true}
+```
+
+触发与预算规则：
+- **仅作用于普通直接 search 的 `grok-pool` 回答**：`research`（`fixed`/`jev`）和 `smart-answer` 内部调用搜索时跳过此检查；TinyFish、Exa、Tavily 等源检索结果也不再单独调用 JEV。
+- **空内容或无有效 HTTP(S) URL 先走既有本地校验**：在进入 JEV 之前直接按 `no_content` / `no_valid_sources` 触发 fallback，不浪费 JEV 调用。
+- **每次搜索最多一次逻辑检查**：底层复用 `JEVClient.Evaluate`（遇到 HTTP 429/529 最多尝试 3 次，因此底层并非严格只有一次 HTTP 请求），单次检查受 `jev.timeoutSec`（默认 15 秒）与调用方总截止时间双重约束。
+- **拒绝、降级与取消契约**：
+  - `substantive < 0.5`（未实质回答，如仅说准备搜索）或 `contradicted >= 0.5`（主要结论被引用标题/摘要直接反驳）时，将 Grok 尝试标记为 `answer_rejected` 并进入既有 fallback（TinyFish -> Exa -> Tavily）；传 `--no-fallback` / `no_fallback=true` 时不会绕过拒绝，而是直接返回失败并在诊断信息中保留拒绝原因。
+  - 若 JEV 判断失败（如网络/HTTP 错误、非法概率或 JEV 单次超时）或未配置 `jev.apiKey`：不丢弃原搜索结果，保留 Grok 回答并标记 `answer_check.status="unverified"`（`reason` 为 `jev_error` 或 `jev_unconfigured`）；`--agent` 输出会额外写入告警，避免把未验证结果冒充为已验证。
+  - 若是调用方主动取消或外层总截止时间到期，遵循原有取消/超时契约直接失败，不会当作普通 JEV 故障恢复成成功。
+- **结果字段与文案语义**：
+  - JSON 新增可选 `answer_check`（未启用时省略），包含 `status`（`passed` / `rejected` / `unverified`）、`reason`、`scores`、`elapsed_ms`、上游实际返回的 `input_tokens` / `output_tokens` 及脱敏 `error`。
+  - **`status="rejected"` 描述的是 Grok 原回答被拒**：即使后续 fallback 成功返回了 TinyFish/Exa/Tavily 结果，文本中的 `grok_answer_check: rejected (...; switched to fallback ...)` 和 JSON 中的 `answer_check` 仍表示 Grok 原回答被拒，不代表最终返回的 fallback 结果被拒。
+- **证据边界**：仅透传 Grok 上游实际返回的来源标题和摘要元数据（未返回时留空，不猜字段也不额外抓取网页）。标题和摘要检查只能发现明显矛盾，**不能称为全文事实核验**。
+
 ## 执行和预算
 
-每轮提供已配置搜索渠道、计划查询、固定缺口查询以及最多五个已发现 URL。Grok 候选还受所选 profile 限制。选择概率至少 0.5 才执行；相同动作不重复，指定搜索渠道不在该动作内切换供应商。后续轮次可以选择其他渠道；抓取仍使用现有兜底路由。每轮动作顺序执行，以便直接共享取消与预算，不额外并发。
+每轮提供已配置搜索渠道、计划查询、固定缺口查询以及最多五个已发现 URL。每个候选动作附带基于当前实现能力的 `guidance`（例如说明搜索操作不传服务端域名/时间过滤、摘要不等于已读正文、`web_fetch` 仅适合读取已知 URL 且受允许域名与抓取次数约束）。Grok 候选还受所选 profile 限制。选择概率至少 0.5 才执行；相同动作不重复，指定搜索渠道不在该动作内切换供应商。后续轮次可以选择其他渠道；抓取仍使用现有兜底路由。每轮动作顺序执行，以便直接共享取消与预算，不额外并发。
 
 | 深度 | 最多轮数 | 每轮最多搜索／抓取动作 | 最多阅读页数 | 总时限 |
 | --- | --- | --- | --- | --- |

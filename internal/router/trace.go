@@ -18,13 +18,18 @@ type RouteTrace struct {
 	FinalProvider     string          `json:"final_provider,omitempty"`
 	FallbackTriggered bool            `json:"fallback_triggered"`
 	AttemptsCount     int             `json:"attempts_count"`
+	Error             string          `json:"error,omitempty"`
 	Decisions         []RouteDecision `json:"route_decision,omitempty"`
 }
 
 func (t RouteTrace) Compact() map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"final_provider":     t.FinalProvider,
 		"fallback_triggered": t.FallbackTriggered,
 		"attempts_count":     t.AttemptsCount,
 	}
+	if t.Error != "" {
+		out["error"] = t.Error
+	}
+	return out
 }

@@ -2177,3 +2177,225 @@ func TestResearchCommandsRejectInvalidMode(t *testing.T) {
 		t.Fatal("invalid mode reached runner")
 	}
 }
+
+func TestRunSearchAnswerCheckLifecycleAndOverrides(t *testing.T) {
+	grok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"message":{"content":"I will search that now.","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.com/fact","title":"Fact Page"}}]}}],
+			"citations":["https://example.com/fact"]
+		}`)
+	}))
+	defer grok.Close()
+
+	var tavilyCalls atomic.Int32
+	tavily := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tavilyCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"answer":"Fallback evidence answer","results":[{"title":"Fact Page","url":"https://example.com/fact","content":"verified fact","score":0.9}]}`)
+	}))
+	defer tavily.Close()
+
+	var jevCalls atomic.Int32
+	var jevMode atomic.Int32 // 0=pass, 1=reject(not_substantive), 2=fail(503), 3=hang
+	stopJEV := make(chan struct{})
+	jev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		jevCalls.Add(1)
+		switch jevMode.Load() {
+		case 1:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"answers": map[string]any{
+					"substantive":  map[string]any{"type": "noul", "noul": 0.1},
+					"contradicted": map[string]any{"type": "noul", "noul": 0.05},
+				},
+			})
+		case 2:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case 3:
+			select {
+			case <-r.Context().Done():
+			case <-stopJEV:
+			}
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"answers": map[string]any{
+					"substantive":  map[string]any{"type": "noul", "noul": 0.9},
+					"contradicted": map[string]any{"type": "noul", "noul": 0.1},
+				},
+			})
+		}
+	}))
+	defer jev.Close()
+	defer close(stopJEV)
+
+	t.Run("default_disabled_and_explicit_enable_reject_fallback", func(t *testing.T) {
+		jevCalls.Store(0)
+		tavilyCalls.Store(0)
+		jevMode.Store(1)
+		path := writeCLIConfig(t, `{
+			"jev": {"apiURL": "`+jev.URL+`", "apiKey": "jev-secret", "answerCheck": false},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			"tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+		}`)
+
+		out := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+				t.Fatalf("Run(search) = %d, want 0", got)
+			}
+		})
+		if jevCalls.Load() != 0 || strings.Contains(out, `"answer_check"`) {
+			t.Fatalf("default disabled called JEV or emitted answer_check: calls=%d out=%s", jevCalls.Load(), out)
+		}
+
+		out = captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--answer-check", "--json"}); got != 0 {
+				t.Fatalf("Run(search --answer-check) = %d, want 0", got)
+			}
+		})
+		var decoded searchOutput
+		if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+			t.Fatalf("decode: %v\n%s", err, out)
+		}
+		if decoded.Fallback != "tavily" || decoded.Engine != "Tavily Search" || tavilyCalls.Load() != 1 {
+			t.Fatalf("expected fallback to tavily, got %+v tavilyCalls=%d", decoded, tavilyCalls.Load())
+		}
+		if decoded.AnswerCheck == nil || decoded.AnswerCheck.Status != "rejected" || decoded.AnswerCheck.Reason != "not_substantive" {
+			t.Fatalf("answer_check = %+v", decoded.AnswerCheck)
+		}
+		if len(decoded.RouteDecision) != 2 || decoded.RouteDecision[0].FallbackReason != "answer_rejected" {
+			t.Fatalf("route_decision = %+v", decoded.RouteDecision)
+		}
+
+		textOut := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--answer-check"}); got != 0 {
+				t.Fatalf("Run(search --answer-check text) = %d, want 0", got)
+			}
+		})
+		if !strings.Contains(textOut, "grok_answer_check: rejected (not_substantive; switched to fallback tavily)") {
+			t.Fatalf("text output missing clear fallback wording:\n%s", textOut)
+		}
+	})
+
+	t.Run("config_enabled_accept_and_explicit_false_override", func(t *testing.T) {
+		jevCalls.Store(0)
+		tavilyCalls.Store(0)
+		jevMode.Store(0)
+		path := writeCLIConfig(t, `{
+			"jev": {"apiURL": "`+jev.URL+`", "apiKey": "jev-secret", "answerCheck": true},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			"tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+		}`)
+
+		out := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+				t.Fatalf("Run(search) = %d, want 0", got)
+			}
+		})
+		var decoded searchOutput
+		if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Engine != "local" || decoded.AnswerCheck == nil || decoded.AnswerCheck.Status != "passed" || jevCalls.Load() != 1 {
+			t.Fatalf("unexpected accepted result: %+v calls=%d", decoded, jevCalls.Load())
+		}
+
+		out = captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--answer-check=false", "--json"}); got != 0 {
+				t.Fatalf("Run(search --answer-check=false) = %d, want 0", got)
+			}
+		})
+		if jevCalls.Load() != 1 || strings.Contains(out, `"answer_check"`) {
+			t.Fatalf("explicit --answer-check=false did not override config: calls=%d out=%s", jevCalls.Load(), out)
+		}
+	})
+
+	t.Run("no_fallback_does_not_bypass_rejection", func(t *testing.T) {
+		jevCalls.Store(0)
+		tavilyCalls.Store(0)
+		jevMode.Store(1)
+		path := writeCLIConfig(t, `{
+			"jev": {"apiURL": "`+jev.URL+`", "apiKey": "jev-secret", "answerCheck": true},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			"tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+		}`)
+
+		out := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--no-fallback", "--json"}); got != 1 {
+				t.Fatalf("Run(search --no-fallback) = %d, want 1", got)
+			}
+		})
+		if tavilyCalls.Load() != 0 {
+			t.Fatalf("fallback ran with --no-fallback: %d", tavilyCalls.Load())
+		}
+		var decoded searchOutput
+		if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(decoded.GrokError, "not_substantive") || decoded.AnswerCheck == nil || decoded.AnswerCheck.Status != "rejected" {
+			t.Fatalf("unexpected --no-fallback rejection output: %+v", decoded)
+		}
+	})
+
+	t.Run("jev_failure_and_missing_key_keep_answer_unverified_and_warn_agent", func(t *testing.T) {
+		jevMode.Store(2)
+		path := writeCLIConfig(t, `{
+			"jev": {"apiURL": "`+jev.URL+`", "apiKey": "jev-secret", "answerCheck": true},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			"tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+		}`)
+
+		out := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--json"}); got != 0 {
+				t.Fatalf("Run(search jev failure) = %d, want 0", got)
+			}
+		})
+		var decoded searchOutput
+		if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Engine != "local" || decoded.Fallback != "" || decoded.AnswerCheck == nil || decoded.AnswerCheck.Status != "unverified" || decoded.AnswerCheck.Reason != "jev_error" {
+			t.Fatalf("unexpected jev failure output: %+v", decoded)
+		}
+
+		noKeyPath := writeCLIConfig(t, `{
+			"jev": {"answerCheck": true},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}]
+		}`)
+		agentOut := captureStdout(t, func() {
+			if got := Run([]string{"--config", noKeyPath, "search", "q", "--agent"}); got != 0 {
+				t.Fatalf("Run(search --agent missing jev key) = %d, want 0", got)
+			}
+		})
+		var agent tools.AgentOutput
+		if err := json.Unmarshal([]byte(agentOut), &agent); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.Join(agent.Warnings, "\n"), "unverified") {
+			t.Fatalf("agent warnings missing unverified notice: %+v", agent.Warnings)
+		}
+	})
+
+	t.Run("caller_timeout_during_jev_fails_without_recovery", func(t *testing.T) {
+		jevMode.Store(3)
+		tavilyCalls.Store(0)
+		path := writeCLIConfig(t, `{
+			"jev": {"apiURL": "`+jev.URL+`", "apiKey": "jev-secret", "timeoutSec": 15, "answerCheck": true},
+			"grokEndpoints": [{"name":"local","baseURL":"`+grok.URL+`","apiKey":"sk-local","model":"grok-test"}],
+			"tavily": {"enabled": true, "apiURL": "`+tavily.URL+`", "apiKey": "tvly-secret"}
+		}`)
+
+		out := captureStdout(t, func() {
+			if got := Run([]string{"--config", path, "search", "q", "--timeout", "100ms", "--json"}); got != 1 {
+				t.Fatalf("Run(search timeout during jev) = %d, want 1", got)
+			}
+		})
+		var decoded searchOutput
+		if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Content != "" || !strings.Contains(decoded.GrokError, "deadline") {
+			t.Fatalf("expected timeout failure without content recovery, got %+v", decoded)
+		}
+	})
+}

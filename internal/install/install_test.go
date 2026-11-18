@@ -211,9 +211,9 @@ func TestRoutingSkillJEVCommandsPreserveConfiguredPaths(t *testing.T) {
 				t.Fatalf("missing executable command with configured paths: %s", command)
 			}
 		}
-		for _, field := range []string{"jev.assessment", "jev.stop_reason", "jev.read_pages", "fetched_pages_summary[].reading", "answer_readiness"} {
+		for _, field := range []string{"jev.assessment", "jev.stop_reason", "jev.read_pages", "fetched_pages_summary[].reading", "answer_readiness", "jev.answerCheck=false", "--answer-check=false", "not full-text fact verification", "original Grok answer"} {
 			if !strings.Contains(text, field) {
-				t.Fatalf("missing result field needed for interpreting research: %s", field)
+				t.Fatalf("missing result field or boundary guidance needed for interpreting research/search: %s", field)
 			}
 		}
 		for _, stale := range []string{"private-jev-test-key", "Multi-source investigation with synthesis", "Then fetch 1-3", "that verifies URL content", "%!"} {

@@ -14,8 +14,9 @@ const (
 )
 
 type Source struct {
-	URL   string `json:"url"`
-	Title string `json:"title,omitempty"`
+	URL     string `json:"url"`
+	Title   string `json:"title,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
 }
 
 type Request struct {

@@ -15,10 +15,11 @@ import (
 
 // JEVConfig 独立配置判断服务，不复用搜索或综合模型的凭据。
 type JEVConfig struct {
-	APIURL     string `json:"apiURL"`
-	APIKey     string `json:"apiKey"`
-	Model      string `json:"model"`
-	TimeoutSec int    `json:"timeoutSec"`
+	APIURL      string `json:"apiURL"`
+	APIKey      string `json:"apiKey"`
+	Model       string `json:"model"`
+	TimeoutSec  int    `json:"timeoutSec"`
+	AnswerCheck bool   `json:"answerCheck,omitempty"`
 }
 
 // NormalizeJEVConfig 补全默认值；未配置 Key 时仍允许使用固定研究流程。

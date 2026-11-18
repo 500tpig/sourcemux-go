@@ -3,7 +3,9 @@ package router
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/500tpig/sourcemux-go/internal/capability"
 )
@@ -138,4 +140,87 @@ func TestRouterMatcherSkipsWithoutCallingProvider(t *testing.T) {
 	if trace.AttemptsCount != 2 || trace.Decisions[0].Status != "skipped" || trace.Decisions[0].FallbackReason != capability.ReasonNotApplicable {
 		t.Fatalf("trace = %+v", trace)
 	}
+}
+
+type countingProvider struct {
+	name  string
+	kind  capability.Kind
+	calls *atomic.Int32
+}
+
+func (p countingProvider) Name() string          { return p.name }
+func (p countingProvider) Kind() capability.Kind { return p.kind }
+func (p countingProvider) Try(context.Context, capability.Request) (capability.Result, error) {
+	if p.calls != nil {
+		p.calls.Add(1)
+	}
+	return capability.Result{
+		Content: "should not run",
+		Sources: []capability.Source{{URL: "https://example.com"}},
+	}, nil
+}
+
+type cancelAfterSkipMatcher struct {
+	fakeProvider
+	cancel context.CancelFunc
+}
+
+func (p cancelAfterSkipMatcher) CanHandle(capability.Request) (bool, string) {
+	p.cancel()
+	return false, "skipped"
+}
+
+func TestRouterPreservesPreCanceledAndPreTimedOutContextWithoutCallingProviders(t *testing.T) {
+	t.Run("pre_canceled", func(t *testing.T) {
+		var calls atomic.Int32
+		r := New(countingProvider{name: "grok-pool", kind: capability.MainSearch, calls: &calls})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		res, trace := r.Run(ctx, capability.MainSearch, capability.Request{Query: "q"})
+		if calls.Load() != 0 || res.Content != "" {
+			t.Fatalf("expected 0 calls and empty result, got calls=%d res=%+v", calls.Load(), res)
+		}
+		if trace.Error != context.Canceled.Error() || trace.Compact()["error"] != context.Canceled.Error() {
+			t.Fatalf("trace error not preserved: %+v", trace)
+		}
+	})
+
+	t.Run("pre_timed_out", func(t *testing.T) {
+		var calls atomic.Int32
+		r := New(countingProvider{name: "grok-pool", kind: capability.MainSearch, calls: &calls})
+
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer cancel()
+
+		res, trace := r.Run(ctx, capability.MainSearch, capability.Request{Query: "q"})
+		if calls.Load() != 0 || res.Content != "" {
+			t.Fatalf("expected 0 calls and empty result, got calls=%d res=%+v", calls.Load(), res)
+		}
+		if trace.Error != context.DeadlineExceeded.Error() {
+			t.Fatalf("trace error = %q, want %q", trace.Error, context.DeadlineExceeded.Error())
+		}
+	})
+
+	t.Run("canceled_after_matcher_skip", func(t *testing.T) {
+		var calls atomic.Int32
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		r := New(
+			cancelAfterSkipMatcher{
+				fakeProvider: fakeProvider{name: "matcher", kind: capability.DocsSearch},
+				cancel:       cancel,
+			},
+			countingProvider{name: "exa", kind: capability.DocsSearch, calls: &calls},
+		)
+
+		res, trace := r.Run(ctx, capability.DocsSearch, capability.Request{Query: "q"})
+		if calls.Load() != 0 || res.Content != "" {
+			t.Fatalf("expected 0 calls to next provider, got calls=%d res=%+v", calls.Load(), res)
+		}
+		if trace.Error != context.Canceled.Error() || len(trace.Decisions) != 1 || trace.Decisions[0].Status != "skipped" {
+			t.Fatalf("unexpected trace: %+v", trace)
+		}
+	})
 }

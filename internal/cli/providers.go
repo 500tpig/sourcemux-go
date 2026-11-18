@@ -28,6 +28,8 @@ func buildWebSearchClients(cfg *config.Config, cache tools.SourceCacher) tools.W
 		TinyFish:     tinyfish,
 		Exa:          exa,
 		Tavily:       tavily,
+		JEV:          engine.NewJEVClient(cfg.JEV),
+		AnswerCheck:  cfg.JEV.AnswerCheck,
 		Cache:        cache,
 		SearchPolicy: cfg.SearchPolicy,
 	}

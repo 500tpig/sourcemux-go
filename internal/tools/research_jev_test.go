@@ -306,3 +306,109 @@ func TestJEVNoSuitableActionsDoesNotChooseHighestBelowThreshold(t *testing.T) {
 		t.Fatalf("pack=%+v err=%v", pack, err)
 	}
 }
+
+func TestJEVCandidatesIncludeActionBoundariesAndExclusions(t *testing.T) {
+	actions := jevCandidates(
+		ResearchPack{Query: "SourceMux", MaxFetches: 2, JEV: &JEVResearchTrace{}},
+		[]string{"grok-pool", "tinyfish-search", "exa-search", "tavily-search"},
+		[]ResearchSource{{URL: "https://example.com/doc"}},
+		map[string]bool{},
+	)
+	byProvider := make(map[string]JEVAction, len(actions))
+	for _, action := range actions {
+		if _, exists := byProvider[action.Provider]; !exists {
+			byProvider[action.Provider] = action
+		}
+	}
+	expectations := map[string][]string{
+		"web_fetch":       {"citations", "unsuitable", "max_fetches"},
+		"grok-pool":       {"model answer", "not read-page evidence", "domain allow-lists"},
+		"tinyfish-search": {"only the query", "without server-side domain", "cannot fetch pages"},
+		"exa-search":      {"highlights only", "no full-page text", "require fetch"},
+		"tavily-search":   {"without server-side domain", "not return full page bodies", "not read-page citation evidence"},
+	}
+	for provider, wants := range expectations {
+		action, ok := byProvider[provider]
+		if !ok {
+			t.Fatalf("missing candidate for %s", provider)
+		}
+		lower := strings.ToLower(action.Guidance)
+		for _, want := range wants {
+			if !strings.Contains(lower, strings.ToLower(want)) {
+				t.Fatalf("%s guidance %q missing boundary %q", provider, action.Guidance, want)
+			}
+		}
+	}
+}
+
+func TestResearchAndSmartAnswerSkipSearchAnswerCheck(t *testing.T) {
+	grokSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"I am about to search."}}],"citations":["https://example.com/doc"]}`))
+	}))
+	defer grokSrv.Close()
+
+	fetchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("Detailed documentation about SourceMux capabilities."))
+	}))
+	defer fetchSrv.Close()
+
+	var answerCheckCalls atomic.Int32
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Questions map[string]engine.JEVQuestion `json:"questions"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if _, isAnswerCheck := body.Questions["substantive"]; isAnswerCheck {
+			answerCheckCalls.Add(1)
+		}
+		answers := map[string]any{}
+		for id := range body.Questions {
+			score := 0.0
+			if id == "action_0" || id == "useful" || id == "sufficient" {
+				score = 0.95
+			}
+			answers[id] = map[string]any{"type": "noul", "noul": score}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"answers": answers})
+	}))
+	defer jevSrv.Close()
+
+	jevClient := engine.NewJEVClient(engine.JEVConfig{APIURL: jevSrv.URL, APIKey: "jev-key", AnswerCheck: true})
+	executor := NewResearchExecutor(ResearchExecutorDeps{
+		JEV: jevClient,
+		Search: WebSearchClients{
+			Pool:        engine.NewGrokPool([]engine.GrokEndpoint{{Name: "primary", BaseURL: grokSrv.URL, APIKey: "sk-g", Model: "grok-test"}}),
+			JEV:         jevClient,
+			AnswerCheck: true,
+		},
+		Fetch: WebFetchClients{
+			Jina:        engine.NewJinaClient(fetchSrv.URL, ""),
+			Order:       []string{"jina"},
+			StrictOrder: true,
+		},
+	})
+
+	if _, err := executor.Run(context.Background(), ResearchOptions{Query: "SourceMux", Mode: "fixed", Depth: "quick", MaxFetches: 1}); err != nil {
+		t.Fatalf("fixed research failed: %v", err)
+	}
+	if _, err := executor.Run(context.Background(), ResearchOptions{Query: "SourceMux", Mode: "jev", Depth: "quick", MaxFetches: 1}); err != nil {
+		t.Fatalf("jev research failed: %v", err)
+	}
+	answerer := &SmartAnswerer{
+		Researcher: executor,
+		Reasoner: &fakeSmartReasoner{
+			result: &engine.PoolReasoningResult{
+				ReasoningResult: &engine.ReasoningResult{Content: "Synthesized answer."},
+				EndpointName:    "deepseek",
+				EndpointModel:   "deepseek-v4-flash",
+			},
+		},
+	}
+	if _, err := answerer.Run(context.Background(), SmartAnswerOptions{Query: "SourceMux", Mode: "jev", Depth: "quick", MaxFetches: 1}); err != nil {
+		t.Fatalf("smart-answer failed: %v", err)
+	}
+	if got := answerCheckCalls.Load(); got != 0 {
+		t.Fatalf("research/smart-answer triggered search answer_check %d times, want 0", got)
+	}
+}

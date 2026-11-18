@@ -677,3 +677,50 @@ func TestSearch_ResponsesAPI_SSEReturnsError(t *testing.T) {
 		t.Fatalf("error should mention streaming, got %v", err)
 	}
 }
+
+func TestSearch_PreservesSourceTitlesWithoutChangingJSON(t *testing.T) {
+	body := `{
+		"choices":[{"message":{
+			"content":"Answer",
+			"annotations":[
+				{"type":"url_citation","url_citation":{"url":"https://a.example.com","title":""}},
+				{"type":"url_citation","url_citation":{"url":"https://a.example.com","title":"Title A"}},
+				{"type":"url_citation","url_citation":{"url":"https://b.example.com","title":"Title B"}}
+			]
+		}}]
+	}`
+	c := newMockGrok(t, 200, body)
+	res, err := c.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSources := []SearchSource{
+		{URL: "https://a.example.com", Title: "Title A"},
+		{URL: "https://b.example.com", Title: "Title B"},
+	}
+	if !reflect.DeepEqual(res.Sources, wantSources) {
+		t.Fatalf("Sources = %+v, want %+v", res.Sources, wantSources)
+	}
+	encoded, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"Title"`) || strings.Contains(string(encoded), `"title"`) {
+		t.Fatalf("SearchResult JSON unexpectedly changed: %s", encoded)
+	}
+
+	respBody := `{
+		"output":[{"type":"message","content":[{"type":"output_text","text":"Responses answer","annotations":[
+			{"type":"url_citation","url":"https://r.example.com","title":"Resp Title"}
+		]}]}]
+	}`
+	rc := newMockResponsesGrok(t, http.StatusOK, respBody)
+	respRes, err := rc.Search(context.Background(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRespSources := []SearchSource{{URL: "https://r.example.com", Title: "Resp Title"}}
+	if !reflect.DeepEqual(respRes.Sources, wantRespSources) {
+		t.Fatalf("Responses Sources = %+v, want %+v", respRes.Sources, wantRespSources)
+	}
+}
