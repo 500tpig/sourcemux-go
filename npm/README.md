@@ -1,7 +1,7 @@
 # SourceMux npm wrapper
 
 This directory contains the npm wrapper source for the SourceMux Go CLI. The
-root package `sourcemux` and the platform packages are published for `0.2.1`.
+root package `sourcemux` and the platform packages are published for `0.4.0`.
 
 The MVP uses a root package plus platform-specific optional dependencies:
 
@@ -59,6 +59,19 @@ Publication check recorded on `2026-06-02T16:07:07Z`:
   returned `sourcemux 0.2.1`.
 
 Repeat registry checks immediately before publishing future versions.
+
+### Latest release verification
+
+Release checks completed on `2026-11-18` for `0.4.0`:
+
+* The root package and all five platform packages returned `latest: 0.4.0`,
+  with matching versions, platform metadata, and optional dependencies.
+* An isolated global install of `sourcemux@latest` on macOS arm64 returned
+  version `0.4.0` and release commit `bda2780fe21dbd6f587de3e8693d376b2aad23d6`.
+  Generated skill bootstrap, status, update, and uninstall checks passed.
+* The published macOS arm64 and x64 npm binaries matched the corresponding
+  GitHub Release binaries. All five release archive SHA256 checks passed;
+  Homebrew and Scoop manifest versions and hashes matched the release.
 
 ## Local tests
 

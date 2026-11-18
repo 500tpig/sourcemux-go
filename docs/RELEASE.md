@@ -8,12 +8,12 @@ changing npm package manifests, platform mappings, release scripts, or the
 
 ## Current public channel state
 
-The current verified public baseline is `v0.2.1` (checked 2026-06-03):
+The current verified public baseline is `v0.4.0` (checked 2026-11-18):
 
-* GitHub Release: `https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1`
-* Homebrew cask: `500tpig/homebrew-tap`, `Casks/sourcemux.rb`, version `0.2.1`
-* Scoop manifest: `500tpig/scoop-bucket`, `sourcemux.json`, version `0.2.1`
-* npm: `sourcemux`, version `0.2.1`
+* GitHub Release: `https://github.com/500tpig/sourcemux-go/releases/tag/v0.4.0`
+* Homebrew cask: `500tpig/homebrew-tap`, `Casks/sourcemux.rb`, version `0.4.0`
+* Scoop manifest: `500tpig/scoop-bucket`, `sourcemux.json`, version `0.4.0`
+* npm: `sourcemux`, version `0.4.0`
 
 For future releases, do not update public docs to claim Homebrew, Scoop, or npm
 availability until the corresponding GitHub Release assets, raw tap cask, raw

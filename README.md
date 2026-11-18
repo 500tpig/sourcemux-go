@@ -11,8 +11,8 @@
 > Grok research when configured, and policy-first URL fetch with quality,
 > GitHub-aware, and cheap profiles.
 >
-> Packaging status: the current verified public baseline is `v0.2.1`
-> (checked 2026-06-03): GitHub Release assets, the Homebrew cask in
+> Packaging status: the current verified public baseline is `v0.4.0`
+> (checked 2026-11-18): GitHub Release assets, the Homebrew cask in
 > `500tpig/homebrew-tap`, the Scoop manifest in `500tpig/scoop-bucket`, and
 > the npm package `sourcemux` are published. Future package-manager claims
 > still need per-release verification before the docs describe them as
@@ -58,7 +58,7 @@ Firecrawl clean-content；`fetch --profile quality` 才会打开该额外清理�
 ### 公开用户快速开始
 
 公开用户流程需要先把 `sourcemux` 安装到 `PATH`。当前已核验的公开发布基线
-（2026-06-03）是 `v0.2.1`：GitHub Release assets、`500tpig/homebrew-tap`
+（2026-11-18）是 `v0.4.0`：GitHub Release assets、`500tpig/homebrew-tap`
 里的 Homebrew cask、`500tpig/scoop-bucket` 里的 Scoop manifest、以及 npm
 包 `sourcemux` 都已发布。之后每个版本仍必须先核验 tag、GitHub Release、
 tap/cask、bucket manifest 和 npm registry，
@@ -74,7 +74,7 @@ go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 GitHub Release 下载页：
 
 ```text
-https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.4.0
 ```
 
 ```bash
@@ -475,7 +475,7 @@ Why not just Jina or simple search?
 ## Public user install
 
 Install `sourcemux` on your `PATH` before starting the public user flow.
-The current verified public baseline (checked 2026-06-03) is `v0.2.1`:
+The current verified public baseline (checked 2026-11-18) is `v0.4.0`:
 GitHub Release assets, the Homebrew cask in `500tpig/homebrew-tap`, the Scoop
 manifest in `500tpig/scoop-bucket`, and the npm package `sourcemux` are
 published. Future versions must still be verified in the release, tap, bucket,
@@ -490,7 +490,7 @@ go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 GitHub Release downloads:
 
 ```text
-https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.4.0
 ```
 
 ```bash

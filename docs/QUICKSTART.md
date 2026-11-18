@@ -16,7 +16,7 @@ providers. For most users there are two narrow setup paths:
 ## Public user flow
 
 Install `sourcemux` on your `PATH` first. The current verified public baseline
-(checked 2026-06-03) is `v0.2.1`: GitHub Release assets, the Homebrew cask in
+(checked 2026-11-18) is `v0.4.0`: GitHub Release assets, the Homebrew cask in
 `500tpig/homebrew-tap`, the Scoop manifest in `500tpig/scoop-bucket`, and the
 npm package `sourcemux` are published. For future versions, verify the release,
 tap, bucket, and npm registry before describing package-manager channels as
@@ -31,7 +31,7 @@ go install github.com/500tpig/sourcemux-go/cmd/sourcemux@latest
 GitHub Release downloads:
 
 ```text
-https://github.com/500tpig/sourcemux-go/releases/tag/v0.2.1
+https://github.com/500tpig/sourcemux-go/releases/tag/v0.4.0
 ```
 
 Homebrew cask:
